@@ -1,0 +1,29 @@
+{
+  "library": "Wave and Electrostatics Virtual Laboratory",
+  "version": 2,
+  "topicAssets": {
+    "transverse_waves": [
+      "transverse_waves/transverse_wave_apparatus.png"
+    ],
+    "sound_waves": [
+      "sound_waves/sound_resonance_apparatus.png"
+    ],
+    "electrostatics": [
+      "electrostatics/coulomb_field_bench.png"
+    ]
+  },
+  "sharedAssets": {
+    "environment": 6,
+    "furniture": 3,
+    "props": 1,
+    "textures": 2
+  },
+  "replaceableModels": {
+    "wave-apparatus": "laboratory/physics/wave-apparatus.glb",
+    "sound-apparatus": "laboratory/physics/sound-apparatus.glb",
+    "electrostatics-bench": "laboratory/physics/electrostatics-bench.glb"
+  },
+  "placards": 3,
+  "references": 3,
+  "sourcePolicy": "Reusable shared assets were copied from the local reference library. Source files remain unchanged."
+}

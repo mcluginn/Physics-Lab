@@ -1,0 +1,11 @@
+Name: Entrance_Door
+Version: 2016
+Preview: Yes
+Units: Millimeters
+Dimension: 174.81 x 32.92 x 212.87
+Polys: 25 651
+XForm: Yes
+Box Trick: Yes
+Model Parts: 4
+Render: V-Ray
+Formats: 3Ds Max 2016, OBJ, FBX

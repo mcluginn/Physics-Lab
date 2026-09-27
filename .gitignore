@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.yarn/
+.pnp*
+
+# Build and runtime outputs
+dist/
+.next/
+.vinext/
+.wrangler/
+out/
+build/
+coverage/
+
+# Scratch & temporary debug files
+scratch*/
+temp_check.js
+*backup*.html
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS & Environment
+.DS_Store
+Thumbs.db
+.env*
+!.env.example
+
+# Unused raw asset dumps, duplicates, and test textures
+assets/*.glb
+assets/*.fbx
+assets/*.pdf
+assets/*.webp
+assets/*.png
+assets/door/
+assets/tex/
+assets/rp_carla*
+**/122a9240*.glb
+**/8d96bc9d*.glb
+
+
