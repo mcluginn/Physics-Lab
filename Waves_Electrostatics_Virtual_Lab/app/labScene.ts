@@ -281,7 +281,7 @@ export function createLabScene(
         context.lineWidth = 2;
         context.strokeRect(2, 2, 12, 12);
       }
-      loadedTexture.image = canvas;
+      loadedTexture.image = canvas as unknown as HTMLImageElement;
       loadedTexture.needsUpdate = true;
     });
     loadedTexture.colorSpace = THREE.SRGBColorSpace;
