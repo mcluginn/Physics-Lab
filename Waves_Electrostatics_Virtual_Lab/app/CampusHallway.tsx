@@ -5,13 +5,52 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { useEffect, useRef, useState } from 'react';
 import { CharacterController, type CharacterType } from './characterController';
 
-type DoorId = 'room-1' | 'room-2' | 'room-3';
-type DoorInfo = { id: DoorId; number: string; title: string; subtitle: string; href?: string; color: number };
+type DoorId = 'room-1' | 'room-2' | 'room-3' | 'uphsd-astro';
+type DoorInfo = {
+  id: DoorId;
+  number: string;
+  title: string;
+  subtitle: string;
+  href?: string;
+  color: number;
+  position: { x: number; y: number; z: number; rotationY: number };
+};
 
 const DOORS: DoorInfo[] = [
-  { id: 'room-1', number: '01', title: 'Thermal & Fluid Sciences', subtitle: '4 experiments · Active', href: '/room-1/index.html', color: 0x22d3ee },
-  { id: 'room-2', number: '02', title: 'Waves, Sound & Fields', subtitle: '3 experiments · Active', href: '/room-2', color: 0xfbbf24 },
-  { id: 'room-3', number: '03', title: 'Future Laboratory', subtitle: 'Reserved for the next course', color: 0xa78bfa },
+  {
+    id: 'room-1',
+    number: '01',
+    title: 'Thermal & Fluid Sciences',
+    subtitle: '4 experiments · Active',
+    href: '/room-1/index.html',
+    color: 0x22d3ee,
+    position: { x: -4.4, y: 0, z: -11.85, rotationY: 0 },
+  },
+  {
+    id: 'room-2',
+    number: '02',
+    title: 'Waves, Sound & Fields',
+    subtitle: '3 experiments · Active',
+    href: '/room-2',
+    color: 0xfbbf24,
+    position: { x: 0, y: 0, z: -11.85, rotationY: 0 },
+  },
+  {
+    id: 'room-3',
+    number: '03',
+    title: 'Future Laboratory',
+    subtitle: 'Reserved for next course',
+    color: 0xa78bfa,
+    position: { x: 4.4, y: 0, z: -11.85, rotationY: 0 },
+  },
+  {
+    id: 'uphsd-astro',
+    number: '✦',
+    title: 'UPHSD - Astronomical Society',
+    subtitle: 'Coming soon',
+    color: 0x818cf8,
+    position: { x: 6.84, y: 0, z: -0.5, rotationY: -Math.PI / 2 },
+  },
 ];
 
 type HallControls = {
@@ -85,22 +124,53 @@ export default function CampusHallway() {
       scene.add(tBarZ);
     }
 
-    // Corridor Walls (4.2m height)
-    [-7, 7].forEach((x) => {
-      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.32, 4.2, 28), wallMaterial);
-      wall.position.set(x, 2.1, -2);
-      scene.add(wall);
+    // Left Corridor Wall (Continuous, 4.2m height)
+    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.32, 4.2, 28), wallMaterial);
+    leftWall.position.set(-7, 2.1, -2);
+    scene.add(leftWall);
+    const leftBaseboard = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.16, 28), trimMaterial);
+    leftBaseboard.position.set(-7, 0.08, -2);
+    scene.add(leftBaseboard);
+    const leftConduit = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.08, 28), new THREE.MeshStandardMaterial({ color: 0x243b55, metalness: 0.8, roughness: 0.3 }));
+    leftConduit.position.set(-7, 1.0, -2);
+    scene.add(leftConduit);
 
-      // Baseboards
-      const baseboard = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.16, 28), trimMaterial);
-      baseboard.position.set(x, 0.08, -2);
-      scene.add(baseboard);
+    // Right Corridor Wall with architectural doorway for UPHSD - Astronomical Society at Z = -0.5
+    // Door opening: width 2.8m (Z from -1.9 to +0.9), height 3.38m
+    // 1. North section: Z = -16 to -1.9 (length 14.1m, center Z = -8.95)
+    const rightWallNorth = new THREE.Mesh(new THREE.BoxGeometry(0.32, 4.2, 14.1), wallMaterial);
+    rightWallNorth.position.set(7, 2.1, -8.95);
+    scene.add(rightWallNorth);
+    const rightBaseboardNorth = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.16, 14.1), trimMaterial);
+    rightBaseboardNorth.position.set(7, 0.08, -8.95);
+    scene.add(rightBaseboardNorth);
+    const rightConduitNorth = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.08, 14.1), new THREE.MeshStandardMaterial({ color: 0x243b55, metalness: 0.8, roughness: 0.3 }));
+    rightConduitNorth.position.set(7, 1.0, -8.95);
+    scene.add(rightConduitNorth);
 
-      // Wall Utility Conduit Channel at 1.0m height
-      const conduit = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.08, 28), new THREE.MeshStandardMaterial({ color: 0x243b55, metalness: 0.8, roughness: 0.3 }));
-      conduit.position.set(x, 1.0, -2);
-      scene.add(conduit);
-    });
+    // 2. South section: Z = +0.9 to +12 (length 11.1m, center Z = +6.45)
+    const rightWallSouth = new THREE.Mesh(new THREE.BoxGeometry(0.32, 4.2, 11.1), wallMaterial);
+    rightWallSouth.position.set(7, 2.1, 6.45);
+    scene.add(rightWallSouth);
+    const rightBaseboardSouth = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.16, 11.1), trimMaterial);
+    rightBaseboardSouth.position.set(7, 0.08, 6.45);
+    scene.add(rightBaseboardSouth);
+    const rightConduitSouth = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.08, 11.1), new THREE.MeshStandardMaterial({ color: 0x243b55, metalness: 0.8, roughness: 0.3 }));
+    rightConduitSouth.position.set(7, 1.0, 6.45);
+    scene.add(rightConduitSouth);
+
+    // 3. Header wall lintel above right door (Y = 3.38 to 4.20, height 0.82m, length 2.8m, center Z = -0.5)
+    const rightWallHeader = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.82, 2.8), wallMaterial);
+    rightWallHeader.position.set(7, 3.38 + 0.41, -0.5);
+    scene.add(rightWallHeader);
+
+    // 4. Exterior architectural alcove surround / shadowbox for Astronomical Society
+    const rightAlcoveBox = new THREE.Mesh(
+      new THREE.BoxGeometry(1.6, 3.5, 3.2),
+      new THREE.MeshStandardMaterial({ color: 0x050a14, roughness: 0.95 })
+    );
+    rightAlcoveBox.position.set(7.8, 1.75, -0.5);
+    scene.add(rightAlcoveBox);
 
     // North End Wall with architecturally precise doorway openings for Room 01, Room 02, and Room 03
     // Opening width per door: 2.54m, Opening height: 3.38m
@@ -170,7 +240,6 @@ export default function CampusHallway() {
       baseIntensity: number;
     }
     const doorGlows: DoorGlowItem[] = [];
-    const doorX = [-4.4, 0, 4.4];
 
     // High-resolution textures for the 3D Entrance Door Asset
     const fbxLoader = new FBXLoader();
@@ -380,8 +449,11 @@ export default function CampusHallway() {
       };
 
       // Line 1: University & Department Header
+      const headerText = door.id === 'uphsd-astro'
+        ? 'UNIVERSITY OF PERPETUAL HELP SYSTEM DALTA'
+        : 'DEPARTMENT OF PHYSICS   ·   EXPERIMENTAL SCIENCES';
       drawCarvedText(
-        'DEPARTMENT OF PHYSICS   ·   EXPERIMENTAL SCIENCES',
+        headerText,
         1024,
         105,
         '700 28px Georgia, "Times New Roman", serif',
@@ -389,19 +461,23 @@ export default function CampusHallway() {
         false
       );
 
-      // Line 2: Room Number & Specific Laboratory Name (Gilded intaglio)
-      const roomTitle = `ROOM ${door.number}   ·   ${door.title.toUpperCase()}`;
+      // Line 2: Room Number & Laboratory / Society Name (Gilded intaglio)
+      const roomTitle = door.id === 'uphsd-astro'
+        ? 'UPHSD   ·   ASTRONOMICAL SOCIETY'
+        : `ROOM ${door.number}   ·   ${door.title.toUpperCase()}`;
       drawCarvedText(
         roomTitle,
         1024,
         250,
-        '800 58px Georgia, "Times New Roman", serif',
-        58,
+        door.id === 'uphsd-astro' ? '800 52px Georgia, "Times New Roman", serif' : '800 58px Georgia, "Times New Roman", serif',
+        door.id === 'uphsd-astro' ? 52 : 58,
         true
       );
 
-      // Line 3: Laboratory Status
-      const statusText = door.href
+      // Line 3: Laboratory / Society Status
+      const statusText = door.id === 'uphsd-astro'
+        ? '✦   OBSERVATORY & SPACE SCIENCE   ·   COMING SOON   ✦'
+        : door.href
         ? '✦   ACTIVE RESEARCH LABORATORY   ·   PRESS [E] TO ENTER   ✦'
         : '✧   RESERVED FOR UPCOMING SEMESTER COURSES   ✧';
       drawCarvedText(
@@ -412,6 +488,30 @@ export default function CampusHallway() {
         30,
         false
       );
+
+      // Golden Celestial Stars on the plaque for UPHSD Astronomical Society
+      if (door.id === 'uphsd-astro') {
+        const drawCelestialStar = (cx: number, cy: number, r: number) => {
+          ctx.save();
+          ctx.fillStyle = '#fce7a1';
+          ctx.shadowColor = '#d6ad44';
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          for (let i = 0; i < 8; i++) {
+            const angle = (i * Math.PI) / 4;
+            const radius = i % 2 === 0 ? r : r * 0.42;
+            const px = cx + Math.cos(angle) * radius;
+            const py = cy + Math.sin(angle) * radius;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        };
+        drawCelestialStar(220, 250, 26);
+        drawCelestialStar(1828, 250, 26);
+      }
 
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -434,10 +534,11 @@ export default function CampusHallway() {
 
     const doorGroups: THREE.Group[] = [];
 
-    DOORS.forEach((door, index) => {
+    DOORS.forEach((door) => {
       const group = new THREE.Group();
       group.name = `DoorGroup_${door.id}`;
-      group.position.set(doorX[index], 0, -11.85);
+      group.position.set(door.position.x, door.position.y, door.position.z);
+      group.rotation.y = door.position.rotationY;
       doorGroups.push(group);
       scene.add(group);
 
@@ -448,6 +549,39 @@ export default function CampusHallway() {
       );
       blackPortal.position.set(0, 1.69, -0.60);
       group.add(blackPortal);
+
+      // Starry observatory void for UPHSD Astronomical Society
+      if (door.id === 'uphsd-astro') {
+        const starCount = 120;
+        const starGeo = new THREE.BufferGeometry();
+        const starPositions = new Float32Array(starCount * 3);
+        const starColors = new Float32Array(starCount * 3);
+        const palette = [
+          new THREE.Color(0xa78bfa), // celestial purple
+          new THREE.Color(0x38bdf8), // starlight cyan
+          new THREE.Color(0xfef08a), // warm gold
+          new THREE.Color(0xffffff), // pure white
+        ];
+        for (let i = 0; i < starCount; i++) {
+          starPositions[i * 3 + 0] = (Math.random() - 0.5) * 2.2;
+          starPositions[i * 3 + 1] = Math.random() * 3.0 + 0.2;
+          starPositions[i * 3 + 2] = -0.15 - Math.random() * 0.9;
+          const col = palette[Math.floor(Math.random() * palette.length)];
+          starColors[i * 3 + 0] = col.r;
+          starColors[i * 3 + 1] = col.g;
+          starColors[i * 3 + 2] = col.b;
+        }
+        starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+        starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+        const starMat = new THREE.PointsMaterial({
+          size: 0.035,
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.95,
+        });
+        const stars = new THREE.Points(starGeo, starMat);
+        group.add(stars);
+      }
 
       // Black doorway threshold floor extension into the dark room void
       const blackFloor = new THREE.Mesh(
@@ -489,7 +623,7 @@ export default function CampusHallway() {
         map: signTexture,
         roughness: 0.38,
         metalness: 0.06,
-        emissive: 0x221204,
+        emissive: door.id === 'uphsd-astro' ? 0x24143a : 0x221204,
         emissiveIntensity: 0.0,
       });
       doorGlows.push({ material: signMat, doorId: door.id, baseIntensity: 0.0 });
@@ -554,9 +688,9 @@ export default function CampusHallway() {
 
       // Warm directional transom spotlight illuminating the engraved wood sign
       const transomSpot = new THREE.SpotLight(0xfff1d6, 2.4, 5.0, Math.PI / 3, 0.4, 1.6);
-      transomSpot.position.set(doorX[index], 4.25, -11.55);
+      transomSpot.position.set(0, 4.25, 0.35);
       transomSpot.target = signBoard;
-      scene.add(transomSpot);
+      group.add(transomSpot);
 
       // Wall Keypad / Digital Access Terminal at right jamb
       const terminalGroup = new THREE.Group();
@@ -566,9 +700,10 @@ export default function CampusHallway() {
         new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.3 })
       );
       terminalGroup.add(terminalBack);
+      const ledColor = door.id === 'uphsd-astro' ? 0xa855f7 : door.href ? 0x10b981 : 0xf59e0b;
       const terminalLED = new THREE.Mesh(
         new THREE.SphereGeometry(0.025, 12, 12),
-        new THREE.MeshBasicMaterial({ color: door.href ? 0x10b981 : 0xf59e0b })
+        new THREE.MeshBasicMaterial({ color: ledColor })
       );
       terminalLED.position.set(0, 0.14, 0.03);
       terminalGroup.add(terminalLED);
@@ -589,10 +724,11 @@ export default function CampusHallway() {
       });
 
       // Door Sconce Spotlight
-      const sconceLight = new THREE.SpotLight(door.href ? 0xfff4e0 : 0xe2e8f0, 4.0, 6, Math.PI / 4, 0.4, 1.5);
-      sconceLight.position.set(doorX[index], 4.1, -11.2);
-      sconceLight.target = group;
-      scene.add(sconceLight);
+      const sconceColor = door.id === 'uphsd-astro' ? 0xddd6fe : door.href ? 0xfff4e0 : 0xe2e8f0;
+      const sconceLight = new THREE.SpotLight(sconceColor, 4.2, 6, Math.PI / 4, 0.4, 1.5);
+      sconceLight.position.set(0, 4.1, 0.70);
+      sconceLight.target = threshold;
+      group.add(sconceLight);
 
       // Register interactive hit targets
       doorObjects.push(signBoard, threshold);
@@ -761,18 +897,22 @@ export default function CampusHallway() {
           window.location.assign(targetDoor.href!);
         });
       } else {
-        // Reserved room (Room 03) - toggle peek open and auto-close
+        // Reserved room or UPHSD Astronomical Society coming soon
         if (anim && !anim.isOpen) {
-          setMessage(`Room ${targetDoor.number} opened. Notice: Reserved for upcoming semester courses.`);
+          if (targetDoor.id === 'uphsd-astro') {
+            setMessage('🔭 UPHSD - Astronomical Society: Observatory & Space Science Society room is coming soon!');
+          } else {
+            setMessage(`Room ${targetDoor.number} opened. Notice: Reserved for upcoming semester courses.`);
+          }
           openDoorAnimation(targetDoor, () => {
             setTimeout(() => {
               closeDoorAnimation(targetDoor);
               setMessage('Walk toward a door and press E to enter · V view · C character.');
-            }, 2600);
+            }, 3200);
           });
         } else if (anim && anim.isOpen) {
           closeDoorAnimation(targetDoor);
-          setMessage(`Room ${targetDoor.number} closed.`);
+          setMessage(`${targetDoor.title} door closed.`);
         }
       }
     };
@@ -966,6 +1106,8 @@ export default function CampusHallway() {
       controls.current.openDoor(door);
     } else if (door.href) {
       window.location.assign(door.href);
+    } else if (door.id === 'uphsd-astro') {
+      setMessage('🔭 UPHSD - Astronomical Society: Observatory & Space Science Lab is currently under construction. Coming soon!');
     } else {
       setMessage('Room 03 is reserved for the next group of experiments.');
     }
@@ -1001,7 +1143,7 @@ export default function CampusHallway() {
             👨 Male (Eric)
           </button>
         </div>
-        <div className="hallway-status"><i />2 ROOMS ACTIVE · 1 RESERVED</div>
+        <div className="hallway-status"><i />2 ACTIVE LABS · UPHSD ASTRONOMICAL SOCIETY (COMING SOON)</div>
       </header>
       <section className="hallway-welcome"><span>VIRTUAL CAMPUS · LEVEL 02</span><h1>Laboratory hallway</h1><p>{target ? `Room ${target.number}: ${target.title}` : message}</p></section>
       {!locked && (
