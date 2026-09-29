@@ -407,11 +407,11 @@ export default function AstroExperience() {
         </div>
       )}
 
-      {/* Enter Walk Mode Prompt */}
+      {/* Enter Walk Mode / Controls Prompt */}
       {!pointerLocked && !activeModal && !externalOverlay && (
         <button className="astro-enter-walk" onClick={() => sceneApi.current?.requestPointerLock()}>
-          <b>ENTER WALK MODE</b>
-          <span>Click to look and explore · WASD move · ESC release</span>
+          <b>DRAG OR USE ARROW KEYS TO ROTATE VIEW</b>
+          <span>Click canvas or here to lock cursor · WASD or Arrow Keys move · ESC release</span>
         </button>
       )}
 

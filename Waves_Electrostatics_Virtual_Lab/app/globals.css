@@ -1591,6 +1591,12 @@ button { color: inherit; }
   width: 100% !important;
   height: 100% !important;
   display: block;
+  cursor: grab;
+  touch-action: none;
+}
+
+.astro-canvas-container canvas:active {
+  cursor: grabbing;
 }
 
 .astro-vignette {

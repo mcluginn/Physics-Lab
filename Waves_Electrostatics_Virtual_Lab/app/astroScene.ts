@@ -41,8 +41,9 @@ export function createAstroScene(
   callbacks: AstroSceneCallbacks = {}
 ): AstroSceneApi {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x060914);
-  scene.fog = new THREE.FogExp2(0x060914, 0.018);
+  scene.background = new THREE.Color(0x070d1a);
+  // Clear linear fog so room interior is bright and crisp, while distant space fades softly
+  scene.fog = new THREE.Fog(0x0a1326, 25, 75);
 
   const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 100);
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -54,11 +55,16 @@ export function createAstroScene(
   container.appendChild(renderer.domElement);
 
   // --- Lighting Architecture ---
-  const ambientLight = new THREE.AmbientLight(0x182038, 1.2);
+  // Ambient illumination: lifted to soft architectural indigo
+  const ambientLight = new THREE.AmbientLight(0x283b5e, 1.85);
   scene.add(ambientLight);
 
+  // Balanced sky and floor bounce light (celestial blue overhead + rich warm wood floor reflection)
+  const hemiLight = new THREE.HemisphereLight(0xc2dbff, 0x483222, 2.2);
+  scene.add(hemiLight);
+
   // Cool celestial starlight illumination streaming in through northern observatory glass
-  const celestialMoonlight = new THREE.DirectionalLight(0x60a5fa, 2.2);
+  const celestialMoonlight = new THREE.DirectionalLight(0x7dd3fc, 2.6);
   celestialMoonlight.position.set(0, 10, -18);
   celestialMoonlight.castShadow = true;
   celestialMoonlight.shadow.mapSize.width = 2048;
@@ -73,7 +79,7 @@ export function createAstroScene(
   scene.add(celestialMoonlight);
 
   // Warm central exhibition chandelier/pinspot over the Solar System table
-  const solarSpot = new THREE.SpotLight(0xfff3d6, 4.5, 14, Math.PI / 3.5, 0.45, 1.2);
+  const solarSpot = new THREE.SpotLight(0xfff5dd, 5.2, 16, Math.PI / 3.2, 0.4, 1.2);
   solarSpot.position.set(0, 4.6, -1.5);
   solarSpot.target.position.set(0, 0.9, -1.5);
   solarSpot.castShadow = true;
@@ -81,18 +87,64 @@ export function createAstroScene(
   scene.add(solarSpot.target);
 
   // Warm amber spot over society info desk
-  const infoSpot = new THREE.SpotLight(0xffecd1, 2.8, 8, Math.PI / 4, 0.5, 1.2);
-  infoSpot.position.set(5.5, 4.2, 3.5);
+  const infoSpot = new THREE.SpotLight(0xffeed6, 3.4, 9, Math.PI / 4, 0.5, 1.2);
+  infoSpot.position.set(5.5, 4.4, 3.5);
   infoSpot.target.position.set(5.5, 0, 3.5);
   scene.add(infoSpot);
   scene.add(infoSpot.target);
 
   // Spot over telescope observing station
-  const telescopeSpot = new THREE.SpotLight(0x93c5fd, 3.2, 9, Math.PI / 4, 0.4, 1.4);
+  const telescopeSpot = new THREE.SpotLight(0xa5f3fc, 3.8, 10, Math.PI / 4, 0.4, 1.3);
   telescopeSpot.position.set(-4.5, 4.4, -6.5);
   telescopeSpot.target.position.set(-4.5, 0.8, -8.2);
   scene.add(telescopeSpot);
   scene.add(telescopeSpot.target);
+
+  // Architectural entrance spotlight directly highlighting the south double doors and exit archway
+  const entranceSpot = new THREE.SpotLight(0xffedd5, 4.8, 12, Math.PI / 3.4, 0.35, 1.1);
+  entranceSpot.position.set(0, 4.5, 3.8);
+  entranceSpot.target.position.set(0, 1.6, 5.85);
+  entranceSpot.castShadow = true;
+  scene.add(entranceSpot);
+  scene.add(entranceSpot.target);
+
+  // Warm glowing hallway backlight behind the doors
+  const corridorBacklight = new THREE.PointLight(0xffe6c8, 3.5, 7.5, 1.2);
+  corridorBacklight.position.set(0, 1.8, 6.3);
+  scene.add(corridorBacklight);
+
+  // Recessed ceiling downlight grid fixtures (6 warm architectural downlights)
+  const ceilingLightPositions: [number, number, number][] = [
+    [-5.2, 4.65, 2.2],
+    [5.2, 4.65, 2.2],
+    [-5.2, 4.65, -2.8],
+    [5.2, 4.65, -2.8],
+    [-5.2, 4.65, -7.0],
+    [5.2, 4.65, -7.0],
+  ];
+
+  ceilingLightPositions.forEach(([lx, ly, lz]) => {
+    // Recessed ceiling bezel fixture
+    const fixture = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.24, 0.06, 24),
+      new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.4, metalness: 0.8 })
+    );
+    fixture.position.set(lx, ly, lz);
+    scene.add(fixture);
+
+    const lens = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.18, 0.02, 24),
+      new THREE.MeshStandardMaterial({ color: 0xfffbeb, emissive: 0xffecd1, emissiveIntensity: 1.4 })
+    );
+    lens.position.set(lx, ly - 0.03, lz);
+    scene.add(lens);
+
+    const downSpot = new THREE.SpotLight(0xffeed6, 2.4, 9.5, Math.PI / 3.6, 0.45, 1.3);
+    downSpot.position.set(lx, ly - 0.05, lz);
+    downSpot.target.position.set(lx, 0, lz);
+    scene.add(downSpot);
+    scene.add(downSpot.target);
+  });
 
   // --- Texture & Material Helpers ---
   const createWoodTexture = () => {
@@ -137,27 +189,27 @@ export function createAstroScene(
   });
 
   const wallNavyMaterial = new THREE.MeshStandardMaterial({
-    color: 0x091122,
-    roughness: 0.85,
-    metalness: 0.1,
+    color: 0x142239,
+    roughness: 0.72,
+    metalness: 0.12,
   });
 
   const acousticSlatMaterial = new THREE.MeshStandardMaterial({
-    color: 0x22130c,
-    roughness: 0.55,
-    metalness: 0.15,
+    color: 0x2e190e,
+    roughness: 0.52,
+    metalness: 0.18,
   });
 
   const brassTrimMaterial = new THREE.MeshStandardMaterial({
     color: 0xd4af37,
-    roughness: 0.28,
-    metalness: 0.88,
+    roughness: 0.22,
+    metalness: 0.92,
   });
 
   const mahoganyDeskMaterial = new THREE.MeshStandardMaterial({
-    color: 0x2b1308,
-    roughness: 0.35,
-    metalness: 0.15,
+    color: 0x34190c,
+    roughness: 0.32,
+    metalness: 0.16,
   });
 
   // --- Room Geometry (18m wide x 16m deep x 4.8m high) ---
@@ -195,19 +247,82 @@ export function createAstroScene(
   }
   scene.add(medallionGroup);
 
-  // Ceiling with recessed acoustic panels
-  const ceiling = new THREE.Mesh(
-    new THREE.PlaneGeometry(18, 16),
-    new THREE.MeshStandardMaterial({ color: 0x050a14, roughness: 0.95 })
-  );
-  ceiling.rotation.x = Math.PI / 2;
-  ceiling.position.set(0, 4.8, -2);
-  scene.add(ceiling);
+  // Architectural Coffered Ceiling
+  const ceilingGroup = new THREE.Group();
+  scene.add(ceilingGroup);
 
-  // South Wall (Entrance with double door)
-  const southWall = new THREE.Mesh(new THREE.BoxGeometry(18, 4.8, 0.3), wallNavyMaterial);
-  southWall.position.set(0, 2.4, 6);
-  scene.add(southWall);
+  const ceilingBase = new THREE.Mesh(
+    new THREE.PlaneGeometry(18, 16),
+    new THREE.MeshStandardMaterial({ color: 0x131a2b, roughness: 0.82, metalness: 0.1 })
+  );
+  ceilingBase.rotation.x = Math.PI / 2;
+  ceilingBase.position.set(0, 4.8, -2);
+  ceilingGroup.add(ceilingBase);
+
+  // Ceiling coffer longitudinal beams (along Z)
+  [-6, -2, 2, 6].forEach((bx) => {
+    const beam = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.26, 16),
+      mahoganyDeskMaterial
+    );
+    beam.position.set(bx, 4.67, -2);
+    ceilingGroup.add(beam);
+
+    const trim = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.04, 16),
+      brassTrimMaterial
+    );
+    trim.position.set(bx, 4.52, -2);
+    ceilingGroup.add(trim);
+  });
+
+  // Ceiling coffer cross beams (along X)
+  [-8, -4, 0, 4].forEach((bz) => {
+    const beam = new THREE.Mesh(
+      new THREE.BoxGeometry(18, 0.26, 0.24),
+      mahoganyDeskMaterial
+    );
+    beam.position.set(0, 4.67, bz);
+    ceilingGroup.add(beam);
+
+    const trim = new THREE.Mesh(
+      new THREE.BoxGeometry(18, 0.04, 0.28),
+      brassTrimMaterial
+    );
+    trim.position.set(0, 4.52, bz);
+    ceilingGroup.add(trim);
+  });
+
+  // South Wall with central doorway opening
+  const southWallL = new THREE.Mesh(new THREE.BoxGeometry(7.6, 4.8, 0.3), wallNavyMaterial);
+  southWallL.position.set(-5.2, 2.4, 6);
+  scene.add(southWallL);
+
+  const southWallR = new THREE.Mesh(new THREE.BoxGeometry(7.6, 4.8, 0.3), wallNavyMaterial);
+  southWallR.position.set(5.2, 2.4, 6);
+  scene.add(southWallR);
+
+  const southWallTop = new THREE.Mesh(new THREE.BoxGeometry(2.8, 1.3, 0.3), wallNavyMaterial);
+  southWallTop.position.set(0, 4.15, 6);
+  scene.add(southWallTop);
+
+  // Lower mahogany wainscoting paneling along south wall
+  const southWainscotL = new THREE.Mesh(new THREE.BoxGeometry(7.6, 1.15, 0.34), mahoganyDeskMaterial);
+  southWainscotL.position.set(-5.2, 0.575, 5.98);
+  scene.add(southWainscotL);
+
+  const southWainscotR = new THREE.Mesh(new THREE.BoxGeometry(7.6, 1.15, 0.34), mahoganyDeskMaterial);
+  southWainscotR.position.set(5.2, 0.575, 5.98);
+  scene.add(southWainscotR);
+
+  // Brass chair rail molding along south wall
+  const southChairRailL = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.06, 0.36), brassTrimMaterial);
+  southChairRailL.position.set(-5.2, 1.15, 5.98);
+  scene.add(southChairRailL);
+
+  const southChairRailR = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.06, 0.36), brassTrimMaterial);
+  southChairRailR.position.set(5.2, 1.15, 5.98);
+  scene.add(southChairRailR);
 
   // East Wall & West Wall
   const eastWall = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.8, 16), wallNavyMaterial);
@@ -217,6 +332,52 @@ export function createAstroScene(
   const westWall = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.8, 16), wallNavyMaterial);
   westWall.position.set(-9, 2.4, -2);
   scene.add(westWall);
+
+  // Mahogany wainscoting along East & West walls
+  const eastWainscot = new THREE.Mesh(new THREE.BoxGeometry(0.34, 1.15, 16), mahoganyDeskMaterial);
+  eastWainscot.position.set(8.98, 0.575, -2);
+  scene.add(eastWainscot);
+
+  const westWainscot = new THREE.Mesh(new THREE.BoxGeometry(0.34, 1.15, 16), mahoganyDeskMaterial);
+  westWainscot.position.set(-8.98, 0.575, -2);
+  scene.add(westWainscot);
+
+  const eastChairRail = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.06, 16), brassTrimMaterial);
+  eastChairRail.position.set(8.98, 1.15, -2);
+  scene.add(eastChairRail);
+
+  const westChairRail = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.06, 16), brassTrimMaterial);
+  westChairRail.position.set(-8.98, 1.15, -2);
+  scene.add(westChairRail);
+
+  // Decorative Wall Sconces with warm illumination along side walls
+  const sconceZPositions = [-6.2, -1.2, 3.6];
+  [-8.82, 8.82].forEach((sx) => {
+    sconceZPositions.forEach((sz) => {
+      const sconceGroup = new THREE.Group();
+      sconceGroup.position.set(sx, 2.4, sz);
+      scene.add(sconceGroup);
+
+      const sconceBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 0.42, 16),
+        brassTrimMaterial
+      );
+      sconceGroup.add(sconceBody);
+
+      [-0.24, 0.24].forEach((capsY) => {
+        const lightCap = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.035, 0.035, 0.08, 16),
+          new THREE.MeshStandardMaterial({ color: 0xffedd5, emissive: 0xffe4b5, emissiveIntensity: 1.6 })
+        );
+        lightCap.position.y = capsY;
+        sconceGroup.add(lightCap);
+      });
+
+      const sconcePoint = new THREE.PointLight(0xffe6c8, 1.2, 5.0, 1.3);
+      sconcePoint.position.set(sx > 0 ? -0.15 : 0.15, 0, 0);
+      sconceGroup.add(sconcePoint);
+    });
+  });
 
   // Decorative Wall Slats on East and West walls
   for (let z = -9; z <= 5; z += 1.2) {
@@ -391,15 +552,22 @@ export function createAstroScene(
   const sunMesh = new THREE.Mesh(
     new THREE.SphereGeometry(0.24, 32, 32),
     new THREE.MeshStandardMaterial({
-      color: 0xffd043,
+      color: 0xffe066,
       emissive: 0xffaa00,
-      emissiveIntensity: 0.8,
-      roughness: 0.2,
+      emissiveIntensity: 1.0,
+      roughness: 0.18,
     })
   );
   sunMesh.position.y = 1.15;
   sunMesh.castShadow = false;
   solarGroup.add(sunMesh);
+
+  // Active radiant sunlight illuminating the solar table exhibits and student character
+  const sunLight = new THREE.PointLight(0xffdf78, 4.5, 9.5, 1.2);
+  sunLight.position.set(0, 1.15, 0);
+  sunLight.castShadow = true;
+  sunLight.shadow.bias = -0.002;
+  solarGroup.add(sunLight);
 
   // Concentric Planetary Orbit Rings & Spheres
   const planetsData = [
@@ -882,19 +1050,235 @@ export function createAstroScene(
   doorGroup.position.set(0, 0, 5.85);
   scene.add(doorGroup);
 
-  const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(2.4, 3.2, 0.25), mahoganyDeskMaterial);
-  doorFrame.position.set(0, 1.6, 0);
-  doorGroup.add(doorFrame);
+  // Outer molded mahogany doorway casing & architrave
+  const jambL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 3.3, 0.34), mahoganyDeskMaterial);
+  jambL.position.set(-1.26, 1.65, 0);
+  doorGroup.add(jambL);
 
-  const doorLeft = new THREE.Mesh(new THREE.BoxGeometry(1.05, 2.9, 0.08), new THREE.MeshStandardMaterial({ color: 0x1f1107, roughness: 0.4 }));
-  doorLeft.position.set(-0.55, 1.5, 0.02);
-  doorGroup.add(doorLeft);
+  const jambR = new THREE.Mesh(new THREE.BoxGeometry(0.18, 3.3, 0.34), mahoganyDeskMaterial);
+  jambR.position.set(1.26, 1.65, 0);
+  doorGroup.add(jambR);
 
-  const doorRight = new THREE.Mesh(new THREE.BoxGeometry(1.05, 2.9, 0.08), new THREE.MeshStandardMaterial({ color: 0x1f1107, roughness: 0.4 }));
-  doorRight.position.set(0.55, 1.5, 0.02);
-  doorGroup.add(doorRight);
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.22, 0.36), mahoganyDeskMaterial);
+  lintel.position.set(0, 3.36, 0);
+  doorGroup.add(lintel);
 
-  registerTarget(doorFrame, {
+  const doorThreshold = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.04, 0.38), brassTrimMaterial);
+  doorThreshold.position.set(0, 0.02, 0);
+  doorGroup.add(doorThreshold);
+
+  // Architrave brass beading
+  const beadL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 3.3, 0.36), brassTrimMaterial);
+  beadL.position.set(-1.36, 1.65, 0);
+  doorGroup.add(beadL);
+
+  const beadR = new THREE.Mesh(new THREE.BoxGeometry(0.04, 3.3, 0.36), brassTrimMaterial);
+  beadR.position.set(1.36, 1.65, 0);
+  doorGroup.add(beadR);
+
+  const beadTop = new THREE.Mesh(new THREE.BoxGeometry(2.76, 0.04, 0.38), brassTrimMaterial);
+  beadTop.position.set(0, 3.48, 0);
+  doorGroup.add(beadTop);
+
+  // --- Overhead Illuminated Exit Sign ---
+  const createExitSignTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#041f17';
+    ctx.fillRect(0, 0, 1024, 256);
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(12, 12, 1000, 232);
+    ctx.strokeStyle = '#34d399';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(24, 24, 976, 208);
+    ctx.fillStyle = '#6ee7b7';
+    ctx.font = 'bold 56px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('✦ EXIT · CAMPUS CORRIDOR ✦', 512, 92);
+    ctx.fillStyle = '#a7f3d0';
+    ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText('CONNECTING ROOMS 01 & 02', 512, 172);
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+  };
+
+  const exitSignTex = createExitSignTexture();
+  const exitSignBox = new THREE.Mesh(
+    new THREE.BoxGeometry(1.85, 0.42, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.8 })
+  );
+  exitSignBox.position.set(0, 3.72, 0.04);
+  doorGroup.add(exitSignBox);
+
+  const exitSignFace = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.81, 0.38),
+    new THREE.MeshStandardMaterial({
+      map: exitSignTex,
+      emissiveMap: exitSignTex,
+      emissive: 0x10b981,
+      emissiveIntensity: 0.95,
+      roughness: 0.2,
+    })
+  );
+  exitSignFace.position.set(0, 3.72, 0.105);
+  doorGroup.add(exitSignFace);
+
+  const exitSignHalo = new THREE.PointLight(0x10b981, 1.8, 4.5, 1.2);
+  exitSignHalo.position.set(0, 3.7, 0.25);
+  doorGroup.add(exitSignHalo);
+
+  // --- Campus Corridor Hallway Alcove Beyond Doorway ---
+  const corridorGroup = new THREE.Group();
+  corridorGroup.position.set(0, 0, 1.2);
+  doorGroup.add(corridorGroup);
+
+  const corridorFloor = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.6, 2.4),
+    new THREE.MeshStandardMaterial({ color: 0xededeb, roughness: 0.25 })
+  );
+  corridorFloor.rotation.x = -Math.PI / 2;
+  corridorFloor.position.set(0, 0.01, 0);
+  corridorGroup.add(corridorFloor);
+
+  const corridorBackWall = new THREE.Mesh(
+    new THREE.BoxGeometry(3.6, 4.8, 0.2),
+    new THREE.MeshStandardMaterial({ color: 0xedebe4, roughness: 0.6 })
+  );
+  corridorBackWall.position.set(0, 2.4, 1.2);
+  corridorGroup.add(corridorBackWall);
+
+  const corridorCeiling = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.6, 2.4),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 })
+  );
+  corridorCeiling.rotation.x = Math.PI / 2;
+  corridorCeiling.position.set(0, 4.8, 0);
+  corridorGroup.add(corridorCeiling);
+
+  // --- Double French Doors with True Hinge Pivot Groups ---
+  const leftDoorHinge = new THREE.Group();
+  leftDoorHinge.position.set(-1.16, 0, 0);
+  doorGroup.add(leftDoorHinge);
+
+  const rightDoorHinge = new THREE.Group();
+  rightDoorHinge.position.set(1.16, 0, 0);
+  doorGroup.add(rightDoorHinge);
+
+  const frostedGlassMat = new THREE.MeshPhysicalMaterial({
+    color: 0xbae6fd,
+    transmission: 0.68,
+    roughness: 0.18,
+    metalness: 0.08,
+    opacity: 0.65,
+    transparent: true,
+    ior: 1.5,
+  });
+
+  const createDoorLeaf = (isLeft: boolean) => {
+    const leafGroup = new THREE.Group();
+    const sign = isLeft ? 1 : -1;
+    const leafWidth = 1.15;
+    const leafHeight = 3.12;
+    const leafThick = 0.08;
+
+    // Main mahogany frame body
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(leafWidth, leafHeight, leafThick),
+      mahoganyDeskMaterial
+    );
+    body.position.set(sign * (leafWidth / 2), leafHeight / 2 + 0.04, 0);
+    body.castShadow = true;
+    body.receiveShadow = true;
+    leafGroup.add(body);
+
+    // Brass kickplate at the bottom
+    const kickplate = new THREE.Mesh(
+      new THREE.BoxGeometry(leafWidth - 0.02, 0.34, leafThick + 0.01),
+      brassTrimMaterial
+    );
+    kickplate.position.set(sign * (leafWidth / 2), 0.22, 0);
+    leafGroup.add(kickplate);
+
+    // Frosted glass viewing pane
+    const glass = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36, 1.45, 0.03),
+      frostedGlassMat
+    );
+    glass.position.set(sign * (leafWidth / 2), 2.15, 0);
+    leafGroup.add(glass);
+
+    // Brass bezel frame around frosted glass
+    const glassBezel = new THREE.Mesh(
+      new THREE.BoxGeometry(0.40, 1.49, leafThick + 0.01),
+      brassTrimMaterial
+    );
+    glassBezel.position.set(sign * (leafWidth / 2), 2.15, 0);
+    leafGroup.add(glassBezel);
+
+    // Vertical polished brass architectural pull handle
+    const handleX = sign * (leafWidth - 0.14);
+    const handleY = 1.42;
+
+    const pullRodFront = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.016, 0.016, 0.68, 16),
+      brassTrimMaterial
+    );
+    pullRodFront.position.set(handleX, handleY, 0.075);
+    leafGroup.add(pullRodFront);
+
+    const pullRodBack = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.016, 0.016, 0.68, 16),
+      brassTrimMaterial
+    );
+    pullRodBack.position.set(handleX, handleY, -0.075);
+    leafGroup.add(pullRodBack);
+
+    // Handle standoffs
+    [-0.28, 0.28].forEach((offsetY) => {
+      const standoffF = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.012, 0.012, 0.07, 12),
+        brassTrimMaterial
+      );
+      standoffF.rotation.x = Math.PI / 2;
+      standoffF.position.set(handleX, handleY + offsetY, 0.04);
+      leafGroup.add(standoffF);
+
+      const standoffB = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.012, 0.012, 0.07, 12),
+        brassTrimMaterial
+      );
+      standoffB.rotation.x = Math.PI / 2;
+      standoffB.position.set(handleX, handleY + offsetY, -0.04);
+      leafGroup.add(standoffB);
+    });
+
+    // Brass push/escutcheon plate
+    const escutcheon = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.22, leafThick + 0.015),
+      brassTrimMaterial
+    );
+    escutcheon.position.set(handleX, 0.98, 0);
+    leafGroup.add(escutcheon);
+
+    return leafGroup;
+  };
+
+  leftDoorHinge.add(createDoorLeaf(true));
+  rightDoorHinge.add(createDoorLeaf(false));
+
+  // Invisible proxy box for responsive raycasting and click detection
+  const doorRayProxy = new THREE.Mesh(
+    new THREE.BoxGeometry(2.6, 3.4, 0.8),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+  );
+  doorRayProxy.position.set(0, 1.7, 0);
+  doorGroup.add(doorRayProxy);
+
+  registerTarget(doorRayProxy, {
     id: 'astro-door',
     activityId: 'door',
     category: 'CAMPUS HALLWAY',
@@ -943,28 +1327,162 @@ export function createAstroScene(
   const onPointerLockChange = () => {
     pointerLocked = document.pointerLockElement === renderer.domElement;
     callbacks.onPointerLockChange?.(pointerLocked);
+    if (!pointerLocked) {
+      renderer.domElement.style.cursor = 'grab';
+    }
   };
   document.addEventListener('pointerlockchange', onPointerLockChange);
 
+  // Mouse move in Pointer Lock mode (FPS)
   const onMouseMove = (event: MouseEvent) => {
     if (!pointerLocked) return;
-    const sensitivity = 0.0022;
+    const sensitivity = 0.0024;
     playerYaw -= event.movementX * sensitivity;
-    playerPitch = Math.max(-1.3, Math.min(1.2, playerPitch - event.movementY * sensitivity));
+    playerPitch = Math.max(-1.25, Math.min(1.20, playerPitch - event.movementY * sensitivity));
+    updateCamera();
   };
   window.addEventListener('mousemove', onMouseMove);
 
-  // Keyboard navigation
+  // --- Drag-to-Look Pointer Controls on Canvas (Desktop Drag & Touch) ---
+  let isDragging = false;
+  let dragPointerId: number | null = null;
+  let lastPointerX = 0;
+  let lastPointerY = 0;
+  let pointerDownX = 0;
+  let pointerDownY = 0;
+  let pointerDownTime = 0;
+  const turning = { left: false, right: false };
+
+  renderer.domElement.style.touchAction = 'none';
+  renderer.domElement.style.cursor = 'grab';
+
+  const checkHoverCursor = (clientX: number, clientY: number) => {
+    if (pointerLocked || isDragging) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(interactiveObjects, false);
+    let isHovering = false;
+    for (const hit of intersects) {
+      if (hit.distance < 6.5 && interactionByObject.has(hit.object)) {
+        isHovering = true;
+        break;
+      }
+    }
+    renderer.domElement.style.cursor = isHovering ? 'pointer' : 'grab';
+  };
+
+  const handleCanvasClick = (clientX: number, clientY: number) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(interactiveObjects, false);
+    for (const hit of intersects) {
+      if (hit.distance < 6.5) {
+        const info = interactionByObject.get(hit.object);
+        if (info) {
+          if (info.activityId === 'door') {
+            callbacks.onActivityInteract?.('door');
+          } else {
+            callbacks.onActivityInteract?.(info.activityId as AstroActivityId);
+          }
+          return;
+        }
+      }
+    }
+    // If not clicking an interactive object, clicking canvas requests pointer lock
+    renderer.domElement.requestPointerLock?.();
+  };
+
+  const onPointerDown = (e: PointerEvent) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    isDragging = true;
+    dragPointerId = e.pointerId;
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
+    pointerDownX = e.clientX;
+    pointerDownY = e.clientY;
+    pointerDownTime = performance.now();
+    try {
+      renderer.domElement.setPointerCapture(e.pointerId);
+    } catch {}
+    renderer.domElement.style.cursor = 'grabbing';
+  };
+
+  const onPointerMove = (e: PointerEvent) => {
+    if (pointerLocked) return;
+
+    if (!isDragging || e.pointerId !== dragPointerId) {
+      checkHoverCursor(e.clientX, e.clientY);
+      return;
+    }
+
+    const deltaX = e.clientX - lastPointerX;
+    const deltaY = e.clientY - lastPointerY;
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
+
+    const sensitivity = 0.0042;
+    playerYaw -= deltaX * sensitivity;
+    playerPitch = Math.max(-1.25, Math.min(1.20, playerPitch - deltaY * sensitivity));
+    updateCamera();
+  };
+
+  const onPointerUp = (e: PointerEvent) => {
+    if (e.pointerId !== dragPointerId) return;
+    isDragging = false;
+    dragPointerId = null;
+    try {
+      renderer.domElement.releasePointerCapture(e.pointerId);
+    } catch {}
+    renderer.domElement.style.cursor = 'grab';
+
+    const travel = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
+    const duration = performance.now() - pointerDownTime;
+    if (travel < 8 && duration < 400) {
+      handleCanvasClick(e.clientX, e.clientY);
+    }
+  };
+
+  const onPointerCancel = (e: PointerEvent) => {
+    if (e.pointerId === dragPointerId) {
+      isDragging = false;
+      dragPointerId = null;
+      try {
+        renderer.domElement.releasePointerCapture(e.pointerId);
+      } catch {}
+      renderer.domElement.style.cursor = 'grab';
+    }
+  };
+
+  renderer.domElement.addEventListener('pointerdown', onPointerDown);
+  renderer.domElement.addEventListener('pointermove', onPointerMove);
+  renderer.domElement.addEventListener('pointerup', onPointerUp);
+  renderer.domElement.addEventListener('pointercancel', onPointerCancel);
+
+  // Keyboard navigation & turning
   const onKeyDown = (event: KeyboardEvent) => {
     const el = event.target as HTMLElement | null;
     if (el && el.matches('input, textarea, select, button')) return;
 
+    // Translation movement: WASD or ArrowUp/Down
     if (event.code === 'KeyW' || event.code === 'ArrowUp') movement.forward = true;
     if (event.code === 'KeyS' || event.code === 'ArrowDown') movement.backward = true;
-    if (event.code === 'KeyA' || event.code === 'ArrowLeft') movement.left = true;
-    if (event.code === 'KeyD' || event.code === 'ArrowRight') movement.right = true;
+    if (event.code === 'KeyA') movement.left = true;
+    if (event.code === 'KeyD') movement.right = true;
     if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') movement.shift = true;
 
+    // Camera Yaw Rotation: ArrowLeft / ArrowRight or Q
+    if (event.code === 'ArrowLeft' || event.code === 'KeyQ') turning.left = true;
+    if (event.code === 'ArrowRight') turning.right = true;
+
+    // Station Interaction
     if (event.code === 'KeyE') {
       if (currentInteraction) {
         if (currentInteraction.activityId === 'door') {
@@ -972,6 +1490,8 @@ export function createAstroScene(
         } else {
           callbacks.onActivityInteract?.(currentInteraction.activityId as AstroActivityId);
         }
+      } else {
+        turning.right = true;
       }
     }
   };
@@ -979,9 +1499,13 @@ export function createAstroScene(
   const onKeyUp = (event: KeyboardEvent) => {
     if (event.code === 'KeyW' || event.code === 'ArrowUp') movement.forward = false;
     if (event.code === 'KeyS' || event.code === 'ArrowDown') movement.backward = false;
-    if (event.code === 'KeyA' || event.code === 'ArrowLeft') movement.left = false;
-    if (event.code === 'KeyD' || event.code === 'ArrowRight') movement.right = false;
+    if (event.code === 'KeyA') movement.left = false;
+    if (event.code === 'KeyD') movement.right = false;
     if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') movement.shift = false;
+
+    if (event.code === 'ArrowLeft' || event.code === 'KeyQ') turning.left = false;
+    if (event.code === 'ArrowRight') turning.right = false;
+    if (event.code === 'KeyE') turning.right = false;
   };
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
@@ -1015,6 +1539,17 @@ export function createAstroScene(
 
     // Guide NPC subtle breathing
     npcGroup.position.y = Math.sin(now * 0.002) * 0.008;
+
+    // Smooth keyboard turning
+    const turnSpeed = 2.1;
+    if (turning.left) {
+      playerYaw += turnSpeed * delta;
+      updateCamera();
+    }
+    if (turning.right) {
+      playerYaw -= turnSpeed * delta;
+      updateCamera();
+    }
 
     // Compute player movement vector
     let moveForward = 0;
@@ -1101,12 +1636,18 @@ export function createAstroScene(
   };
   animate();
 
+  let doorAnimating = false;
+
   return {
     dispose: () => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', onResize);
       document.removeEventListener('pointerlockchange', onPointerLockChange);
       window.removeEventListener('mousemove', onMouseMove);
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
+      renderer.domElement.removeEventListener('pointerup', onPointerUp);
+      renderer.domElement.removeEventListener('pointercancel', onPointerCancel);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       character.dispose();
@@ -1125,17 +1666,27 @@ export function createAstroScene(
       }
     },
     openDoor: (onOpened) => {
-      // Animate door leaves swinging open
-      let openProgress = 0;
-      const swingInterval = setInterval(() => {
-        openProgress += 0.08;
-        doorLeft.rotation.y = -openProgress * (Math.PI / 2);
-        doorRight.rotation.y = openProgress * (Math.PI / 2);
-        if (openProgress >= 0.95) {
-          clearInterval(swingInterval);
+      if (doorAnimating) return;
+      doorAnimating = true;
+      const startTime = performance.now();
+      const duration = 750; // ms
+      const animateDoor = (currentTime: number) => {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        // Smooth cubic ease out
+        const ease = 1 - Math.pow(1 - progress, 3);
+        const targetAngle = Math.PI * 0.48; // ~86 degrees outward
+        leftDoorHinge.rotation.y = -targetAngle * ease;
+        rightDoorHinge.rotation.y = targetAngle * ease;
+
+        if (progress < 1) {
+          requestAnimationFrame(animateDoor);
+        } else {
+          doorAnimating = false;
           onOpened?.();
         }
-      }, 30);
+      };
+      requestAnimationFrame(animateDoor);
     },
     requestPointerLock: () => {
       renderer.domElement.requestPointerLock?.();
