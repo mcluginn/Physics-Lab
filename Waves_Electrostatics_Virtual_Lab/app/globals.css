@@ -2941,6 +2941,51 @@ button { color: inherit; }
   padding-bottom: 12px;
   margin-bottom: 20px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+  scrollbar-width: thin;
+}
+
+.constellation-tab-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 8px 14px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(129, 140, 248, 0.28);
+  border-radius: 8px;
+  color: #cbd5e1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+  text-align: left;
+}
+
+.constellation-tab-btn:hover {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(129, 140, 248, 0.55);
+  color: #ffffff;
+}
+
+.constellation-tab-btn.active {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.35) 0%, rgba(30, 41, 59, 0.95) 100%);
+  border-color: #818cf8;
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(99, 102, 241, 0.3);
+}
+
+.constellation-tab-btn b {
+  font-size: 13px;
+  color: #f1f5f9;
+}
+
+.constellation-tab-btn small {
+  font-size: 10.5px;
+  color: #94a3b8;
+}
+
+.constellation-tab-btn.active small {
+  color: #c7d2fe;
 }
 
 .constellation-detail-card {
@@ -3045,6 +3090,51 @@ button { color: inherit; }
   padding-bottom: 12px;
   margin-bottom: 20px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+  scrollbar-width: thin;
+}
+
+.mission-tab-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 8px 14px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 8px;
+  color: #cbd5e1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+  text-align: left;
+}
+
+.mission-tab-btn:hover {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(56, 189, 248, 0.55);
+  color: #ffffff;
+}
+
+.mission-tab-btn.active {
+  background: linear-gradient(135deg, rgba(14, 116, 144, 0.35) 0%, rgba(30, 41, 59, 0.95) 100%);
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.3);
+}
+
+.mission-tab-btn b {
+  font-size: 13px;
+  color: #f1f5f9;
+}
+
+.mission-tab-btn small {
+  font-size: 10.5px;
+  color: #94a3b8;
+}
+
+.mission-tab-btn.active small {
+  color: #7dd3fc;
 }
 
 .mission-detail-card {
@@ -3123,6 +3213,77 @@ button { color: inherit; }
   max-height: 480px;
   overflow-y: auto;
   padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.45) rgba(15, 23, 42, 0.4);
+}
+
+.activities-rail::-webkit-scrollbar {
+  width: 5px;
+}
+
+.activities-rail::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 999px;
+}
+
+.activities-rail::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.45);
+  border-radius: 999px;
+}
+
+.activities-rail::-webkit-scrollbar-thumb:hover {
+  background: rgba(129, 140, 248, 0.7);
+}
+
+.act-rail-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  border-radius: 10px;
+  color: #e2e8f0;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  box-sizing: border-box;
+}
+
+.act-rail-btn:hover {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(129, 140, 248, 0.55);
+  transform: translateX(2px);
+  color: #ffffff;
+}
+
+.act-rail-btn.active {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.35) 0%, rgba(30, 41, 59, 0.95) 100%);
+  border: 1.5px solid #818cf8;
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.35), inset 0 0 12px rgba(129, 140, 248, 0.15);
+  color: #ffffff;
+}
+
+.act-num {
+  font-size: 11px;
+  font-weight: 800;
+  color: #818cf8;
+  letter-spacing: 0.08em;
+  font-family: ui-monospace, monospace;
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  padding: 2px 7px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.act-rail-btn.active .act-num {
+  color: #38bdf8;
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.22);
 }
 
 .act-rail-info {
@@ -3130,13 +3291,34 @@ button { color: inherit; }
   flex-direction: column;
   align-items: flex-start;
   text-align: left;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
 }
 
-.act-num {
-  font-size: 10px;
+.act-rail-info b {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 13.5px;
   font-weight: 700;
-  color: #818cf8;
-  letter-spacing: 0.05em;
+  color: #f1f5f9;
+  line-height: 1.35;
+  display: block;
+}
+
+.act-rail-btn.active .act-rail-info b {
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(129, 140, 248, 0.45);
+}
+
+.act-rail-info small {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+  display: block;
+}
+
+.act-rail-btn.active .act-rail-info small {
+  color: #c7d2fe;
 }
 
 .act-badge {
@@ -3756,7 +3938,20 @@ button { color: inherit; }
   }
 
   .activities-rail {
-    max-height: 160px !important;
+    max-height: 170px !important;
+  }
+
+  .act-rail-btn {
+    padding: 8px 10px !important;
+    gap: 8px !important;
+  }
+
+  .act-rail-info b {
+    font-size: 12px !important;
+  }
+
+  .act-rail-info small {
+    font-size: 10px !important;
   }
 
   .research-pillars-banner {
