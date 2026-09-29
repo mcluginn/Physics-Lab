@@ -1573,19 +1573,19 @@ export default function AstroExperience() {
       )}
 
       {/* ============================================================== */}
-      {/* STATION 10: GUIDE NPC MODAL */}
+      {/* STATION 10: ORIENTATION KIOSK DIRECTORY */}
       {/* ============================================================== */}
       {activeModal === 'guide' && (
         <div className="astro-modal-backdrop" onClick={() => setActiveModal(null)}>
           <div className="astro-modal-card" onClick={(e) => e.stopPropagation()}>
             <header className="astro-modal-header">
-              <span className="astro-modal-kicker">SOCIETY ORIENTATION GUIDE</span>
+              <span className="astro-modal-kicker">ROOM 04 DIRECTORY & ORIENTATION</span>
               <h2>Welcome to the Astronomical Society Room!</h2>
               <button className="astro-modal-close" onClick={() => setActiveModal(null)}>✕</button>
             </header>
             <div className="astro-modal-body">
               <p className="astro-modal-lead">
-                "Hello! Welcome to Room 04. This space explores what an astronomy-focused student organization could offer our university community."
+                Welcome to Room 04. This space explores what an astronomy-focused extracurricular student organization offers our university community.
               </p>
               <div className="guide-tour-list">
                 <div>🪐 <b>Center Table:</b> Inspect the 3D Solar System and launch NASA Eyes.</div>

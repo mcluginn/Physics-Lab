@@ -1,7 +1,6 @@
 'use client';
 
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CharacterController, type CharacterType } from './characterController';
 import type { AstroActivityId } from './astroModel';
 
@@ -993,54 +992,50 @@ export function createAstroScene(
   });
 
   // ==============================================================
-  // STATION 10: ASTRONOMY GUIDE NPC (Area J)
+  // STATION 10: SOCIETY ORIENTATION KIOSK (Area J)
+  // (Student girl model removed on Room 4 only)
   // ==============================================================
-  const npcGroup = new THREE.Group();
-  npcGroup.position.set(5.2, 0, 4.0);
-  npcGroup.rotation.y = -Math.PI / 1.5;
-  scene.add(npcGroup);
+  const kioskGroup = new THREE.Group();
+  kioskGroup.position.set(5.2, 0, 4.0);
+  kioskGroup.rotation.y = -Math.PI / 1.5;
+  scene.add(kioskGroup);
 
-  const npcProxy = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.4, 0.4, 1.85, 12),
-    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+  const kioskBase = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.32, 0.9, 16), mahoganyDeskMaterial);
+  kioskBase.position.y = 0.45;
+  kioskBase.castShadow = true;
+  kioskBase.receiveShadow = true;
+  kioskGroup.add(kioskBase);
+
+  const kioskPillar = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.3, 12), brassTrimMaterial);
+  kioskPillar.position.y = 1.0;
+  kioskGroup.add(kioskPillar);
+
+  const kioskTop = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.46), mahoganyDeskMaterial);
+  kioskTop.position.set(0, 1.15, 0);
+  kioskTop.rotation.x = -Math.PI / 6;
+  kioskTop.castShadow = true;
+  kioskGroup.add(kioskTop);
+
+  const kioskScreen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.52, 0.02, 0.38),
+    new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      emissive: 0x38bdf8,
+      emissiveIntensity: 0.35,
+      roughness: 0.2,
+    })
   );
-  npcProxy.position.y = 0.92;
-  npcGroup.add(npcProxy);
+  kioskScreen.position.set(0, 1.17, 0);
+  kioskScreen.rotation.x = -Math.PI / 6;
+  kioskGroup.add(kioskScreen);
 
-  // Load student character GLB
-  const gltfLoader = new GLTFLoader();
-  gltfLoader.load(
-    '/assets/character_student.glb',
-    (gltf) => {
-      const model = gltf.scene;
-      model.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
-      });
-      model.scale.set(1.05, 1.05, 1.05);
-      npcGroup.add(model);
-    },
-    undefined,
-    () => {
-      // Fallback stylized dummy if GLB load encounters any issue
-      const fallbackTorso = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.75, 12), new THREE.MeshStandardMaterial({ color: 0x3b82f6 }));
-      fallbackTorso.position.y = 1.0;
-      npcGroup.add(fallbackTorso);
-      const fallbackHead = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 16), new THREE.MeshStandardMaterial({ color: 0xfbbf24 }));
-      fallbackHead.position.y = 1.55;
-      npcGroup.add(fallbackHead);
-    }
-  );
-
-  registerTarget(npcProxy, {
+  registerTarget(kioskTop, {
     id: 'astro-guide',
     activityId: 'guide',
-    category: 'SOCIETY GUIDE',
-    name: 'Astronomy Club Guide',
-    action: 'TALK TO ASTRONOMY GUIDE',
-    description: 'Welcome to the Astronomical Society Room! This space explores what an astronomy-focused student organization could offer.',
+    category: 'ORIENTATION DIRECTORY',
+    name: 'Society Orientation Kiosk',
+    action: 'VIEW ORIENTATION GUIDE',
+    description: 'Welcome to the Astronomical Society Room! Interactive directory and orientation guide for all Room 04 stations.',
   });
 
   // ==============================================================
@@ -1536,9 +1531,6 @@ export function createAstroScene(
     // Sun gentle breathing pulsation
     const sunPulse = 1 + Math.sin(now * 0.003) * 0.03;
     sunMesh.scale.set(sunPulse, sunPulse, sunPulse);
-
-    // Guide NPC subtle breathing
-    npcGroup.position.y = Math.sin(now * 0.002) * 0.008;
 
     // Smooth keyboard turning
     const turnSpeed = 2.1;
