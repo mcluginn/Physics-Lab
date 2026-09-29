@@ -157,7 +157,7 @@ export default function AstroExperience() {
   const [isMobileSprint, setIsMobileSprint] = useState(false);
 
   // External Overlays
-  const [externalOverlay, setExternalOverlay] = useState<'nasa' | 'stellarium' | null>(null);
+  const [externalOverlay, setExternalOverlay] = useState<'nasa' | 'stellarium' | 'blackhole' | null>(null);
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [iframeError, setIframeError] = useState(false);
 
@@ -296,6 +296,15 @@ export default function AstroExperience() {
         if (activityId === 'door') {
           sceneApi.current?.openDoor(() => window.location.assign('/'));
           showToast('Returning to Campus Corridor...');
+          return;
+        }
+        if (activityId === 'blackhole') {
+          playCelestialChime();
+          markStationExplored('blackhole');
+          launchBlackholeOverlay();
+          try {
+            window.open('https://blackhole-simulation.vercel.app/', '_blank');
+          } catch {}
           return;
         }
         playCelestialChime();
@@ -460,6 +469,12 @@ export default function AstroExperience() {
     setIframeLoaded(false);
     setIframeError(false);
     setExternalOverlay('stellarium');
+  };
+
+  const launchBlackholeOverlay = () => {
+    setIframeLoaded(false);
+    setIframeError(false);
+    setExternalOverlay('blackhole');
   };
 
   const submitSurvey = (includeContact: boolean) => {
@@ -1953,20 +1968,80 @@ export default function AstroExperience() {
       )}
 
       {/* ============================================================== */}
-      {/* EXTERNAL IN-APP OVERLAYS: NASA EYES & STELLARIUM */}
+      {/* STATION: BLACK HOLE SIMULATION MODAL */}
+      {/* ============================================================== */}
+      {activeModal === 'blackhole' && (
+        <div className="astro-modal-backdrop" onClick={() => setActiveModal(null)}>
+          <div className="astro-modal-card" onClick={(e) => e.stopPropagation()}>
+            <header className="astro-modal-header">
+              <span className="astro-modal-kicker">ASTROPHYSICS & GENERAL RELATIVITY</span>
+              <h2>Relativistic Black Hole Simulation</h2>
+              <button className="astro-modal-close" onClick={() => setActiveModal(null)}>✕</button>
+            </header>
+            <div className="astro-modal-body">
+              <div className="astro-status-badge">
+                <span>INTERACTIVE 3D SIMULATION · GENERAL RELATIVITY</span>
+              </div>
+              <p className="astro-modal-lead">
+                Explore interactive general relativity, gravitational lensing, accretion disk dynamics, the photon sphere, and spacetime curvature around a supermassive black hole.
+              </p>
+
+              <div className="astro-action-card">
+                <div className="astro-action-info">
+                  <h3>Interactive Black Hole Experience</h3>
+                  <p>Simulate light rays bending around the event horizon in real time with relativistic ray tracing and accretion disk glow.</p>
+                  <small className="attribution-tag">Direct Link: https://blackhole-simulation.vercel.app/</small>
+                </div>
+                <div className="astro-btn-group">
+                  <button className="btn-astro-primary" onClick={launchBlackholeOverlay}>
+                    🪐 Launch In-Room Simulation Overlay
+                  </button>
+                  <a
+                    href="https://blackhole-simulation.vercel.app/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-astro-secondary"
+                  >
+                    ↗ Go to blackhole-simulation.vercel.app
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* EXTERNAL IN-APP OVERLAYS: NASA EYES, STELLARIUM & BLACK HOLE */}
       {/* ============================================================== */}
       {externalOverlay && (
         <div className="astro-external-overlay" role="dialog" aria-modal="true">
           <header className="overlay-header">
             <div className="overlay-title-group">
-              <b>{externalOverlay === 'nasa' ? 'NASA Eyes on the Solar System' : 'Stellarium Web Planetarium'}</b>
+              <b>
+                {externalOverlay === 'nasa'
+                  ? 'NASA Eyes on the Solar System'
+                  : externalOverlay === 'stellarium'
+                  ? 'Stellarium Web Planetarium'
+                  : 'Relativistic Black Hole & Accretion Disk Simulation'}
+              </b>
               <span className="attribution-tag">
-                {externalOverlay === 'nasa' ? 'Interactive resource: NASA Eyes' : 'Interactive resource: Stellarium Web'}
+                {externalOverlay === 'nasa'
+                  ? 'Interactive resource: NASA Eyes'
+                  : externalOverlay === 'stellarium'
+                  ? 'Interactive resource: Stellarium Web'
+                  : 'Interactive simulation: blackhole-simulation.vercel.app'}
               </span>
             </div>
             <div className="overlay-btn-group">
               <a
-                href={externalOverlay === 'nasa' ? 'https://eyes.nasa.gov/apps/solar-system/' : 'https://stellarium-web.org/'}
+                href={
+                  externalOverlay === 'nasa'
+                    ? 'https://eyes.nasa.gov/apps/solar-system/'
+                    : externalOverlay === 'stellarium'
+                    ? 'https://stellarium-web.org/'
+                    : 'https://blackhole-simulation.vercel.app/'
+                }
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-overlay-newtab"
@@ -1984,7 +2059,7 @@ export default function AstroExperience() {
               <div className="overlay-loading">
                 <div className="spinner" />
                 <p>Loading interactive simulation...</p>
-                <small>If your browser or school network restricts embedded frames, click "Open in New Tab" above.</small>
+                <small>If your browser or network restricts embedded frames, click "Open in New Tab" above.</small>
               </div>
             )}
 
@@ -1992,7 +2067,13 @@ export default function AstroExperience() {
               <div className="overlay-error">
                 <p>Embedding is restricted by browser security or network policy.</p>
                 <a
-                  href={externalOverlay === 'nasa' ? 'https://eyes.nasa.gov/apps/solar-system/' : 'https://stellarium-web.org/'}
+                  href={
+                    externalOverlay === 'nasa'
+                      ? 'https://eyes.nasa.gov/apps/solar-system/'
+                      : externalOverlay === 'stellarium'
+                      ? 'https://stellarium-web.org/'
+                      : 'https://blackhole-simulation.vercel.app/'
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn-astro-primary"
@@ -2003,8 +2084,20 @@ export default function AstroExperience() {
             )}
 
             <iframe
-              src={externalOverlay === 'nasa' ? 'https://eyes.nasa.gov/apps/solar-system/' : 'https://stellarium-web.org/'}
-              title={externalOverlay === 'nasa' ? 'NASA Eyes on the Solar System' : 'Stellarium Web Planetarium'}
+              src={
+                externalOverlay === 'nasa'
+                  ? 'https://eyes.nasa.gov/apps/solar-system/'
+                  : externalOverlay === 'stellarium'
+                  ? 'https://stellarium-web.org/'
+                  : 'https://blackhole-simulation.vercel.app/'
+              }
+              title={
+                externalOverlay === 'nasa'
+                  ? 'NASA Eyes on the Solar System'
+                  : externalOverlay === 'stellarium'
+                  ? 'Stellarium Web Planetarium'
+                  : 'Relativistic Black Hole Simulation'
+              }
               className="astro-iframe"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms"

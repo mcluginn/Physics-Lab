@@ -2091,14 +2091,59 @@ export function createAstroScene(
   scene.add(armillarySpot);
   scene.add(armillarySpot.target);
 
-  registerTarget(pedestalCap, {
-    id: 'astro-armillary',
-    activityId: 'virtual_observatory',
-    category: 'HISTORICAL INSTRUMENT',
-    name: 'Renaissance Armillary Sphere',
-    action: 'INSPECT CELESTIAL SPHERE',
-    description: 'A classical mechanical model of the celestial sphere. Rings depict the celestial equator, ecliptic plane, tropics, and meridian rings used by ancient and Renaissance astronomers.',
-  });
+  // Comprehensive click & raycast proxy surrounding entire Armillary Sphere & pedestal
+  const armillaryProxy = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.68, 0.68, 2.2, 16),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+  );
+  armillaryProxy.position.set(0, 1.1, 0);
+  armillaryGroup.add(armillaryProxy);
+
+  // Brass identification placard with blackhole simulation inscription
+  const createBlackHolePlacardTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#100804';
+    ctx.fillRect(0, 0, 512, 128);
+    ctx.strokeStyle = '#d4af37';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(6, 6, 500, 116);
+    ctx.fillStyle = '#fef08a';
+    ctx.font = 'bold 26px "Cinzel", Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('✦ BLACK HOLE SIMULATION ✦', 256, 44);
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = 'bold 18px monospace';
+    ctx.fillText('blackhole-simulation.vercel.app', 256, 84);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  };
+
+  const placardTex = createBlackHolePlacardTexture();
+  const placardFace = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.27, 0.075),
+    new THREE.MeshStandardMaterial({ map: placardTex, roughness: 0.35, metalness: 0.6 })
+  );
+  placardFace.position.set(0, 0.65, 0.272);
+  armillaryGroup.add(placardFace);
+
+  const blackholeInteraction: AstroInteraction = {
+    id: 'astro-armillary-blackhole',
+    activityId: 'blackhole',
+    category: 'ASTROPHYSICS SIMULATION',
+    name: 'Relativistic Black Hole Simulation',
+    action: 'GO TO BLACK HOLE SIMULATION',
+    description: 'Launch the interactive general relativistic black hole and accretion disk simulation at https://blackhole-simulation.vercel.app/.',
+  };
+
+  registerTarget(armillaryProxy, blackholeInteraction);
+  registerTarget(pedestalCap, blackholeInteraction);
+  registerTarget(standBase, blackholeInteraction);
+  registerTarget(placardFace, blackholeInteraction);
 
   // ==============================================================
   // EXIT DOORWAY BACK TO CAMPUS HALLWAY
@@ -3492,6 +3537,7 @@ export function createAstroScene(
         space_missions: { x: -6.5, z: -5.5, yaw: Math.PI / 2 },
         society_information: { x: 4.5, z: 2.5, yaw: -Math.PI * 0.3 },
         membership_survey: { x: 3.5, z: 2.2, yaw: 0 },
+        blackhole: { x: 3.2, z: -5.8, yaw: -Math.PI * 0.75 },
       };
       const pos = positions[activityId];
       if (pos) {

@@ -9,7 +9,8 @@ export type AstroActivityId =
   | 'research'
   | 'constellations'
   | 'space_missions'
-  | 'membership_survey';
+  | 'membership_survey'
+  | 'blackhole';
 
 export const TOTAL_EXPLORATION_STATIONS = 8;
 
