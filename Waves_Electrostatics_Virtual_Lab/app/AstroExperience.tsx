@@ -1126,31 +1126,7 @@ export default function AstroExperience() {
                 The UPHSD Astronomical Society is a proposed student-led academic and extracurricular organization dedicated to observational astronomy, astrophysics discussions, and hands-on space science exploration.
               </p>
 
-              <div className="astro-pillars-grid">
-                <div className="pillar-card">
-                  <h3>🎯 Our Mission</h3>
-                  <p>To foster curiosity, scientific literacy, and camaraderie among students through observational astronomy, astrophysics colloquia, and community stargazing.</p>
-                </div>
-                <div className="pillar-card">
-                  <h3>🔭 Our Vision</h3>
-                  <p>A thriving university campus where every student has the opportunity to look through a telescope, discover cosmic wonders, and engage with space science.</p>
-                </div>
-                <div className="pillar-card">
-                  <h3>👥 Who Can Join?</h3>
-                  <p>Open to <strong>all students across all programs and year levels</strong>. Zero prior physics, math, or telescopic experience is required — only genuine curiosity!</p>
-                </div>
-                <div className="pillar-card">
-                  <h3>🤝 Possible Roles</h3>
-                  <p>Telescope Operators · Astrophotographers · Research & Citizen Science · Event Planners · Science Writers · Social Media & Graphics Designers.</p>
-                </div>
-              </div>
 
-              <div className="astro-disclaimer-card">
-                <b>Institutional & Partner Transparency:</b>
-                <p>
-                  This organization is currently in proposal and developmental stages. Exploration of this room or participation in the survey does not create legal club membership or institutional dues. External astronomy resources (NASA, Stellarium) are educational tools and do not imply endorsement or partnership.
-                </p>
-              </div>
 
               <div className="astro-btn-center">
                 <button className="btn-astro-primary" onClick={() => setActiveModal('membership_survey')}>
