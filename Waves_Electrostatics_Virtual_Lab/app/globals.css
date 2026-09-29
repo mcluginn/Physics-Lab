@@ -4307,39 +4307,14 @@ button { color: inherit; }
 /* ============================================================== */
 /* 🎵 THE SOUND OF SPACE · CINEMATIC MUSIC PLAYER WIDGET */
 /* ============================================================== */
-.astro-music-player {
-  position: fixed;
-  bottom: 58px;
-  right: 24px;
-  z-index: 90;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  pointer-events: auto;
-  user-select: none;
-  font-family: inherit;
-}
-
+.astro-music-player,
 .astro-music-pill {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(10, 16, 34, 0.88);
-  border: 1px solid rgba(99, 102, 241, 0.45);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(99, 102, 241, 0.2);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-radius: 999px;
-  padding: 6px 14px 6px 12px;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: none !important;
 }
 
-.astro-music-pill:hover {
-  background: rgba(15, 23, 48, 0.95);
-  border-color: rgba(129, 140, 248, 0.7);
-  box-shadow: 0 10px 38px rgba(0, 0, 0, 0.55), 0 0 24px rgba(99, 102, 241, 0.35);
-  transform: translateY(-2px);
+.astro-music-modal-card {
+  max-width: 520px !important;
+  width: min(520px, calc(100vw - 32px)) !important;
 }
 
 /* Frequency visualizer bars */

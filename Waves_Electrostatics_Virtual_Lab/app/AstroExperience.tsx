@@ -824,154 +824,111 @@ export default function AstroExperience() {
       )}
 
       {/* ============================================================== */}
-      {/* 🎵 THE SOUND OF SPACE · CINEMATIC MUSIC PLAYER WIDGET */}
+      {/* 🎵 THE SOUND OF SPACE · CINEMATIC MUSIC SETTINGS MODAL */}
+      {/* Hidden from floating view; only opened on-demand from controls */}
       {/* ============================================================== */}
-      <div className={`astro-music-player ${musicWidgetExpanded ? 'expanded' : 'compact'}`}>
-        <div
-          className="astro-music-pill"
-          onClick={() => {
-            setMusicWidgetExpanded((v) => !v);
-            ensureAudioContext();
-            getOrCreateSpaceMusic();
-          }}
-          role="button"
-          tabIndex={0}
-          title="Click to toggle 'THE SOUND OF SPACE' music controls"
-        >
-          <div className="astro-music-bars" aria-hidden="true">
-            <span className={`bar b1 ${soundEnabled && isMusicActive ? 'playing' : ''}`} />
-            <span className={`bar b2 ${soundEnabled && isMusicActive ? 'playing' : ''}`} />
-            <span className={`bar b3 ${soundEnabled && isMusicActive ? 'playing' : ''}`} />
-            <span className={`bar b4 ${soundEnabled && isMusicActive ? 'playing' : ''}`} />
-          </div>
-          <div className="astro-music-pill-info">
-            <span className="astro-music-badge">🎵 THE SOUND OF SPACE</span>
-            <small className="astro-music-tagline">
-              {soundEnabled && isMusicActive
-                ? SPACE_MOVEMENTS.find((m) => m.id === musicMovement)?.name.split(':')[1]?.trim() || 'Cinematic Music'
-                : 'Paused / Muted'}
-            </small>
-          </div>
-          <button
-            type="button"
-            className="astro-music-toggle-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              const next = !isMusicActive;
-              setIsMusicActive(next);
-              if (next) {
-                ensureAudioContext();
-                getOrCreateSpaceMusic();
-                showToast('🎵 Space Music Resumed');
-              } else {
-                showToast('🔇 Space Music Paused');
-              }
-            }}
-            title={isMusicActive && soundEnabled ? 'Pause Space Music' : 'Play Space Music'}
-          >
-            {isMusicActive && soundEnabled ? '⏸' : '▶'}
-          </button>
-          <span className="astro-music-expand-arrow">{musicWidgetExpanded ? '▼' : '▲'}</span>
-        </div>
-
-        {musicWidgetExpanded && (
-          <div className="astro-music-drawer" onClick={(e) => e.stopPropagation()}>
-            <div className="astro-music-drawer-header">
-              <div className="astro-music-drawer-title">
-                <div>
-                  <span className="astro-modal-kicker">CINEMATIC COSMIC AMBIENCE</span>
-                  <h3>🎵 THE SOUND OF SPACE</h3>
-                </div>
-                <button
-                  type="button"
-                  className="astro-music-drawer-close"
-                  onClick={() => setMusicWidgetExpanded(false)}
-                  title="Close Music Controls"
-                >
-                  ✕
-                </button>
+      {musicWidgetExpanded && (
+        <div className="astro-modal-backdrop" onClick={() => setMusicWidgetExpanded(false)}>
+          <div className="astro-modal-card astro-music-modal-card" onClick={(e) => e.stopPropagation()}>
+            <header className="astro-modal-header">
+              <div className="astro-modal-title-group">
+                <span className="astro-modal-kicker">CINEMATIC COSMIC AMBIENCE</span>
+                <h2>🎵 THE SOUND OF SPACE</h2>
               </div>
-              <p>Explore cinematic music inspired by humanity&apos;s fascination with the cosmos.</p>
-            </div>
+              <button
+                type="button"
+                className="astro-modal-close"
+                onClick={() => setMusicWidgetExpanded(false)}
+                title="Close Music Settings"
+              >
+                ✕
+              </button>
+            </header>
 
-            <div className="astro-music-movements">
-              <span className="astro-music-label">COSMIC MOVEMENTS</span>
-              <div className="astro-music-movement-list">
-                {SPACE_MOVEMENTS.map((mov) => (
-                  <button
-                    key={mov.id}
-                    type="button"
-                    className={`astro-movement-card ${musicMovement === mov.id ? 'active' : ''}`}
-                    onClick={() => {
-                      setMusicMovement(mov.id);
-                      ensureAudioContext();
-                      getOrCreateSpaceMusic()?.setMovement(mov.id);
-                      showToast(`🎵 Switched to ${mov.name}`);
+            <div className="astro-modal-body">
+              <p className="astro-modal-lead">
+                Explore cinematic music inspired by humanity&apos;s fascination with the cosmos.
+              </p>
+
+              <div className="astro-music-movements">
+                <span className="astro-music-label">COSMIC MOVEMENTS</span>
+                <div className="astro-music-movement-list">
+                  {SPACE_MOVEMENTS.map((mov) => (
+                    <button
+                      key={mov.id}
+                      type="button"
+                      className={`astro-movement-card ${musicMovement === mov.id ? 'active' : ''}`}
+                      onClick={() => {
+                        setMusicMovement(mov.id);
+                        ensureAudioContext();
+                        getOrCreateSpaceMusic()?.setMovement(mov.id);
+                        showToast(`🎵 Switched to ${mov.name}`);
+                      }}
+                    >
+                      <span className="mov-icon">{mov.icon}</span>
+                      <div className="mov-details">
+                        <strong>{mov.name}</strong>
+                        <small>{mov.subtitle}</small>
+                        <p className="mov-desc">{mov.description}</p>
+                      </div>
+                      {musicMovement === mov.id && <span className="mov-active-tag">✦ PLAYING</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="astro-music-controls-row">
+                <div className="astro-music-vol-group">
+                  <div className="vol-header">
+                    <span>🔊 Master Music Volume</span>
+                    <b>{Math.round(soundVolume * 100)}%</b>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={soundVolume}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setSoundVolume(v);
+                      spaceMusicRef.current?.setVolume(v);
                     }}
-                  >
-                    <span className="mov-icon">{mov.icon}</span>
-                    <div className="mov-details">
-                      <strong>{mov.name}</strong>
-                      <small>{mov.subtitle}</small>
-                      <p className="mov-desc">{mov.description}</p>
-                    </div>
-                    {musicMovement === mov.id && <span className="mov-active-tag">✦ PLAYING</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="astro-music-controls-row">
-              <div className="astro-music-vol-group">
-                <div className="vol-header">
-                  <span>🔊 Master Music Volume</span>
-                  <b>{Math.round(soundVolume * 100)}%</b>
+                    aria-label="Cosmic Music Volume"
+                  />
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={soundVolume}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setSoundVolume(v);
-                    spaceMusicRef.current?.setVolume(v);
-                  }}
-                  aria-label="Cosmic Music Volume"
-                />
-              </div>
-              <div className="astro-music-btn-cluster">
-                <button
-                  type="button"
-                  className={`astro-music-btn ${soundEnabled && isMusicActive ? 'active' : 'muted'}`}
-                  onClick={() => {
-                    if (!soundEnabled) {
-                      setSoundEnabled(true);
-                      setIsMusicActive(true);
-                      ensureAudioContext();
-                      getOrCreateSpaceMusic();
-                      showToast('🔊 Sound & Space Music Enabled');
-                    } else {
-                      const next = !isMusicActive;
-                      setIsMusicActive(next);
-                      if (next) {
+                <div className="astro-music-btn-cluster">
+                  <button
+                    type="button"
+                    className={`astro-music-btn ${soundEnabled && isMusicActive ? 'active' : 'muted'}`}
+                    onClick={() => {
+                      if (!soundEnabled) {
+                        setSoundEnabled(true);
+                        setIsMusicActive(true);
                         ensureAudioContext();
                         getOrCreateSpaceMusic();
-                        showToast('🎵 Space Music Playing');
+                        showToast('🔊 Sound & Space Music Enabled');
                       } else {
-                        showToast('🔇 Space Music Muted');
+                        const next = !isMusicActive;
+                        setIsMusicActive(next);
+                        if (next) {
+                          ensureAudioContext();
+                          getOrCreateSpaceMusic();
+                          showToast('🎵 Space Music Playing');
+                        } else {
+                          showToast('🔇 Space Music Muted');
+                        }
                       }
-                    }
-                  }}
-                >
-                  {soundEnabled && isMusicActive ? '🔊 Music Playing' : '🔇 Music Muted'}
-                </button>
+                    }}
+                  >
+                    {soundEnabled && isMusicActive ? '🔊 Music Playing' : '🔇 Music Muted'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ============================================================== */}
       {/* STATION 2: SOLAR SYSTEM BRIEFING MODAL */}
