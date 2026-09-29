@@ -26,6 +26,7 @@ export type AstroSceneApi = {
   getCharacter: () => CharacterType;
   setMove: (direction: 'forward' | 'backward' | 'left' | 'right', active: boolean) => void;
   setMoveVector: (right: number, forward: number) => void;
+  setSprint: (active: boolean) => void;
   teleportTo: (activityId: AstroActivityId) => void;
 };
 
@@ -983,59 +984,603 @@ export function createAstroScene(
   photoDeskGroup.rotation.y = Math.PI / 4;
   scene.add(photoDeskGroup);
 
-  // Desk
-  const photoTable = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.82, 0.9), mahoganyDeskMaterial);
+  // 1. Invisible Raycast Interaction Hitbox Proxy (Covers entire station volume)
+  const photoRaycastHitbox = new THREE.Mesh(
+    new THREE.BoxGeometry(2.5, 2.2, 1.5),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+  );
+  photoRaycastHitbox.position.set(0, 1.05, 0);
+  photoDeskGroup.add(photoRaycastHitbox);
+
+  // 2. High-Grade Mahogany Desk with Beveled Trim & Brass Corner Brackets
+  const photoTable = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.82, 0.95), mahoganyDeskMaterial);
   photoTable.position.set(0, 0.41, 0);
   photoTable.castShadow = true;
   photoTable.receiveShadow = true;
   photoDeskGroup.add(photoTable);
 
-  // DSLR Camera with telephoto prime lens on mini tripod
+  const photoTableBrassTrim = new THREE.Mesh(new THREE.BoxGeometry(2.22, 0.03, 0.97), brassTrimMaterial);
+  photoTableBrassTrim.position.set(0, 0.81, 0);
+  photoDeskGroup.add(photoTableBrassTrim);
+
+  // Under-desk storage shelf
+  const photoShelf = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.03, 0.82), mahoganyDeskMaterial);
+  photoShelf.position.set(0, 0.18, 0);
+  photoDeskGroup.add(photoShelf);
+
+  // 3. Ergonomic Laboratory Swivel Chair behind the desk
+  const photoChairGroup = new THREE.Group();
+  photoChairGroup.position.set(0, 0, 0.85);
+  photoDeskGroup.add(photoChairGroup);
+
+  const chairBase = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.38, 12), brassTrimMaterial);
+  chairBase.position.set(0, 0.19, 0);
+  photoChairGroup.add(chairBase);
+
+  for (let i = 0; i < 5; i++) {
+    const angle = (i * Math.PI * 2) / 5;
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 0.28), new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.8 }));
+    leg.position.set(Math.sin(angle) * 0.14, 0.06, Math.cos(angle) * 0.14);
+    leg.rotation.y = angle;
+    photoChairGroup.add(leg);
+
+    const caster = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 8), new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.6 }));
+    caster.position.set(Math.sin(angle) * 0.26, 0.03, Math.cos(angle) * 0.26);
+    photoChairGroup.add(caster);
+  }
+
+  const chairSeat = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.07, 0.46), new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6 }));
+  chairSeat.position.set(0, 0.44, 0);
+  chairSeat.castShadow = true;
+  photoChairGroup.add(chairSeat);
+
+  const chairBackStem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.38, 8), brassTrimMaterial);
+  chairBackStem.position.set(0, 0.62, 0.22);
+  chairBackStem.rotation.x = -0.15;
+  photoChairGroup.add(chairBackStem);
+
+  const chairBack = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.42, 0.04), new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 }));
+  chairBack.position.set(0, 0.80, 0.25);
+  chairBack.rotation.x = -0.15;
+  chairBack.castShadow = true;
+  photoChairGroup.add(chairBack);
+
+  // 4. Heavy-Duty Equatorial Star Tracker Mount (Desk left side)
+  const trackerMountGroup = new THREE.Group();
+  trackerMountGroup.position.set(-0.55, 0.82, -0.05);
+  photoDeskGroup.add(trackerMountGroup);
+
+  const cfLegMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.5, metalness: 0.4 });
+  const redAnodizedMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.25, metalness: 0.85 });
+  const machinedMetalMat = new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.3, metalness: 0.8 });
+
+  for (let l = 0; l < 3; l++) {
+    const lAngle = (l * Math.PI * 2) / 3;
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.012, 0.24, 12), cfLegMat);
+    leg.position.set(Math.sin(lAngle) * 0.12, 0.10, Math.cos(lAngle) * 0.12);
+    leg.rotation.z = Math.cos(lAngle) * 0.35;
+    leg.rotation.x = -Math.sin(lAngle) * 0.35;
+    trackerMountGroup.add(leg);
+
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.020, 0.03, 12), redAnodizedMat);
+    collar.position.set(Math.sin(lAngle) * 0.12, 0.14, Math.cos(lAngle) * 0.12);
+    trackerMountGroup.add(collar);
+  }
+
+  const tripodHub = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.04, 16), machinedMetalMat);
+  tripodHub.position.set(0, 0.20, 0);
+  trackerMountGroup.add(tripodHub);
+
+  const altWedge = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.08, 0.10), redAnodizedMat);
+  altWedge.position.set(0, 0.25, 0);
+  altWedge.rotation.x = -0.32; // ~14° latitude angle (Philippine celestial tracking)
+  trackerMountGroup.add(altWedge);
+
+  const trackerBody = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.11, 0.14), new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.35 }));
+  trackerBody.position.set(0, 0.33, 0);
+  trackerBody.rotation.x = -0.32;
+  trackerMountGroup.add(trackerBody);
+
+  const polarScope = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.018, 0.18, 16), brassTrimMaterial);
+  polarScope.position.set(0, 0.33, 0.06);
+  polarScope.rotation.x = Math.PI / 2 - 0.32;
+  trackerMountGroup.add(polarScope);
+
+  const cwShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.28, 12), machinedMetalMat);
+  cwShaft.position.set(-0.16, 0.31, 0);
+  cwShaft.rotation.z = Math.PI / 2.8;
+  trackerMountGroup.add(cwShaft);
+
+  const cwWeight = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.06, 16), machinedMetalMat);
+  cwWeight.position.set(-0.24, 0.24, 0);
+  cwWeight.rotation.z = Math.PI / 2.8;
+  trackerMountGroup.add(cwWeight);
+
+  // 5. High-End Astrophotography Imaging Rig (Attached to Tracker)
+  const imagingRigGroup = new THREE.Group();
+  imagingRigGroup.position.set(0, 0.44, -0.04);
+  imagingRigGroup.rotation.x = -0.32;
+  imagingRigGroup.rotation.y = 0.15;
+  trackerMountGroup.add(imagingRigGroup);
+
+  const dovetailSaddle = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.22), redAnodizedMat);
+  dovetailSaddle.position.set(0, 0, 0);
+  imagingRigGroup.add(dovetailSaddle);
+
+  [-0.06, 0.06].forEach((rz) => {
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.058, 0.025, 20), redAnodizedMat);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(0, 0.06, rz);
+    imagingRigGroup.add(ring);
+  });
+
+  // Fast Telephoto APO Astrograph (White ceramic tube with gold and carbon accents)
+  const astroScopeGroup = new THREE.Group();
+  astroScopeGroup.position.set(0, 0.06, 0);
+  imagingRigGroup.add(astroScopeGroup);
+
+  const scopeTube = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.052, 0.052, 0.32, 24),
+    new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.22, metalness: 0.1 })
+  );
+  scopeTube.rotation.x = Math.PI / 2;
+  astroScopeGroup.add(scopeTube);
+
+  const dewShield = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.060, 0.056, 0.14, 24),
+    new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.3, metalness: 0.7 })
+  );
+  dewShield.rotation.x = Math.PI / 2;
+  dewShield.position.set(0, 0, -0.21);
+  astroScopeGroup.add(dewShield);
+
+  const dewGoldRing = new THREE.Mesh(new THREE.CylinderGeometry(0.061, 0.061, 0.012, 24), brassTrimMaterial);
+  dewGoldRing.rotation.x = Math.PI / 2;
+  dewGoldRing.position.set(0, 0, -0.27);
+  astroScopeGroup.add(dewGoldRing);
+
+  // Multi-coated Emerald Green / Violet optical front glass
+  const frontOptics = new THREE.Mesh(
+    new THREE.CircleGeometry(0.052, 24),
+    new THREE.MeshPhysicalMaterial({
+      color: 0x10b981,
+      roughness: 0.05,
+      metalness: 0.1,
+      transmission: 0.88,
+      ior: 1.62,
+      reflectivity: 0.9,
+    })
+  );
+  frontOptics.position.set(0, 0, -0.26);
+  astroScopeGroup.add(frontOptics);
+
+  const focusRing = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.055, 0.055, 0.06, 24),
+    new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.85 })
+  );
+  focusRing.rotation.x = Math.PI / 2;
+  focusRing.position.set(0, 0, -0.05);
+  astroScopeGroup.add(focusRing);
+
+  const dewHeater = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.057, 0.057, 0.04, 20),
+    new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.9 })
+  );
+  dewHeater.rotation.x = Math.PI / 2;
+  dewHeater.position.set(0, 0, -0.13);
+  astroScopeGroup.add(dewHeater);
+
+  // Mini Piggyback Guide Scope & Camera
+  const guideScopeGroup = new THREE.Group();
+  guideScopeGroup.position.set(0, 0.11, -0.04);
+  astroScopeGroup.add(guideScopeGroup);
+
+  const guideTube = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.020, 0.020, 0.16, 16),
+    new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.6, roughness: 0.3 })
+  );
+  guideTube.rotation.x = Math.PI / 2;
+  guideScopeGroup.add(guideTube);
+
+  const guideCam = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.045, 16), redAnodizedMat);
+  guideCam.rotation.x = Math.PI / 2;
+  guideCam.position.set(0, 0, 0.10);
+  guideScopeGroup.add(guideCam);
+
+  // 6. Astro-Modified Mirrorless Camera Body
+  const cameraBodyGroup = new THREE.Group();
+  cameraBodyGroup.position.set(0, 0, 0.23);
+  astroScopeGroup.add(cameraBodyGroup);
+
   const cameraBody = new THREE.Mesh(
-    new THREE.BoxGeometry(0.18, 0.12, 0.10),
-    new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.4 })
+    new THREE.BoxGeometry(0.16, 0.11, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35, metalness: 0.25 })
   );
-  cameraBody.position.set(-0.45, 0.98, 0);
-  photoDeskGroup.add(cameraBody);
+  cameraBody.position.set(0, 0, 0);
+  cameraBodyGroup.add(cameraBody);
 
-  const cameraLens = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.055, 0.065, 0.28, 16),
-    new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.7, roughness: 0.3 })
+  const mountCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.044, 0.015, 20), redAnodizedMat);
+  mountCollar.rotation.x = Math.PI / 2;
+  mountCollar.position.set(0, 0, -0.045);
+  cameraBodyGroup.add(mountCollar);
+
+  const grip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.04, 0.09, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.85 })
   );
-  cameraLens.rotation.x = Math.PI / 2;
-  cameraLens.position.set(-0.45, 0.98, -0.18);
-  photoDeskGroup.add(cameraLens);
+  grip.position.set(-0.085, -0.005, -0.015);
+  cameraBodyGroup.add(grip);
 
-  // Laptop showing raw stacking UI
-  const laptopBase = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.015, 0.28), new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8 }));
-  laptopBase.position.set(0.35, 0.83, 0);
-  photoDeskGroup.add(laptopBase);
+  const dialMode = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.012, 16), machinedMetalMat);
+  dialMode.position.set(0.05, 0.06, 0.01);
+  cameraBodyGroup.add(dialMode);
 
-  const laptopScreen = new THREE.Mesh(
-    new THREE.BoxGeometry(0.38, 0.26, 0.015),
-    new THREE.MeshStandardMaterial({ color: 0x0f172a, emissive: 0x38bdf8, emissiveIntensity: 0.4 })
+  const shutterBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.008, 12), redAnodizedMat);
+  shutterBtn.position.set(-0.07, 0.058, -0.02);
+  cameraBodyGroup.add(shutterBtn);
+
+  // Rear LCD Display with Live Camera Canvas Texture
+  const createCameraLcdTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 192;
+    const ctx = canvas.getContext('2d')!;
+
+    ctx.fillStyle = '#05070e';
+    ctx.fillRect(0, 0, 256, 192);
+
+    const grad = ctx.createRadialGradient(130, 95, 4, 130, 95, 75);
+    grad.addColorStop(0, 'rgba(244, 114, 182, 0.95)');
+    grad.addColorStop(0.3, 'rgba(168, 85, 247, 0.65)');
+    grad.addColorStop(0.7, 'rgba(56, 189, 248, 0.35)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 192);
+
+    [[130, 95], [120, 88], [140, 102], [70, 45], [190, 60], [60, 140], [210, 150], [95, 125]].forEach(([sx, sy]) => {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.fillRect(0, 0, 256, 24);
+    ctx.fillRect(0, 168, 256, 24);
+
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath(); ctx.arc(14, 12, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText('REC · 120s', 24, 16);
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText('RAW 14-bit', 160, 16);
+
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillText('ISO 3200 · f/2.8 · COOLED -10°C', 10, 184);
+
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  const cameraLcd = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.12, 0.08),
+    new THREE.MeshBasicMaterial({ map: createCameraLcdTexture() })
   );
-  laptopScreen.position.set(0.35, 0.96, -0.14);
-  laptopScreen.rotation.x = 0.2;
-  photoDeskGroup.add(laptopScreen);
+  cameraLcd.position.set(0, 0, 0.041);
+  cameraBodyGroup.add(cameraLcd);
 
-  // Framed Astrophotography Prints on wall behind
-  const photoWallPrints = new THREE.Mesh(
-    new THREE.BoxGeometry(2.2, 1.2, 0.04),
-    new THREE.MeshStandardMaterial({ color: 0x030712, roughness: 0.2 })
+  // 7. Stacking Workstation Laptop (Right side of desk)
+  const laptopGroup = new THREE.Group();
+  laptopGroup.position.set(0.45, 0.82, 0.05);
+  laptopGroup.rotation.y = -0.22;
+  photoDeskGroup.add(laptopGroup);
+
+  const laptopBase = new THREE.Mesh(
+    new THREE.BoxGeometry(0.44, 0.016, 0.32),
+    new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.85, roughness: 0.25 })
   );
-  photoWallPrints.position.set(-8.85, 2.2, 3.5);
-  photoWallPrints.rotation.y = Math.PI / 2;
-  scene.add(photoWallPrints);
+  laptopBase.position.set(0, 0.008, 0);
+  laptopGroup.add(laptopBase);
 
-  registerTarget(photoTable, {
+  const keyboardInset = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38, 0.002, 0.16),
+    new THREE.MeshStandardMaterial({ color: 0x090d16, emissive: 0x38bdf8, emissiveIntensity: 0.18 })
+  );
+  keyboardInset.position.set(0, 0.017, -0.04);
+  laptopGroup.add(keyboardInset);
+
+  const trackpad = new THREE.Mesh(
+    new THREE.BoxGeometry(0.14, 0.002, 0.09),
+    new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.6 })
+  );
+  trackpad.position.set(0, 0.017, 0.10);
+  laptopGroup.add(trackpad);
+
+  const laptopScreenGroup = new THREE.Group();
+  laptopScreenGroup.position.set(0, 0.016, -0.16);
+  laptopScreenGroup.rotation.x = 0.24;
+  laptopGroup.add(laptopScreenGroup);
+
+  const laptopLidBack = new THREE.Mesh(
+    new THREE.BoxGeometry(0.44, 0.29, 0.012),
+    new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.85, roughness: 0.25 })
+  );
+  laptopLidBack.position.set(0, 0.145, -0.006);
+  laptopScreenGroup.add(laptopLidBack);
+
+  const createStackingScreenTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 340;
+    const ctx = canvas.getContext('2d')!;
+
+    ctx.fillStyle = '#0a0f1d';
+    ctx.fillRect(0, 0, 512, 340);
+
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 0, 512, 28);
+    ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(14, 14, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(26, 14, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#10b981'; ctx.beginPath(); ctx.arc(38, 14, 4, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 11.5px monospace';
+    ctx.fillText('SIRIL ASTRO-STACKER v1.2 // M42 ORION EXPEDITION', 56, 18);
+
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(6, 34, 130, 298);
+    ctx.fillStyle = '#64748b';
+    ctx.font = 'bold 9.5px monospace';
+    ctx.fillText('CALIBRATION FRAMES', 12, 48);
+
+    ctx.font = '8.5px monospace';
+    [
+      '✓ 45x Light (120s)',
+      '✓ 20x Dark (120s)',
+      '✓ 25x Flat Frames',
+      '✓ 30x Bias Frames',
+      '— Alg: Sigma-Clip',
+      '— Reg: 2-Pass Star',
+      '— Output: 32-bit FITS',
+    ].forEach((line, idx) => {
+      ctx.fillStyle = idx < 4 ? '#34d399' : '#94a3b8';
+      ctx.fillText(line, 12, 68 + idx * 18);
+    });
+
+    ctx.fillStyle = '#040711';
+    ctx.fillRect(142, 34, 364, 214);
+
+    const nebulaGrad = ctx.createRadialGradient(320, 135, 8, 320, 135, 125);
+    nebulaGrad.addColorStop(0, 'rgba(244, 114, 182, 0.95)');
+    nebulaGrad.addColorStop(0.35, 'rgba(192, 132, 252, 0.7)');
+    nebulaGrad.addColorStop(0.7, 'rgba(56, 189, 248, 0.35)');
+    nebulaGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = nebulaGrad;
+    ctx.fillRect(142, 34, 364, 214);
+
+    [[320, 135], [310, 128], [330, 142], [240, 80], [420, 95], [210, 180], [450, 190], [280, 200], [360, 75]].forEach(([sx, sy]) => {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(sx, sy, 2.2, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(sx - 8, sy); ctx.lineTo(sx + 8, sy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx, sy - 8); ctx.lineTo(sx, sy + 8); ctx.stroke();
+    });
+
+    ctx.fillStyle = '#111827';
+    ctx.fillRect(142, 254, 364, 78);
+
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#ef4444';
+    ctx.beginPath(); ctx.moveTo(150, 318); ctx.quadraticCurveTo(200, 260, 260, 324); ctx.stroke();
+    ctx.strokeStyle = '#10b981';
+    ctx.beginPath(); ctx.moveTo(155, 318); ctx.quadraticCurveTo(205, 262, 265, 324); ctx.stroke();
+    ctx.strokeStyle = '#3b82f6';
+    ctx.beginPath(); ctx.moveTo(160, 318); ctx.quadraticCurveTo(210, 264, 270, 324); ctx.stroke();
+
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(290, 270, 204, 12);
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillRect(290, 270, 204, 12);
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('STACKING 100% COMPLETE · SNR +18.4 dB', 290, 300);
+    ctx.fillStyle = '#a5b4fc';
+    ctx.fillText('Dynamic Range: 16.2 EV · Resolution: 6240x4160', 290, 316);
+
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  const laptopScreenMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.41, 0.26),
+    new THREE.MeshBasicMaterial({ map: createStackingScreenTexture() })
+  );
+  laptopScreenMesh.position.set(0, 0.145, 0.002);
+  laptopScreenGroup.add(laptopScreenMesh);
+
+  // Mouse & Pad
+  const mousepad = new THREE.Mesh(
+    new THREE.BoxGeometry(0.18, 0.002, 0.22),
+    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 })
+  );
+  mousepad.position.set(0.80, 0.821, 0.05);
+  photoDeskGroup.add(mousepad);
+
+  const mouse = new THREE.Mesh(
+    new THREE.BoxGeometry(0.065, 0.026, 0.10),
+    new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.5, roughness: 0.4 })
+  );
+  mouse.position.set(0.80, 0.834, 0.05);
+  photoDeskGroup.add(mouse);
+
+  // 8. Rugged Optical Flight Case (Pelican Style) Open on Front Right Desk
+  const pelicanCase = new THREE.Mesh(
+    new THREE.BoxGeometry(0.36, 0.08, 0.26),
+    new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.85 })
+  );
+  pelicanCase.position.set(0.12, 0.86, 0.24);
+  photoDeskGroup.add(pelicanCase);
+
+  [-0.14, 0.14].forEach((lx) => {
+    const latch = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.04, 0.01), machinedMetalMat);
+    latch.position.set(0.12 + lx, 0.86, 0.37);
+    photoDeskGroup.add(latch);
+  });
+
+  [-0.10, 0, 0.10].forEach((ex) => {
+    const epBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.05, 16), machinedMetalMat);
+    epBarrel.position.set(0.12 + ex, 0.91, 0.24);
+    photoDeskGroup.add(epBarrel);
+
+    const epCup = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.023, 0.015, 16), new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.9 }));
+    epCup.position.set(0.12 + ex, 0.938, 0.24);
+    photoDeskGroup.add(epCup);
+  });
+
+  // 9. 5-Position Optical Filter Carousel on Desk
+  const filterWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.02, 20), redAnodizedMat);
+  filterWheel.position.set(-0.16, 0.83, 0.16);
+  photoDeskGroup.add(filterWheel);
+
+  // 10. Open Astrophotographer's Field Logbook
+  const logbook = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.015, 0.18),
+    new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.7 })
+  );
+  logbook.position.set(-0.20, 0.828, -0.22);
+  logbook.rotation.y = 0.18;
+  photoDeskGroup.add(logbook);
+
+  // 11. Framed Astrophotography Fine-Art Gallery on Wall Behind Desk
+  const galleryWallGroup = new THREE.Group();
+  galleryWallGroup.position.set(-8.85, 2.3, 3.5);
+  galleryWallGroup.rotation.y = Math.PI / 2;
+  scene.add(galleryWallGroup);
+
+  const createGalleryPrintTexture = (theme: 'orion' | 'andromeda' | 'milkyway') => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 360;
+    const ctx = canvas.getContext('2d')!;
+
+    ctx.fillStyle = '#03050c';
+    ctx.fillRect(0, 0, 512, 360);
+
+    if (theme === 'orion') {
+      const grad = ctx.createRadialGradient(256, 180, 10, 256, 180, 180);
+      grad.addColorStop(0, '#f472b6');
+      grad.addColorStop(0.3, '#c084fc');
+      grad.addColorStop(0.65, '#0284c7');
+      grad.addColorStop(1, '#03050c');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 512, 360);
+      ctx.fillStyle = '#ffffff';
+      for (let s = 0; s < 45; s++) {
+        ctx.beginPath();
+        ctx.arc(Math.random() * 512, Math.random() * 360, Math.random() * 2 + 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (theme === 'andromeda') {
+      ctx.save();
+      ctx.translate(256, 180);
+      ctx.rotate(-0.45);
+      const grad = ctx.createRadialGradient(0, 0, 8, 0, 0, 210);
+      grad.addColorStop(0, '#fffbeb');
+      grad.addColorStop(0.2, '#fde68a');
+      grad.addColorStop(0.5, '#38bdf8');
+      grad.addColorStop(0.85, '#1e1b4b');
+      grad.addColorStop(1, '#03050c');
+      ctx.fillStyle = grad;
+      ctx.scale(2.2, 0.75);
+      ctx.beginPath(); ctx.arc(0, 0, 120, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    } else {
+      const coreGrad = ctx.createLinearGradient(120, 0, 390, 360);
+      coreGrad.addColorStop(0, '#1e1b4b');
+      coreGrad.addColorStop(0.4, '#a855f7');
+      coreGrad.addColorStop(0.6, '#f59e0b');
+      coreGrad.addColorStop(0.8, '#065f46');
+      coreGrad.addColorStop(1, '#022c22');
+      ctx.fillStyle = coreGrad;
+      ctx.fillRect(0, 0, 512, 360);
+      ctx.fillStyle = '#030712';
+      ctx.beginPath();
+      ctx.moveTo(0, 360);
+      ctx.lineTo(80, 270);
+      ctx.lineTo(190, 310);
+      ctx.lineTo(310, 240);
+      ctx.lineTo(440, 320);
+      ctx.lineTo(512, 280);
+      ctx.lineTo(512, 360);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  const galleryConfigs = [
+    { x: -1.35, theme: 'orion' as const },
+    { x: 0, theme: 'andromeda' as const },
+    { x: 1.35, theme: 'milkyway' as const },
+  ];
+
+  galleryConfigs.forEach((cfg) => {
+    const frame = new THREE.Mesh(
+      new THREE.BoxGeometry(1.05, 0.78, 0.03),
+      new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.35 })
+    );
+    frame.position.set(cfg.x, 0, 0.015);
+    galleryWallGroup.add(frame);
+
+    const bezel = new THREE.Mesh(new THREE.BoxGeometry(1.01, 0.74, 0.035), brassTrimMaterial);
+    bezel.position.set(cfg.x, 0, 0.016);
+    galleryWallGroup.add(bezel);
+
+    const printMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.96, 0.69),
+      new THREE.MeshBasicMaterial({ map: createGalleryPrintTexture(cfg.theme) })
+    );
+    printMesh.position.set(cfg.x, 0, 0.036);
+    galleryWallGroup.add(printMesh);
+
+    const placard = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.01), brassTrimMaterial);
+    placard.position.set(cfg.x, -0.48, 0.02);
+    galleryWallGroup.add(placard);
+
+    const picLightRod = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 12), brassTrimMaterial);
+    picLightRod.rotation.x = Math.PI / 2;
+    picLightRod.position.set(cfg.x, 0.48, 0.10);
+    galleryWallGroup.add(picLightRod);
+
+    const picLightHood = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.035, 0.05), brassTrimMaterial);
+    picLightHood.position.set(cfg.x, 0.48, 0.18);
+    galleryWallGroup.add(picLightHood);
+
+    const spot = new THREE.SpotLight(0xffedd5, 1.8, 4.5, Math.PI / 4, 0.5, 1.2);
+    spot.position.set(-8.85 + 0.2, 2.3 + 0.48, 3.5 + cfg.x);
+    spot.target.position.set(-8.85, 2.3, 3.5 + cfg.x);
+    scene.add(spot);
+    scene.add(spot.target);
+  });
+
+  // Target Registration (Registers proxy, desk, camera, and laptop for 100% reliable raycasting hit detection)
+  const photoTargetInfo: AstroInteraction = {
     id: 'astro-astrophoto',
     activityId: 'astrophotography',
     category: 'PRACTICAL STATION',
     name: 'Astrophotography & Image Stacking Desk',
     action: 'EXPLORE ASTROPHOTOGRAPHY',
-    description: 'Camera gear, deep-sky stacking software showcase, and framed astrophotography gallery.',
-  });
+    description: 'Explore high-resolution camera gear, equatorial tracking mount, live image stacking software, and framed deep-sky gallery.',
+  };
+
+  registerTarget(photoRaycastHitbox, photoTargetInfo);
+  registerTarget(photoTable, photoTargetInfo);
+  registerTarget(cameraBody, photoTargetInfo);
+  registerTarget(laptopBase, photoTargetInfo);
+  registerTarget(laptopScreenMesh, photoTargetInfo);
 
   // ==============================================================
   // STATION 6: ASTRONOMY RESEARCH WORKSTATION ("2 PC" DESK) (Area F)
@@ -1984,7 +2529,9 @@ export function createAstroScene(
 
     const travel = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
     const duration = performance.now() - pointerDownTime;
-    if (travel < 8 && duration < 400) {
+    const maxTravel = e.pointerType === 'touch' ? 22 : 10;
+    const maxDuration = e.pointerType === 'touch' ? 500 : 400;
+    if (travel < maxTravel && duration < maxDuration) {
       handleCanvasClick(e.clientX, e.clientY);
     }
   };
@@ -2052,6 +2599,7 @@ export function createAstroScene(
   // Mobile vector movement
   let moveVectorX = 0;
   let moveVectorForward = 0;
+  let isSprinting = false;
 
   // Animation Loop
   let animationId = 0;
@@ -2119,7 +2667,7 @@ export function createAstroScene(
     const moveDirection = new THREE.Vector3();
     const isMoving = Math.hypot(moveForward, moveRight) > 0.05;
     if (isMoving) {
-      const walkSpeed = movement.shift ? 5.4 : 3.6;
+      const walkSpeed = (movement.shift || isSprinting) ? 5.4 : 3.6;
       const angle = playerYaw;
       const sin = Math.sin(angle);
       const cos = Math.cos(angle);
@@ -2143,8 +2691,8 @@ export function createAstroScene(
         // 2. Research Workstation ("2 PC" desk on East wall, center ~ (6.5, -1.5), width 2.3 x depth 0.95)
         if (x >= 5.50 && x <= 7.50 && z >= -2.95 && z <= -0.05) return true;
 
-        // 3. Astrophotography Desk (West wall, center ~ (-6.5, -1.5), width 2.2 x depth 0.9)
-        if (x >= -7.50 && x <= -5.50 && z >= -2.95 && z <= -0.05) return true;
+        // 3. Astrophotography Station & Equipment (South-West corner, center ~ (-6.5, 3.5), rotated 45°)
+        if (Math.hypot(x - (-6.5), z - 3.5) < 1.45) return true;
 
         // 4. Membership & Interest Survey table (South-East, center ~ (3.5, 4.2), width 1.8 x depth 0.8)
         if (x >= 2.20 && x <= 4.80 && z >= 3.40 && z <= 5.00) return true;
@@ -2304,6 +2852,9 @@ export function createAstroScene(
     setMoveVector: (right, forward) => {
       moveVectorX = right;
       moveVectorForward = forward;
+    },
+    setSprint: (active) => {
+      isSprinting = active;
     },
     teleportTo: (activityId) => {
       const positions: Record<AstroActivityId, { x: number; z: number; yaw: number }> = {

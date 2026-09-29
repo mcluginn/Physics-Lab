@@ -3070,68 +3070,341 @@ button { color: inherit; }
   z-index: 3;
 }
 
-/* --- Mobile Joystick & Touch Controls --- */
-.astro-mobile-controls {
+/* --- Mobile Touch HUD & Responsive Controls --- */
+.astro-mobile-hud {
   position: absolute;
-  bottom: 24px;
-  right: 24px;
-  z-index: 15;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  pointer-events: auto;
-}
-
-.astro-mobile-joystick {
-  width: 90px;
-  height: 90px;
-  border-radius: 50%;
-  background: rgba(15, 23, 42, 0.75);
-  border: 2px solid rgba(129, 140, 248, 0.4);
-  position: relative;
+  inset: 0;
+  pointer-events: none;
+  z-index: 25;
+  user-select: none;
+  -webkit-user-select: none;
   touch-action: none;
 }
 
-.astro-mobile-joystick .knob {
-  width: 38px;
-  height: 38px;
+/* Hide on desktop with pointer: fine / hover devices */
+@media (hover: hover) and (pointer: fine) and (min-width: 901px) {
+  .astro-mobile-hud {
+    display: none !important;
+  }
+}
+
+/* Bottom-Left Virtual Joystick */
+.astro-mobile-joystick-wrap {
+  position: absolute;
+  bottom: 24px;
+  left: 20px;
+  pointer-events: auto;
+  touch-action: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.astro-mobile-joystick-ring {
+  width: 124px;
+  height: 124px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1 0%, #38bdf8 100%);
+  background: radial-gradient(circle, rgba(15, 23, 42, 0.70) 0%, rgba(8, 14, 28, 0.90) 100%);
+  border: 2px solid rgba(129, 140, 248, 0.45);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.75), inset 0 0 20px rgba(99, 102, 241, 0.25);
+  position: relative;
+  backdrop-filter: blur(10px);
+}
+
+.astro-joy-arrow {
+  position: absolute;
+  color: rgba(148, 163, 184, 0.55);
+  font-size: 11px;
+  font-weight: 900;
+  pointer-events: none;
+}
+
+.astro-joy-arrow.joy-n { top: 6px; left: 50%; transform: translateX(-50%); }
+.astro-joy-arrow.joy-s { bottom: 6px; left: 50%; transform: translateX(-50%); }
+.astro-joy-arrow.joy-w { left: 8px; top: 50%; transform: translateY(-50%); }
+.astro-joy-arrow.joy-e { right: 8px; top: 50%; transform: translateY(-50%); }
+
+.astro-mobile-joystick-knob {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #818cf8 0%, #4338ca 70%, #312e81 100%);
+  border: 2px solid rgba(224, 231, 255, 0.9);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.65), 0 0 12px rgba(56, 189, 248, 0.6);
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.05s ease-out;
 }
 
-.astro-enter-walk {
+.astro-mobile-joystick-knob .knob-core {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
+}
+
+.astro-mobile-joystick-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: rgba(148, 163, 184, 0.7);
+  text-transform: uppercase;
+  font-family: ui-monospace, monospace;
+}
+
+/* Bottom-Right Mobile Action Cluster */
+.astro-mobile-action-bar {
   position: absolute;
-  bottom: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 12;
-  background: rgba(15, 23, 42, 0.9);
-  border: 1px solid rgba(129, 140, 248, 0.5);
-  padding: 10px 20px;
+  bottom: 24px;
+  right: 20px;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.astro-mobile-btn-interact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
   border-radius: 999px;
-  color: #ffffff;
   font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  border: 1.5px solid;
+  max-width: 260px;
+}
+
+.astro-mobile-btn-interact.idle {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(148, 163, 184, 0.4);
+  color: #94a3b8;
+  backdrop-filter: blur(10px);
+}
+
+.astro-mobile-btn-interact.ready {
+  background: linear-gradient(135deg, #4f46e5 0%, #0284c7 100%);
+  border-color: #7dd3fc;
+  color: #ffffff;
+  box-shadow: 0 0 24px rgba(56, 189, 248, 0.7), 0 8px 24px rgba(0, 0, 0, 0.6);
+  transform: scale(1.04);
+  animation: pulseReady 1.6s infinite;
+}
+
+@keyframes pulseReady {
+  0%, 100% { box-shadow: 0 0 20px rgba(56, 189, 248, 0.7), 0 8px 24px rgba(0, 0, 0, 0.6); }
+  50% { box-shadow: 0 0 32px rgba(99, 102, 241, 0.9), 0 10px 30px rgba(0, 0, 0, 0.8); }
+}
+
+.astro-mobile-btn-interact .btn-icon {
+  font-size: 15px;
+}
+
+.astro-mobile-btn-interact .btn-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.astro-mobile-secondary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.astro-mobile-btn-small {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(129, 140, 248, 0.45);
+  color: #e2e8f0;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
-  pointer-events: auto;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  transition: all 0.16s ease;
+  min-height: 38px;
+  min-width: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-@media (max-width: 900px) {
+.astro-mobile-btn-small.active {
+  background: rgba(79, 70, 229, 0.75);
+  border-color: #a5b4fc;
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(99, 102, 241, 0.6);
+}
+
+.astro-mobile-btn-small:active {
+  transform: scale(0.94);
+}
+
+/* ============================================================== */
+/* MOBILE CELLPHONE VIEWPORT ADAPTATIONS (<= 768px) */
+/* ============================================================== */
+@media (max-width: 768px) {
+  /* Topbar Stacked & Scrollable */
+  .astro-topbar {
+    padding: 8px 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    background: linear-gradient(180deg, rgba(4, 7, 17, 0.98) 0%, rgba(4, 7, 17, 0.85) 85%, transparent 100%);
+  }
+
+  .astro-topbar > div:first-child {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .astro-brand-lockup small {
+    display: none;
+  }
+
+  .astro-brand-title {
+    font-size: 14px;
+  }
+
+  .astro-campus-exit-btn {
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+
+  .astro-milestone-pill {
+    padding: 4px 10px;
+    font-size: 11px;
+    gap: 6px;
+    align-self: flex-start;
+  }
+
+  .astro-top-dock {
+    width: 100%;
+    max-width: 100%;
+    margin-top: 2px;
+    padding: 4px 6px;
+    border-radius: 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+  }
+
+  .astro-top-dock::-webkit-scrollbar {
+    display: none;
+  }
+
+  .astro-top-btn {
+    padding: 6px 11px;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  /* Hide Desktop Bottom Dock on Mobile (Replaced by clean Touch HUD) */
+  .astro-bottom-dock {
+    display: none !important;
+  }
+
+  /* Modals Optimization for Phone Screens */
+  .astro-modal-backdrop {
+    padding: 6px;
+    align-items: center;
+  }
+
+  .astro-modal-card {
+    width: 98vw !important;
+    max-height: 92vh !important;
+    border-radius: 14px !important;
+    margin: 0 auto;
+  }
+
+  .astro-modal-header {
+    padding: 12px 14px !important;
+  }
+
+  .astro-modal-title-group h2 {
+    font-size: 17px !important;
+  }
+
+  .astro-modal-close-btn {
+    width: 40px !important;
+    height: 40px !important;
+    font-size: 20px !important;
+    min-width: 40px !important;
+  }
+
+  .astro-modal-body {
+    padding: 12px 14px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  /* Grid Layouts Stacked into 1-Column on Phone */
   .activities-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
   }
+
   .activities-rail {
-    max-height: 180px;
+    max-height: 160px !important;
   }
+
   .research-pillars-banner {
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    font-size: 11px !important;
+  }
+
+  .astro-sim-controls {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .astro-sim-slider-group input[type="range"] {
+    height: 32px !important;
+  }
+
+  .astro-sim-presets-row {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  .astro-preset-btn {
+    padding: 6px 12px !important;
+    font-size: 11px !important;
+  }
+
+  .act-contributions-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .const-grid, .missions-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .survey-scale-options {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  .survey-scale-btn {
+    padding: 8px 12px !important;
+    font-size: 12px !important;
   }
 }
 

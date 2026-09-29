@@ -145,6 +145,7 @@ export default function AstroExperience() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soundVolume, setSoundVolume] = useState(0.65);
   const [joystickKnob, setJoystickKnob] = useState({ x: 0, y: 0 });
+  const [isMobileSprint, setIsMobileSprint] = useState(false);
 
   // External Overlays
   const [externalOverlay, setExternalOverlay] = useState<'nasa' | 'stellarium' | null>(null);
@@ -326,30 +327,59 @@ export default function AstroExperience() {
   const moveJoystick = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (joystickPointerId.current !== event.pointerId) return;
     const bounds = event.currentTarget.getBoundingClientRect();
-    const maxR = Math.min(bounds.width, bounds.height) * 0.32;
+    const maxR = Math.min(bounds.width, bounds.height) * 0.38;
     const rawX = event.clientX - (bounds.left + bounds.width / 2);
     const rawY = event.clientY - (bounds.top + bounds.height / 2);
     const dist = Math.hypot(rawX, rawY);
     const scale = dist > maxR ? maxR / dist : 1;
     const x = rawX * scale;
     const y = rawY * scale;
-    const normX = Math.abs(x / maxR) < 0.12 ? 0 : x / maxR;
-    const normForward = Math.abs(y / maxR) < 0.12 ? 0 : -y / maxR;
+    const normX = Math.abs(x / maxR) < 0.10 ? 0 : x / maxR;
+    const normForward = Math.abs(y / maxR) < 0.10 ? 0 : -y / maxR;
     setJoystickKnob({ x, y });
     sceneApi.current?.setMoveVector(normX, normForward);
   };
 
   const startJoystick = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
     joystickPointerId.current = event.pointerId;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {}
     moveJoystick(event);
   };
 
   const releaseJoystick = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
     if (joystickPointerId.current !== event.pointerId) return;
     joystickPointerId.current = null;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {}
     sceneApi.current?.setMoveVector(0, 0);
     setJoystickKnob({ x: 0, y: 0 });
+  };
+
+  const toggleMobileSprint = () => {
+    setIsMobileSprint((prev) => {
+      const next = !prev;
+      sceneApi.current?.setSprint(next);
+      showToast(next ? '⚡ Sprint Speed Active' : '🚶 Normal Walk Speed');
+      return next;
+    });
+  };
+
+  const toggleMobileView = () => {
+    const next = sceneApi.current?.toggleView();
+    if (typeof next === 'boolean') {
+      setIsThirdPerson(next);
+      showToast(next ? '📷 3rd Person View' : '👁️ 1st Person FPS View');
+    }
+  };
+
+  const resetMobileView = () => {
+    sceneApi.current?.resetView();
+    showToast('🎯 View Re-centered');
   };
 
   const openStationModal = (activityId: AstroActivityId) => {
@@ -603,15 +633,89 @@ export default function AstroExperience() {
         </footer>
       )}
 
-      {/* Mobile action button when near exhibit (walk analog joystick removed) */}
-      {!activeModal && !externalOverlay && interaction && (
-        <div className="astro-mobile-controls">
-          <button
-            className="astro-mobile-action ready"
-            onClick={() => sceneApi.current?.interact()}
+      {/* ============================================================== */}
+      {/* MOBILE / CELLPHONE TOUCH CONTROLS OVERLAY */}
+      {/* ============================================================== */}
+      {!activeModal && !externalOverlay && (
+        <div className="astro-mobile-hud">
+          {/* Bottom-Left Virtual Joystick for Smooth Walking */}
+          <div
+            className="astro-mobile-joystick-wrap"
+            onPointerDown={startJoystick}
+            onPointerMove={moveJoystick}
+            onPointerUp={releaseJoystick}
+            onPointerCancel={releaseJoystick}
+            title="Drag to walk in any direction"
           >
-            {`E · ${interaction.action}`}
-          </button>
+            <div className="astro-mobile-joystick-ring">
+              <span className="astro-joy-arrow joy-n">▲</span>
+              <span className="astro-joy-arrow joy-s">▼</span>
+              <span className="astro-joy-arrow joy-w">◄</span>
+              <span className="astro-joy-arrow joy-e">►</span>
+              <div
+                className="astro-mobile-joystick-knob"
+                style={{
+                  transform: `translate(calc(-50% + ${joystickKnob.x}px), calc(-50% + ${joystickKnob.y}px))`,
+                }}
+              >
+                <div className="knob-core" />
+              </div>
+            </div>
+            <div className="astro-mobile-joystick-label">TOUCH TO MOVE</div>
+          </div>
+
+          {/* Bottom-Right Mobile Actions Cluster */}
+          <div className="astro-mobile-action-bar">
+            {/* Primary Examine / Interact button (glows when facing an exhibit) */}
+            <button
+              type="button"
+              className={`astro-mobile-btn astro-mobile-btn-interact ${interaction ? 'ready' : 'idle'}`}
+              onClick={() => {
+                if (interaction) {
+                  sceneApi.current?.interact();
+                } else {
+                  showToast('Step closer or point camera toward an exhibit to interact');
+                }
+              }}
+              title="Interact with focused station"
+            >
+              <span className="btn-icon">⚡</span>
+              <span className="btn-label">{interaction ? interaction.action : 'EXAMINE [E]'}</span>
+            </button>
+
+            {/* Quick Actions Grid */}
+            <div className="astro-mobile-secondary-actions">
+              {/* Camera Toggle Button */}
+              <button
+                type="button"
+                className="astro-mobile-btn-small"
+                onClick={toggleMobileView}
+                title="Toggle 1st / 3rd Person Camera"
+              >
+                <span>{isThirdPerson ? '📷 3RD' : '👁️ 1ST'}</span>
+              </button>
+
+              {/* Sprint / Walk Toggle */}
+              <button
+                type="button"
+                className={`astro-mobile-btn-small ${isMobileSprint ? 'active' : ''}`}
+                onClick={toggleMobileSprint}
+                title="Toggle Sprint / Walk Speed"
+              >
+                <span>{isMobileSprint ? '⚡ RUN' : '🚶 WALK'}</span>
+              </button>
+
+              {/* Reset View Button */}
+              <button
+                type="button"
+                className="astro-mobile-btn-small"
+                onClick={resetMobileView}
+                title="Reset Camera Orientation"
+              >
+                <span>🎯 RESET</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
