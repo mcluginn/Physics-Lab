@@ -2993,11 +2993,8 @@ export function createAstroScene(
     });
   };
 
-  // Mount Plaque 1 on West Wall beside Door (x = -2.85: exact screenshot location)
+  // Mount Plaque on West Wall beside Door (x = -2.85: exact screenshot location)
   createFoundersHonorPlaqueMesh(-2.85, 'founders_roll');
-
-  // Mount Plaque 2 on East Wall beside Door (x = +2.85: grand architectural symmetry)
-  createFoundersHonorPlaqueMesh(2.85, 'founding_charter');
 
   // ==============================================================
   // PLAYER CHARACTER & CAMERA CONTROLLER

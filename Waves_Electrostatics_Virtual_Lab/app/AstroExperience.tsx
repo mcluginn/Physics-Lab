@@ -1047,14 +1047,7 @@ export default function AstroExperience() {
             <div className="astro-modal-body">
               {/* Commemorative Hardwood & Gold Founders Honor Roll Card */}
               <div className="astro-founders-honor-card">
-                <div className="honor-card-header">
-                  <div className="honor-seal-icon">✦</div>
-                  <div>
-                    <span className="honor-kicker">COMMEMORATIVE FOUNDING CHARTER</span>
-                    <h3>Founders & Charter Members Honor Roll</h3>
-                    <p className="honor-subtitle">Hardwood & 24K Inlaid Gold Commemorative Plaque · University of Perpetual Help System DALTA</p>
-                  </div>
-                </div>
+
 
                 <div className="honor-section">
                   <div className="honor-section-title">
