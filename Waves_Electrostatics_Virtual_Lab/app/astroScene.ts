@@ -1,6 +1,7 @@
 'use client';
 
 import * as THREE from 'three';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { CharacterController, type CharacterType } from './characterController';
 import type { AstroActivityId } from './astroModel';
 
@@ -421,131 +422,77 @@ export function createAstroScene(
   horizMullion.position.set(0, 2.2, -9.94);
   scene.add(horizMullion);
 
-  // --- Procedural 3D Moon with Craters, Lunar Maria & Additive Corona Glow ---
-  const createMoonTexture = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const ctx = canvas.getContext('2d')!;
+  // --- 3D Moon using Assets from public/assets/moon ---
+  const textureLoader = new THREE.TextureLoader();
+  const moonDiffuseMap = textureLoader.load('/assets/moon/Textures/Diffuse_2K.png');
+  moonDiffuseMap.colorSpace = THREE.SRGBColorSpace;
+  const moonBumpMap = textureLoader.load('/assets/moon/Textures/Bump_2K.png');
 
-    // Silvery lunar regolith base
-    ctx.fillStyle = '#e2e8f0';
-    ctx.fillRect(0, 0, 512, 512);
+  const moonMaterial = new THREE.MeshStandardMaterial({
+    map: moonDiffuseMap,
+    bumpMap: moonBumpMap,
+    bumpScale: 0.08,
+    roughness: 0.88,
+    metalness: 0.05,
+    emissive: new THREE.Color(0xf1f5f9),
+    emissiveMap: moonDiffuseMap,
+    emissiveIntensity: 0.45,
+    fog: false,
+  });
 
-    // Micro-texture noise
-    for (let i = 0; i < 2200; i++) {
-      const nx = Math.random() * 512;
-      const ny = Math.random() * 512;
-      const nr = Math.random() * 2.8 + 0.8;
-      ctx.fillStyle = Math.random() > 0.4 ? 'rgba(148, 163, 184, 0.28)' : 'rgba(255, 255, 255, 0.35)';
-      ctx.beginPath();
-      ctx.arc(nx, ny, nr, 0, Math.PI * 2);
-      ctx.fill();
-    }
+  const moonGroup = new THREE.Group();
+  moonGroup.position.set(3.8, 6.4, -26.0);
+  moonGroup.rotation.y = -Math.PI / 3;
+  scene.add(moonGroup);
 
-    // Lunar Maria (Dark basaltic lava plains)
-    const maria = [
-      { x: 190, y: 150, r: 85, opacity: 0.55 }, // Mare Imbrium
-      { x: 140, y: 240, r: 105, opacity: 0.52 }, // Oceanus Procellarum
-      { x: 280, y: 200, r: 65, opacity: 0.50 }, // Mare Serenitatis
-      { x: 320, y: 270, r: 80, opacity: 0.54 }, // Mare Tranquillitatis
-      { x: 370, y: 320, r: 60, opacity: 0.48 }, // Mare Fecunditatis
-      { x: 380, y: 220, r: 50, opacity: 0.52 }, // Mare Crisium
-      { x: 210, y: 330, r: 65, opacity: 0.46 }, // Mare Nubium
-    ];
+  // High-resolution sphere mapped with 2K NASA diffuse and bump maps
+  let moonMesh: THREE.Object3D = new THREE.Mesh(
+    new THREE.SphereGeometry(1.95, 64, 64),
+    moonMaterial
+  );
+  moonGroup.add(moonMesh);
 
-    maria.forEach((m) => {
-      const grad = ctx.createRadialGradient(m.x, m.y, m.r * 0.15, m.x, m.y, m.r);
-      grad.addColorStop(0, `rgba(71, 85, 105, ${m.opacity})`);
-      grad.addColorStop(0.65, `rgba(100, 116, 139, ${m.opacity * 0.75})`);
-      grad.addColorStop(1, 'rgba(148, 163, 184, 0)');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    // Prominent impact craters with bright rims (Tycho, Copernicus, Kepler)
-    const craters = [
-      { x: 256, y: 420, r: 16, rays: true }, // Tycho with extensive ray system
-      { x: 180, y: 230, r: 13, rays: true }, // Copernicus
-      { x: 120, y: 210, r: 9, rays: false }, // Kepler
-      { x: 310, y: 150, r: 8, rays: false }, // Posidonius
-      { x: 150, y: 110, r: 11, rays: false }, // Plato
-    ];
-
-    craters.forEach((c) => {
-      // Ejecta rays
-      if (c.rays) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-        ctx.lineWidth = 1.5;
-        for (let ray = 0; ray < 14; ray++) {
-          const angle = (ray * Math.PI * 2) / 14 + (Math.random() - 0.5) * 0.2;
-          const rayLen = Math.random() * 120 + 70;
-          ctx.beginPath();
-          ctx.moveTo(c.x, c.y);
-          ctx.lineTo(c.x + Math.cos(angle) * rayLen, c.y + Math.sin(angle) * rayLen);
-          ctx.stroke();
+  // Load Moon 3D OBJ model from public/assets/moon
+  const objLoader = new OBJLoader();
+  objLoader.load(
+    '/assets/moon/moon.obj',
+    (obj) => {
+      obj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const m = child as THREE.Mesh;
+          m.material = moonMaterial;
+          m.castShadow = false;
+          m.receiveShadow = false;
         }
-      }
+      });
+      // The Blender model vertices have radius ~1.74m; scale to match ~1.95m
+      obj.scale.set(1.12, 1.12, 1.12);
+      moonGroup.remove(moonMesh);
+      moonMesh = obj;
+      moonGroup.add(obj);
+    },
+    undefined,
+    (err) => {
+      console.warn('Moon OBJ loaded with fallback sphere:', err);
+    }
+  );
 
-      // Outer bright crater rim
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Dark interior
-      ctx.fillStyle = 'rgba(51, 65, 85, 0.65)';
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, c.r * 0.75, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Central peak
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, c.r * 0.2, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    return new THREE.CanvasTexture(canvas);
-  };
-
+  // Soft atmospheric lunar halo behind the moon
   const createMoonCoronaTexture = () => {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
     canvas.height = 256;
     const ctx = canvas.getContext('2d')!;
-    const grad = ctx.createRadialGradient(128, 128, 8, 128, 128, 128);
-    grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
-    grad.addColorStop(0.18, 'rgba(224, 242, 254, 0.82)');
-    grad.addColorStop(0.42, 'rgba(186, 230, 253, 0.40)');
-    grad.addColorStop(0.70, 'rgba(56, 189, 248, 0.15)');
+    const grad = ctx.createRadialGradient(128, 128, 20, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(224, 242, 254, 0.45)');
+    grad.addColorStop(0.35, 'rgba(186, 230, 253, 0.22)');
+    grad.addColorStop(0.70, 'rgba(56, 189, 248, 0.06)');
     grad.addColorStop(1, 'rgba(14, 165, 233, 0.0)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 256, 256);
     return new THREE.CanvasTexture(canvas);
   };
 
-  // 3D Moon Mesh
-  const moonTexture = createMoonTexture();
-  const moonMaterial = new THREE.MeshStandardMaterial({
-    map: moonTexture,
-    roughness: 0.82,
-    metalness: 0.05,
-    emissive: new THREE.Color(0xf1f5f9),
-    emissiveMap: moonTexture,
-    emissiveIntensity: 1.35,
-    fog: false,
-  });
-  const moonMesh = new THREE.Mesh(new THREE.SphereGeometry(1.95, 48, 48), moonMaterial);
-  // Positioned directly in the grand north observatory sky view
-  moonMesh.position.set(3.8, 6.4, -26.0);
-  moonMesh.rotation.y = -Math.PI / 4;
-  scene.add(moonMesh);
-
-  // Glowing Outer Lunar Corona Sprite
   const moonCoronaMat = new THREE.SpriteMaterial({
     map: createMoonCoronaTexture(),
     color: 0xffffff,
@@ -555,12 +502,12 @@ export function createAstroScene(
     fog: false,
   });
   const moonCorona = new THREE.Sprite(moonCoronaMat);
-  moonCorona.position.set(3.8, 6.4, -25.9);
-  moonCorona.scale.set(11.5, 11.5, 1.0);
+  moonCorona.position.set(3.8, 6.4, -26.1);
+  moonCorona.scale.set(8.5, 8.5, 1.0);
   scene.add(moonCorona);
 
   // Dedicated Moonlight Point Light bathing the window opening
-  const moonPointLight = new THREE.PointLight(0xdbeafe, 4.2, 45, 1.1);
+  const moonPointLight = new THREE.PointLight(0xdbeafe, 3.2, 45, 1.1);
   moonPointLight.position.set(3.8, 6.4, -24.0);
   scene.add(moonPointLight);
 
@@ -696,33 +643,6 @@ export function createAstroScene(
     });
   });
 
-  // Distant glowing nebula cloud particle cluster
-  const nebulaCount = 140;
-  const nebulaGeo = new THREE.BufferGeometry();
-  const nebulaPos = new Float32Array(nebulaCount * 3);
-  const nebulaColors = new Float32Array(nebulaCount * 3);
-  for (let i = 0; i < nebulaCount; i++) {
-    nebulaPos[i * 3 + 0] = (Math.random() - 0.5) * 22 - 2;
-    nebulaPos[i * 3 + 1] = Math.random() * 12 + 3;
-    nebulaPos[i * 3 + 2] = -24 - Math.random() * 12;
-    const isMagenta = Math.random() > 0.45;
-    nebulaColors[i * 3 + 0] = isMagenta ? 0.75 : 0.2;
-    nebulaColors[i * 3 + 1] = isMagenta ? 0.2 : 0.55;
-    nebulaColors[i * 3 + 2] = 0.95;
-  }
-  nebulaGeo.setAttribute('position', new THREE.BufferAttribute(nebulaPos, 3));
-  nebulaGeo.setAttribute('color', new THREE.BufferAttribute(nebulaColors, 3));
-  const nebulaMat = new THREE.PointsMaterial({
-    size: 3.2,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.28,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    fog: false,
-  });
-  const nebulaPoints = new THREE.Points(nebulaGeo, nebulaMat);
-  scene.add(nebulaPoints);
 
   // --- Interactive Hit Targets & Registry ---
   const interactiveObjects: THREE.Object3D[] = [];
@@ -1759,7 +1679,7 @@ export function createAstroScene(
     sunMesh.scale.set(sunPulse, sunPulse, sunPulse);
 
     // Rotate 3D Moon gently
-    moonMesh.rotation.y += 0.0004;
+    moonGroup.rotation.y += 0.0003;
 
     // Animate twinkling landmark stars
     landmarkStars.forEach((star) => {
