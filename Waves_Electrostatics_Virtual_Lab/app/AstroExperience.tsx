@@ -1045,6 +1045,80 @@ export default function AstroExperience() {
               <button className="astro-modal-close" onClick={() => setActiveModal(null)}>✕</button>
             </header>
             <div className="astro-modal-body">
+              {/* Commemorative Hardwood & Gold Founders Honor Roll Card */}
+              <div className="astro-founders-honor-card">
+                <div className="honor-card-header">
+                  <div className="honor-seal-icon">✦</div>
+                  <div>
+                    <span className="honor-kicker">COMMEMORATIVE FOUNDING CHARTER</span>
+                    <h3>Founders & Charter Members Honor Roll</h3>
+                    <p className="honor-subtitle">Hardwood & 24K Inlaid Gold Commemorative Plaque · University of Perpetual Help System DALTA</p>
+                  </div>
+                </div>
+
+                <div className="honor-section">
+                  <div className="honor-section-title">
+                    <span className="gold-star">★</span> FOUNDERS
+                  </div>
+                  <div className="founders-honor-grid">
+                    <div className="honor-name-badge founder-badge">
+                      <span className="badge-icon">🏛️</span>
+                      <div className="badge-details">
+                        <strong className="badge-name">Karylle Santos</strong>
+                        <span className="badge-role">Founder · Astronomical Society</span>
+                      </div>
+                    </div>
+                    <div className="honor-name-badge founder-badge">
+                      <span className="badge-icon">🔭</span>
+                      <div className="badge-details">
+                        <strong className="badge-name">Rhyme Dela Viña</strong>
+                        <span className="badge-role">Founder · Astronomical Society</span>
+                      </div>
+                    </div>
+                    <div className="honor-name-badge founder-badge">
+                      <span className="badge-icon">🪐</span>
+                      <div className="badge-details">
+                        <strong className="badge-name">Onimus Evasco</strong>
+                        <span className="badge-role">Founder · Astronomical Society</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="honor-section">
+                  <div className="honor-section-title">
+                    <span className="gold-star">✦</span> CHARTER MEMBERS
+                  </div>
+                  <div className="members-honor-grid">
+                    <div className="honor-name-badge member-badge">
+                      <span className="badge-dot">•</span>
+                      <strong className="badge-name">Gabielle Nero</strong>
+                      <span className="badge-pill">Charter Member</span>
+                    </div>
+                    <div className="honor-name-badge member-badge">
+                      <span className="badge-dot">•</span>
+                      <strong className="badge-name">Jillian Real</strong>
+                      <span className="badge-pill">Charter Member</span>
+                    </div>
+                    <div className="honor-name-badge member-badge">
+                      <span className="badge-dot">•</span>
+                      <strong className="badge-name">John Prado</strong>
+                      <span className="badge-pill">Charter Member</span>
+                    </div>
+                    <div className="honor-name-badge member-badge">
+                      <span className="badge-dot">•</span>
+                      <strong className="badge-name">Raven Gavino</strong>
+                      <span className="badge-pill">Charter Member</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="honor-motto-bar">
+                  <span className="latin-motto">« PER ASPERA AD ASTRA »</span>
+                  <span className="motto-trans">Through Hardships to the Stars · Dedicated to Celestial Exploration & Scientific Truth</span>
+                </div>
+              </div>
+
               <div className="astro-status-badge">
                 <span>STATUS: Proposed Student Organization · In Development</span>
               </div>

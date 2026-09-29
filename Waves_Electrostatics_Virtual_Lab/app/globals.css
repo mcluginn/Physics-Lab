@@ -4665,6 +4665,229 @@ button { color: inherit; }
     bottom: calc(100% + 8px);
     padding: 14px 16px;
   }
+/* ============================================================== */
+/* COMMEMORATIVE HARDWOOD & EMBEDDED GOLD FOUNDERS HONOR ROLL */
+/* ============================================================== */
+.astro-founders-honor-card {
+  margin: 0 0 24px 0;
+  padding: 24px;
+  background: radial-gradient(ellipse at top, #261208 0%, #170904 60%, #0d0402 100%);
+  border: 2px solid #b45309;
+  outline: 1px solid rgba(254, 240, 138, 0.35);
+  outline-offset: -5px;
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), inset 0 0 30px rgba(0, 0, 0, 0.6), 0 0 25px rgba(245, 158, 11, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+.astro-founders-honor-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #fde68a, #f59e0b, #fde68a, transparent);
+}
+
+.honor-card-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.25);
+  margin-bottom: 20px;
+}
+
+.honor-seal-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fde68a 0%, #f59e0b 60%, #92400e 100%);
+  color: #1c0a04;
+  font-size: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
+}
+
+.honor-kicker {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  color: #fbbf24;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.honor-card-header h3 {
+  margin: 0;
+  font-family: 'Cinzel', Georgia, 'Times New Roman', serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: #fffbeb;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8), 0 0 12px rgba(251, 191, 36, 0.3);
+  letter-spacing: 0.03em;
+}
+
+.honor-subtitle {
+  margin: 4px 0 0 0;
+  font-size: 12px;
+  color: #d1a877;
+  font-style: italic;
+}
+
+.honor-section {
+  margin-bottom: 20px;
+}
+
+.honor-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #fef08a;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  border-left: 3px solid #f59e0b;
+  padding-left: 10px;
+}
+
+.honor-section-title .gold-star {
+  color: #f59e0b;
+  font-size: 14px;
+}
+
+.founders-honor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.honor-name-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(30, 14, 8, 0.65);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  transition: all 0.2s ease;
+}
+
+.honor-name-badge:hover {
+  background: rgba(45, 20, 10, 0.85);
+  border-color: #f59e0b;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5), 0 0 15px rgba(245, 158, 11, 0.2);
+}
+
+.founder-badge {
+  background: linear-gradient(135deg, rgba(45, 20, 10, 0.8) 0%, rgba(25, 10, 5, 0.9) 100%);
+  border: 1.5px solid rgba(245, 158, 11, 0.5);
+}
+
+.founder-badge .badge-icon {
+  font-size: 22px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+.badge-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.badge-name {
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fffbeb;
+  letter-spacing: 0.04em;
+}
+
+.founder-badge .badge-name {
+  color: #fef08a;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.badge-role {
+  font-size: 11px;
+  color: #f59e0b;
+  font-weight: 500;
+}
+
+.members-honor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.member-badge {
+  padding: 10px 14px;
+}
+
+.member-badge .badge-dot {
+  color: #f59e0b;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.badge-pill {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.honor-motto-bar {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(245, 158, 11, 0.25);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.latin-motto {
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #fef08a;
+}
+
+.motto-trans {
+  font-size: 11px;
+  color: #d1a877;
+  font-style: italic;
+}
+
+@media (max-width: 640px) {
+  .astro-founders-honor-card {
+    padding: 16px;
+  }
+  .honor-card-header {
+    flex-direction: column;
+    text-align: center;
+    gap: 10px;
+  }
+  .founders-honor-grid,
+  .members-honor-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 

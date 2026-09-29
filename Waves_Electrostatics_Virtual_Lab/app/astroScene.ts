@@ -2345,6 +2345,661 @@ export function createAstroScene(
   });
 
   // ==============================================================
+  // COMMEMORATIVE HARDWOOD & EMBEDDED GOLD FOUNDERS HONOR ROLL PLAQUES
+  // Mounted on the South Entrance Wall flanking the exit double doors
+  // ==============================================================
+  const createFoundersHonorRollTexture = (variant: 'founders_roll' | 'founding_charter') => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2048;
+    canvas.height = 1536;
+    const ctx = canvas.getContext('2d')!;
+
+    // 1. Lustrous deep mahogany / burled black walnut wood grain base
+    const bgGrad = ctx.createLinearGradient(0, 0, 2048, 1536);
+    bgGrad.addColorStop(0, '#1c0a04');
+    bgGrad.addColorStop(0.3, '#2a1107');
+    bgGrad.addColorStop(0.7, '#1f0c05');
+    bgGrad.addColorStop(1, '#170803');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, 2048, 1536);
+
+    // 2. Realistic Woodgrain Fibers & Figure
+    ctx.save();
+    for (let i = 0; i < 900; i++) {
+      const y = Math.random() * 1536;
+      const wave = Math.sin(y * 0.012) * 18;
+      ctx.strokeStyle = Math.random() > 0.4
+        ? 'rgba(42, 17, 7, 0.45)'
+        : 'rgba(8, 3, 1, 0.55)';
+      ctx.lineWidth = Math.random() * 2.5 + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.bezierCurveTo(
+        600, y + wave + (Math.random() - 0.5) * 12,
+        1400, y - wave + (Math.random() - 0.5) * 12,
+        2048, y + (Math.random() - 0.5) * 8
+      );
+      ctx.stroke();
+    }
+
+    // Warm golden flecks / medullary rays in polished mahogany
+    for (let j = 0; j < 350; j++) {
+      const fx = Math.random() * 2048;
+      const fy = Math.random() * 1536;
+      const flen = Math.random() * 60 + 20;
+      ctx.strokeStyle = 'rgba(180, 110, 45, 0.12)';
+      ctx.lineWidth = Math.random() * 1.5 + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(fx, fy);
+      ctx.lineTo(fx + flen, fy + (Math.random() - 0.5) * 4);
+      ctx.stroke();
+    }
+
+    // Lacquered satin vignette / edge darkening
+    const vignette = ctx.createRadialGradient(1024, 768, 500, 1024, 768, 1200);
+    vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    vignette.addColorStop(1, 'rgba(5, 2, 1, 0.72)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, 2048, 1536);
+    ctx.restore();
+
+    // Helper for metallic 24K gold linear gradient
+    const createGoldGrad = (y1: number, y2: number) => {
+      const g = ctx.createLinearGradient(0, y1, 0, y2);
+      g.addColorStop(0.00, '#fffbeb'); // Specular gold highlight
+      g.addColorStop(0.18, '#fef08a'); // Bright gold
+      g.addColorStop(0.40, '#f59e0b'); // Pure 24K rich gold
+      g.addColorStop(0.72, '#d97706'); // Deep amber gold
+      g.addColorStop(0.92, '#b45309'); // Antique burnished bronze
+      g.addColorStop(1.00, '#78350f'); // Shadow edge
+      return g;
+    };
+
+    // Helper to draw authentic chiseled embedded gold text
+    const drawChiseledText = (
+      text: string,
+      x: number,
+      y: number,
+      font: string,
+      align: CanvasTextAlign = 'center',
+      sizeApprox: number = 40
+    ) => {
+      ctx.save();
+      ctx.font = font;
+      ctx.textAlign = align;
+      ctx.textBaseline = 'middle';
+
+      // 1. Chiseled route depth shadow (cast down-right into wood)
+      ctx.fillStyle = 'rgba(5, 2, 1, 0.95)';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetX = 3;
+      ctx.shadowOffsetY = 4;
+      ctx.fillText(text, x + 2, y + 3);
+
+      // 2. Bevel top-left specular highlight (light catching top edge of carved channel)
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+      ctx.fillStyle = 'rgba(255, 248, 220, 0.35)';
+      ctx.fillText(text, x - 1, y - 1);
+
+      // 3. Metallic 24K Gold fill
+      const grad = createGoldGrad(y - sizeApprox * 0.6, y + sizeApprox * 0.6);
+      ctx.fillStyle = grad;
+      ctx.fillText(text, x, y);
+
+      // 4. Razor-sharp metallic outline
+      ctx.strokeStyle = '#fde68a';
+      ctx.lineWidth = 1.0;
+      ctx.strokeText(text, x, y);
+      ctx.restore();
+    };
+
+    // 3. Ornate Double Gold Inlay Filigree Borders
+    const bGrad = createGoldGrad(60, 1476);
+    ctx.save();
+    ctx.shadowColor = 'rgba(5, 2, 1, 0.9)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 3;
+
+    // Outer primary gold band
+    ctx.strokeStyle = bGrad;
+    ctx.lineWidth = 12;
+    ctx.strokeRect(64, 64, 1920, 1408);
+
+    // Inner fine gold fillet
+    ctx.lineWidth = 3.5;
+    ctx.strokeRect(96, 96, 1856, 1344);
+
+    // Ornamental corner flourishes with 8-pointed star
+    const drawCornerFlourish = (cx: number, cy: number) => {
+      ctx.save();
+      ctx.strokeStyle = '#f59e0b';
+      ctx.fillStyle = '#fef08a';
+      ctx.lineWidth = 2.5;
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 14);
+      ctx.lineTo(cx + 3, cy - 3);
+      ctx.lineTo(cx + 14, cy);
+      ctx.lineTo(cx + 3, cy + 3);
+      ctx.lineTo(cx, cy + 14);
+      ctx.lineTo(cx - 3, cy + 3);
+      ctx.lineTo(cx - 14, cy);
+      ctx.lineTo(cx - 3, cy - 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    };
+
+    drawCornerFlourish(96, 96);
+    drawCornerFlourish(1952, 96);
+    drawCornerFlourish(96, 1440);
+    drawCornerFlourish(1952, 1440);
+
+    // 4. University Header & Astronomical Society Crest
+    drawChiseledText(
+      'UNIVERSITY OF PERPETUAL HELP SYSTEM DALTA',
+      1024,
+      160,
+      '600 36px "Cinzel", "Times New Roman", Georgia, serif',
+      'center',
+      36
+    );
+
+    // Central Astronomical Crest
+    const crestY = 240;
+    ctx.save();
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.ellipse(1024, crestY, 95, 34, -Math.PI / 8, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = createGoldGrad(crestY - 30, crestY + 30);
+    ctx.beginPath();
+    for (let s = 0; s < 16; s++) {
+      const r = s % 2 === 0 ? 32 : 12;
+      const a = (s * Math.PI) / 8 - Math.PI / 2;
+      const px = 1024 + Math.cos(a) * r;
+      const py = crestY + Math.sin(a) * r;
+      if (s === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#fde68a';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(245, 158, 11, 0.7)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(880, crestY, 50, -Math.PI / 3, Math.PI / 3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(1168, crestY, 50, (2 * Math.PI) / 3, (4 * Math.PI) / 3);
+    ctx.stroke();
+    ctx.restore();
+
+    // Society Title
+    drawChiseledText(
+      'UPHSD ASTRONOMICAL SOCIETY',
+      1024,
+      340,
+      'bold 74px "Cinzel", "Times New Roman", Georgia, serif',
+      'center',
+      74
+    );
+
+    const drawDivider = (y: number, w: number) => {
+      ctx.save();
+      const divGrad = ctx.createLinearGradient(1024 - w / 2, y, 1024 + w / 2, y);
+      divGrad.addColorStop(0, 'rgba(245, 158, 11, 0)');
+      divGrad.addColorStop(0.2, 'rgba(254, 240, 138, 0.85)');
+      divGrad.addColorStop(0.5, '#ffffff');
+      divGrad.addColorStop(0.8, 'rgba(254, 240, 138, 0.85)');
+      divGrad.addColorStop(1, 'rgba(245, 158, 11, 0)');
+      ctx.strokeStyle = divGrad;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(1024 - w / 2, y);
+      ctx.lineTo(1024 + w / 2, y);
+      ctx.stroke();
+
+      ctx.fillStyle = '#fef08a';
+      ctx.beginPath();
+      ctx.moveTo(1024, y - 6);
+      ctx.lineTo(1024 + 8, y);
+      ctx.lineTo(1024, y + 6);
+      ctx.lineTo(1024 - 8, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    };
+
+    if (variant === 'founders_roll') {
+      drawChiseledText(
+        'COMMEMORATIVE FOUNDING ROLL OF HONOR',
+        1024,
+        415,
+        'italic 500 36px Georgia, serif',
+        'center',
+        36
+      );
+
+      drawDivider(460, 1150);
+
+      // SECTION 1: FOUNDERS
+      drawChiseledText(
+        '✦   F O U N D E R S   ✦',
+        1024,
+        520,
+        'bold 42px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        42
+      );
+
+      drawChiseledText(
+        'KARYLLE SANTOS',
+        1024,
+        605,
+        'bold 62px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        62
+      );
+
+      drawChiseledText(
+        'RHYME DELA VIÑA',
+        1024,
+        695,
+        'bold 62px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        62
+      );
+
+      drawChiseledText(
+        'ONIMUS EVASCO',
+        1024,
+        785,
+        'bold 62px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        62
+      );
+
+      drawDivider(860, 1050);
+
+      // SECTION 2: CHARTER MEMBERS
+      drawChiseledText(
+        '✦   C H A R T E R   M E M B E R S   ✦',
+        1024,
+        920,
+        'bold 40px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        40
+      );
+
+      drawChiseledText(
+        'GABIELLE NERO',
+        680,
+        1010,
+        'bold 52px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        52
+      );
+      drawChiseledText(
+        '✦',
+        1024,
+        1010,
+        'bold 32px serif',
+        'center',
+        32
+      );
+      drawChiseledText(
+        'JILLIAN REAL',
+        1368,
+        1010,
+        'bold 52px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        52
+      );
+
+      drawChiseledText(
+        'JOHN PRADO',
+        680,
+        1100,
+        'bold 52px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        52
+      );
+      drawChiseledText(
+        '✦',
+        1024,
+        1100,
+        'bold 32px serif',
+        'center',
+        32
+      );
+      drawChiseledText(
+        'RAVEN GAVINO',
+        1368,
+        1100,
+        'bold 52px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        52
+      );
+
+      drawDivider(1180, 1200);
+
+      // Bottom Motto & Dedication
+      drawChiseledText(
+        '«  PER ASPERA AD ASTRA  »',
+        1024,
+        1255,
+        'bold 42px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        42
+      );
+
+      drawChiseledText(
+        'Through Hardships to the Stars · Dedicated to Celestial Exploration and Scientific Truth',
+        1024,
+        1320,
+        'italic 400 30px Georgia, serif',
+        'center',
+        30
+      );
+
+      drawChiseledText(
+        'Est. UPHSD Campus Laboratory · Room 04 Virtual Space Observatory',
+        1024,
+        1380,
+        '500 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        'center',
+        24
+      );
+    } else {
+      // Variant: Founding Charter & Scientific Dedication
+      drawChiseledText(
+        'FOUNDING CHARTER & SCIENTIFIC DEDICATION',
+        1024,
+        415,
+        'italic 500 36px Georgia, serif',
+        'center',
+        36
+      );
+
+      drawDivider(460, 1150);
+
+      drawChiseledText(
+        '«  PER ASPERA AD ASTRA  »',
+        1024,
+        525,
+        'bold 44px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        44
+      );
+
+      drawChiseledText(
+        'Established to ignite scientific curiosity, telescopic exploration,',
+        1024,
+        605,
+        '400 34px Georgia, serif',
+        'center',
+        34
+      );
+      drawChiseledText(
+        'and celestial discovery across the university student body.',
+        1024,
+        655,
+        '400 34px Georgia, serif',
+        'center',
+        34
+      );
+
+      drawDivider(720, 950);
+
+      drawChiseledText(
+        '✦   F O U N D E R S   ✦',
+        1024,
+        780,
+        'bold 38px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        38
+      );
+
+      drawChiseledText(
+        'Karylle Santos   ·   Rhyme Dela Viña   ·   Onimus Evasco',
+        1024,
+        845,
+        'bold 46px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        46
+      );
+
+      drawDivider(915, 950);
+
+      drawChiseledText(
+        '✦   C H A R T E R   M E M B E R S   ✦',
+        1024,
+        975,
+        'bold 36px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        36
+      );
+
+      drawChiseledText(
+        'Gabielle Nero   ·   Jillian Real   ·   John Prado   ·   Raven Gavino',
+        1024,
+        1040,
+        'bold 42px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        42
+      );
+
+      drawDivider(1115, 1150);
+
+      drawChiseledText(
+        'Open to all students across all academic disciplines.',
+        1024,
+        1190,
+        'italic 400 32px Georgia, serif',
+        'center',
+        32
+      );
+
+      drawChiseledText(
+        '\"The cosmos is within us. We are made of star-stuff.\"',
+        1024,
+        1255,
+        'italic 400 30px Georgia, serif',
+        'center',
+        30
+      );
+
+      drawChiseledText(
+        'University of Perpetual Help System DALTA · Space Science Laboratory',
+        1024,
+        1340,
+        '600 26px "Cinzel", "Times New Roman", Georgia, serif',
+        'center',
+        26
+      );
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  };
+
+  const createFoundersHonorPlaqueMesh = (posX: number, variant: 'founders_roll' | 'founding_charter') => {
+    const plaqueGroup = new THREE.Group();
+    // Plaque mounted on South wall (z = 5.81), facing North into the room (rotation.y = Math.PI)
+    plaqueGroup.position.set(posX, 2.45, 5.81);
+    plaqueGroup.rotation.y = Math.PI;
+    scene.add(plaqueGroup);
+
+    const plaqueWidth = 1.92;
+    const plaqueHeight = 1.48;
+    const plaqueDepth = 0.05;
+
+    // 1. Solid mahogany backboard with beveled profile
+    const backboard = new THREE.Mesh(
+      new THREE.BoxGeometry(plaqueWidth, plaqueHeight, plaqueDepth),
+      mahoganyDeskMaterial
+    );
+    backboard.castShadow = true;
+    backboard.receiveShadow = true;
+    plaqueGroup.add(backboard);
+
+    // 2. Raised outer mahogany frame molding
+    // Top & Bottom frame rails
+    [-plaqueHeight / 2 + 0.03, plaqueHeight / 2 - 0.03].forEach((fy) => {
+      const rail = new THREE.Mesh(
+        new THREE.BoxGeometry(plaqueWidth + 0.04, 0.06, plaqueDepth + 0.025),
+        mahoganyDeskMaterial
+      );
+      rail.position.set(0, fy, 0.012);
+      plaqueGroup.add(rail);
+    });
+
+    // Left & Right frame stiles
+    [-plaqueWidth / 2 + 0.03, plaqueWidth / 2 - 0.03].forEach((fx) => {
+      const stile = new THREE.Mesh(
+        new THREE.BoxGeometry(0.06, plaqueHeight, plaqueDepth + 0.025),
+        mahoganyDeskMaterial
+      );
+      stile.position.set(fx, 0, 0.012);
+      plaqueGroup.add(stile);
+    });
+
+    // 3. Inner polished brass filigree beading
+    const innerBrassW = plaqueWidth - 0.08;
+    const innerBrassH = plaqueHeight - 0.08;
+
+    [-innerBrassH / 2, innerBrassH / 2].forEach((by) => {
+      const bead = new THREE.Mesh(
+        new THREE.BoxGeometry(innerBrassW, 0.022, plaqueDepth + 0.032),
+        brassTrimMaterial
+      );
+      bead.position.set(0, by, 0.016);
+      plaqueGroup.add(bead);
+    });
+
+    [-innerBrassW / 2, innerBrassW / 2].forEach((bx) => {
+      const bead = new THREE.Mesh(
+        new THREE.BoxGeometry(0.022, innerBrassH, plaqueDepth + 0.032),
+        brassTrimMaterial
+      );
+      bead.position.set(bx, 0, 0.016);
+      plaqueGroup.add(bead);
+    });
+
+    // 4. Four Solid Brass Corner Mounting Rosette Studs
+    const cornerX = innerBrassW / 2 - 0.03;
+    const cornerY = innerBrassH / 2 - 0.03;
+    [
+      [-cornerX, -cornerY],
+      [cornerX, -cornerY],
+      [-cornerX, cornerY],
+      [cornerX, cornerY],
+    ].forEach(([cx, cy]) => {
+      const rosette = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.026, 0.026, 0.028, 16),
+        brassTrimMaterial
+      );
+      rosette.rotation.x = Math.PI / 2;
+      rosette.position.set(cx, cy, plaqueDepth / 2 + 0.014);
+      plaqueGroup.add(rosette);
+    });
+
+    // 5. Plaque Face with embedded gold lettering texture
+    const plaqueTex = createFoundersHonorRollTexture(variant);
+    const plaqueFace = new THREE.Mesh(
+      new THREE.PlaneGeometry(innerBrassW - 0.015, innerBrassH - 0.015),
+      new THREE.MeshStandardMaterial({
+        map: plaqueTex,
+        roughness: 0.32,
+        metalness: 0.30,
+      })
+    );
+    plaqueFace.position.set(0, 0, plaqueDepth / 2 + 0.005);
+    plaqueFace.receiveShadow = true;
+    plaqueGroup.add(plaqueFace);
+
+    // 6. Overhead Museum Picture Light / Gallery Sconce
+    const lightMountY = plaqueHeight / 2 + 0.16;
+    const bracket = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.06, 0.06),
+      brassTrimMaterial
+    );
+    bracket.position.set(0, lightMountY, 0.02);
+    plaqueGroup.add(bracket);
+
+    // Curved dual brass lamp gooseneck arms
+    [-0.22, 0.22].forEach((ax) => {
+      const arm = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.01, 0.01, 0.32, 12),
+        brassTrimMaterial
+      );
+      arm.rotation.x = -Math.PI / 3.5;
+      arm.position.set(ax, lightMountY - 0.04, 0.14);
+      plaqueGroup.add(arm);
+    });
+
+    // Horizontal cylindrical brass lamp reflector hood
+    const lampHood = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.034, 0.034, 0.88, 20),
+      brassTrimMaterial
+    );
+    lampHood.rotation.z = Math.PI / 2;
+    lampHood.position.set(0, lightMountY - 0.12, 0.26);
+    plaqueGroup.add(lampHood);
+
+    // Dedicated downward museum gallery spotlight illuminating the gold names
+    const plaqueSpot = new THREE.SpotLight(0xfff3d6, 3.8, 6.0, Math.PI / 3.4, 0.5, 1.2);
+    plaqueSpot.position.set(posX, 2.45 + lightMountY - 0.12, 5.55);
+    plaqueSpot.target.position.set(posX, 2.45, 5.81);
+    scene.add(plaqueSpot);
+    scene.add(plaqueSpot.target);
+
+    // 7. Interactive Proximity Ray Proxy for Inspecting Charter
+    const rayProxy = new THREE.Mesh(
+      new THREE.BoxGeometry(2.1, 1.7, 0.6),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+    );
+    rayProxy.position.set(0, 0, 0.1);
+    plaqueGroup.add(rayProxy);
+
+    const isFounders = variant === 'founders_roll';
+    registerTarget(rayProxy, {
+      id: isFounders ? 'astro-founders-plaque' : 'astro-charter-plaque',
+      activityId: 'society_information',
+      category: 'COMMEMORATIVE ROSTER',
+      name: isFounders
+        ? 'Astronomical Society Founders & Charter Members Honor Roll'
+        : 'Astronomical Society Founding Charter & Dedication',
+      action: 'INSPECT FOUNDING CHARTER',
+      description: isFounders
+        ? 'Handcrafted mahogany and 24K gold commemorative plaque honoring Founders Karylle Santos, Rhyme Dela Viña, Onimus Evasco and Charter Members.'
+        : 'Hardwood and embedded gold charter dedicating the astronomical society to student exploration and scientific inquiry.',
+    });
+  };
+
+  // Mount Plaque 1 on West Wall beside Door (x = -2.85: exact screenshot location)
+  createFoundersHonorPlaqueMesh(-2.85, 'founders_roll');
+
+  // Mount Plaque 2 on East Wall beside Door (x = +2.85: grand architectural symmetry)
+  createFoundersHonorPlaqueMesh(2.85, 'founding_charter');
+
+  // ==============================================================
   // PLAYER CHARACTER & CAMERA CONTROLLER
   // ==============================================================
   const playerPosition = new THREE.Vector3(0, 1.70, 3.8);
