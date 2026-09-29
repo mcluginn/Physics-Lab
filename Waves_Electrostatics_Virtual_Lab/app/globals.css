@@ -1849,25 +1849,70 @@ button { color: inherit; }
   font-size: 11px;
 }
 
-/* --- Station Quick Jump Bar (Bottom Dock) --- */
-.astro-station-dock {
-  position: absolute;
-  bottom: 18px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
+/* --- Top Station Navigation Quick Jump Dock --- */
+.astro-top-dock {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(10, 15, 30, 0.88);
-  border: 1px solid rgba(99, 102, 241, 0.25);
-  padding: 6px 10px;
+  gap: 7px;
+  background: rgba(10, 16, 32, 0.88);
+  border: 1px solid rgba(99, 102, 241, 0.32);
+  padding: 5px 8px;
   border-radius: 999px;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  pointer-events: auto;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
   max-width: 95vw;
   overflow-x: auto;
+}
+
+.astro-top-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(18, 27, 46, 0.92);
+  border: 1px solid rgba(129, 140, 248, 0.32);
+  border-radius: 999px;
+  padding: 6px 13px;
+  color: #f8fafc !important;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  letter-spacing: 0.01em;
+}
+
+.astro-top-btn:hover {
+  background: rgba(79, 70, 229, 0.5);
+  border-color: rgba(129, 140, 248, 0.8);
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.45);
+}
+
+.astro-top-btn.survey-btn {
+  background: linear-gradient(135deg, #4f46e5 0%, #0284c7 100%);
+  border-color: #818cf8;
+  color: #ffffff !important;
+  font-weight: 700;
+  box-shadow: 0 0 14px rgba(99, 102, 241, 0.5);
+}
+
+.astro-top-btn.survey-btn:hover {
+  background: linear-gradient(135deg, #6366f1 0%, #38bdf8 100%);
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.7);
+}
+
+.astro-top-btn.collapse-btn {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #cbd5e1 !important;
+  font-size: 11px;
+}
+
+.astro-top-btn.collapse-btn:hover {
+  background: rgba(51, 65, 85, 0.95);
+  color: #ffffff !important;
 }
 
 .astro-station-btn {

@@ -42,7 +42,7 @@ export function createAstroScene(
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x070d1a);
   // Clear linear fog so room interior is bright and crisp, while distant space fades softly
-  scene.fog = new THREE.Fog(0x0a1326, 25, 75);
+  scene.fog = new THREE.Fog(0x050b18, 35, 110);
 
   const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 100);
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -406,23 +406,12 @@ export function createAstroScene(
   northWallSill.position.set(0, 0.3, -10);
   scene.add(northWallSill);
 
-  // Observatory Window Glass (High transmission, faint celestial blue reflection)
-  const windowGlass = new THREE.Mesh(
-    new THREE.PlaneGeometry(11, 3.8),
-    new THREE.MeshPhysicalMaterial({
-      color: 0x88ccff,
-      transparent: true,
-      opacity: 0.18,
-      roughness: 0.05,
-      metalness: 0.1,
-      transmission: 0.85,
-      ior: 1.52,
-    })
-  );
-  windowGlass.position.set(0, 2.2, -9.95);
-  scene.add(windowGlass);
+  // --- Observatory North Window Framing ---
+  // Note: Glass pane mesh is intentionally omitted to give 100% optical clarity into deep space
+  // so the shining Moon and sparkling stars are completely unobstructed, while the mahogany
+  // casing and brass mullions provide the architectural window framing.
 
-  // Window mullions (vertical and horizontal frames)
+  // Window mullions (vertical and horizontal brass frames)
   for (let mx = -4; mx <= 4; mx += 2) {
     const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.06, 3.8, 0.12), brassTrimMaterial);
     mullion.position.set(mx, 2.2, -9.94);
@@ -432,55 +421,290 @@ export function createAstroScene(
   horizMullion.position.set(0, 2.2, -9.94);
   scene.add(horizMullion);
 
-  // --- Deep 3D Celestial Starfield & Nebula System Behind North Window ---
-  const starCount = 650;
+  // --- Procedural 3D Moon with Craters, Lunar Maria & Additive Corona Glow ---
+  const createMoonTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d')!;
+
+    // Silvery lunar regolith base
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Micro-texture noise
+    for (let i = 0; i < 2200; i++) {
+      const nx = Math.random() * 512;
+      const ny = Math.random() * 512;
+      const nr = Math.random() * 2.8 + 0.8;
+      ctx.fillStyle = Math.random() > 0.4 ? 'rgba(148, 163, 184, 0.28)' : 'rgba(255, 255, 255, 0.35)';
+      ctx.beginPath();
+      ctx.arc(nx, ny, nr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Lunar Maria (Dark basaltic lava plains)
+    const maria = [
+      { x: 190, y: 150, r: 85, opacity: 0.55 }, // Mare Imbrium
+      { x: 140, y: 240, r: 105, opacity: 0.52 }, // Oceanus Procellarum
+      { x: 280, y: 200, r: 65, opacity: 0.50 }, // Mare Serenitatis
+      { x: 320, y: 270, r: 80, opacity: 0.54 }, // Mare Tranquillitatis
+      { x: 370, y: 320, r: 60, opacity: 0.48 }, // Mare Fecunditatis
+      { x: 380, y: 220, r: 50, opacity: 0.52 }, // Mare Crisium
+      { x: 210, y: 330, r: 65, opacity: 0.46 }, // Mare Nubium
+    ];
+
+    maria.forEach((m) => {
+      const grad = ctx.createRadialGradient(m.x, m.y, m.r * 0.15, m.x, m.y, m.r);
+      grad.addColorStop(0, `rgba(71, 85, 105, ${m.opacity})`);
+      grad.addColorStop(0.65, `rgba(100, 116, 139, ${m.opacity * 0.75})`);
+      grad.addColorStop(1, 'rgba(148, 163, 184, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Prominent impact craters with bright rims (Tycho, Copernicus, Kepler)
+    const craters = [
+      { x: 256, y: 420, r: 16, rays: true }, // Tycho with extensive ray system
+      { x: 180, y: 230, r: 13, rays: true }, // Copernicus
+      { x: 120, y: 210, r: 9, rays: false }, // Kepler
+      { x: 310, y: 150, r: 8, rays: false }, // Posidonius
+      { x: 150, y: 110, r: 11, rays: false }, // Plato
+    ];
+
+    craters.forEach((c) => {
+      // Ejecta rays
+      if (c.rays) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+        ctx.lineWidth = 1.5;
+        for (let ray = 0; ray < 14; ray++) {
+          const angle = (ray * Math.PI * 2) / 14 + (Math.random() - 0.5) * 0.2;
+          const rayLen = Math.random() * 120 + 70;
+          ctx.beginPath();
+          ctx.moveTo(c.x, c.y);
+          ctx.lineTo(c.x + Math.cos(angle) * rayLen, c.y + Math.sin(angle) * rayLen);
+          ctx.stroke();
+        }
+      }
+
+      // Outer bright crater rim
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Dark interior
+      ctx.fillStyle = 'rgba(51, 65, 85, 0.65)';
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r * 0.75, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Central peak
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  const createMoonCoronaTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d')!;
+    const grad = ctx.createRadialGradient(128, 128, 8, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+    grad.addColorStop(0.18, 'rgba(224, 242, 254, 0.82)');
+    grad.addColorStop(0.42, 'rgba(186, 230, 253, 0.40)');
+    grad.addColorStop(0.70, 'rgba(56, 189, 248, 0.15)');
+    grad.addColorStop(1, 'rgba(14, 165, 233, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  // 3D Moon Mesh
+  const moonTexture = createMoonTexture();
+  const moonMaterial = new THREE.MeshStandardMaterial({
+    map: moonTexture,
+    roughness: 0.82,
+    metalness: 0.05,
+    emissive: new THREE.Color(0xf1f5f9),
+    emissiveMap: moonTexture,
+    emissiveIntensity: 1.35,
+    fog: false,
+  });
+  const moonMesh = new THREE.Mesh(new THREE.SphereGeometry(1.95, 48, 48), moonMaterial);
+  // Positioned directly in the grand north observatory sky view
+  moonMesh.position.set(3.8, 6.4, -26.0);
+  moonMesh.rotation.y = -Math.PI / 4;
+  scene.add(moonMesh);
+
+  // Glowing Outer Lunar Corona Sprite
+  const moonCoronaMat = new THREE.SpriteMaterial({
+    map: createMoonCoronaTexture(),
+    color: 0xffffff,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+  });
+  const moonCorona = new THREE.Sprite(moonCoronaMat);
+  moonCorona.position.set(3.8, 6.4, -25.9);
+  moonCorona.scale.set(11.5, 11.5, 1.0);
+  scene.add(moonCorona);
+
+  // Dedicated Moonlight Point Light bathing the window opening
+  const moonPointLight = new THREE.PointLight(0xdbeafe, 4.2, 45, 1.1);
+  moonPointLight.position.set(3.8, 6.4, -24.0);
+  scene.add(moonPointLight);
+
+  // --- Deep 3D Celestial Starfield & Shining Stars System ---
+  const createStarGlowTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d')!;
+    const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    grad.addColorStop(0.16, 'rgba(255, 255, 255, 0.92)');
+    grad.addColorStop(0.45, 'rgba(186, 230, 253, 0.55)');
+    grad.addColorStop(0.75, 'rgba(56, 189, 248, 0.18)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  const starCount = 1200;
   const starGeo = new THREE.BufferGeometry();
   const starPos = new Float32Array(starCount * 3);
   const starColors = new Float32Array(starCount * 3);
-  const starSizes = new Float32Array(starCount);
 
   const starPalette = [
-    new THREE.Color(0xffffff), // pure white
-    new THREE.Color(0xa5f3fc), // O/B blue
-    new THREE.Color(0x38bdf8), // Sirius cyan
+    new THREE.Color(0xffffff), // pure diamond white
+    new THREE.Color(0xa5f3fc), // O/B cyan blue
+    new THREE.Color(0x93c5fd), // Sirius electric sapphire
+    new THREE.Color(0x38bdf8), // radiant sky cyan
     new THREE.Color(0xfef08a), // G-type yellow (Sun)
     new THREE.Color(0xfba571), // K/M orange-red (Betelgeuse)
-    new THREE.Color(0xc084fc), // violet starlight
+    new THREE.Color(0xe9d5ff), // violet starlight
   ];
 
   for (let i = 0; i < starCount; i++) {
-    // Spread widely behind the north window
-    starPos[i * 3 + 0] = (Math.random() - 0.5) * 44;
-    starPos[i * 3 + 1] = Math.random() * 24 - 1;
-    starPos[i * 3 + 2] = -12 - Math.random() * 32;
+    // Spread widely behind the north window and overhead sky
+    starPos[i * 3 + 0] = (Math.random() - 0.5) * 52;
+    starPos[i * 3 + 1] = Math.random() * 26 - 1;
+    starPos[i * 3 + 2] = -13 - Math.random() * 35;
 
     const col = starPalette[Math.floor(Math.random() * starPalette.length)];
     starColors[i * 3 + 0] = col.r;
     starColors[i * 3 + 1] = col.g;
     starColors[i * 3 + 2] = col.b;
-    starSizes[i] = Math.random() * 0.14 + 0.04;
   }
   starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
   starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
 
   const starMaterial = new THREE.PointsMaterial({
-    size: 0.12,
+    size: 0.75,
+    map: createStarGlowTexture(),
     vertexColors: true,
     transparent: true,
-    opacity: 0.92,
+    opacity: 0.95,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
   });
   const starPoints = new THREE.Points(starGeo, starMaterial);
   scene.add(starPoints);
 
+  // --- Landmark Twinkling Stars with 4-Point Diffraction Spikes ---
+  const createDiffractionSpikeTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d')!;
+    // Core radial glow
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    grad.addColorStop(0.18, 'rgba(255, 255, 255, 0.92)');
+    grad.addColorStop(0.5, 'rgba(186, 230, 253, 0.45)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+
+    // Horizontal diffraction spike
+    const hGrad = ctx.createLinearGradient(0, 64, 128, 64);
+    hGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    hGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.95)');
+    hGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = hGrad;
+    ctx.fillRect(0, 62, 128, 4);
+
+    // Vertical diffraction spike
+    const vGrad = ctx.createLinearGradient(64, 0, 64, 128);
+    vGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    vGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.95)');
+    vGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = vGrad;
+    ctx.fillRect(62, 0, 4, 128);
+
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  interface LandmarkStar {
+    sprite: THREE.Sprite;
+    baseScale: number;
+    twinkleSpeed: number;
+    phase: number;
+  }
+  const landmarkStars: LandmarkStar[] = [];
+  const diffractionTex = createDiffractionSpikeTexture();
+
+  const landmarkDefs = [
+    { name: 'Sirius', x: -2.8, y: 5.6, z: -23, color: 0x93c5fd, scale: 2.2, speed: 3.2, phase: 0.1 },
+    { name: 'Betelgeuse', x: 6.2, y: 7.2, z: -25, color: 0xfba571, scale: 2.5, speed: 2.4, phase: 1.2 },
+    { name: 'Rigel', x: -5.4, y: 3.6, z: -21, color: 0x67e8f9, scale: 2.0, speed: 3.7, phase: 2.4 },
+    { name: 'Polaris', x: 0.3, y: 8.4, z: -27, color: 0xffffff, scale: 2.1, speed: 2.1, phase: 3.5 },
+    { name: 'Vega', x: -7.5, y: 6.8, z: -26, color: 0xa5f3fc, scale: 2.3, speed: 3.0, phase: 4.8 },
+    { name: 'Aldebaran', x: 4.4, y: 3.8, z: -22, color: 0xfde047, scale: 1.9, speed: 2.8, phase: 5.3 },
+  ];
+
+  landmarkDefs.forEach((def) => {
+    const mat = new THREE.SpriteMaterial({
+      map: diffractionTex,
+      color: def.color,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      fog: false,
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(def.x, def.y, def.z);
+    sprite.scale.set(def.scale, def.scale, 1);
+    scene.add(sprite);
+    landmarkStars.push({
+      sprite,
+      baseScale: def.scale,
+      twinkleSpeed: def.speed,
+      phase: def.phase,
+    });
+  });
+
   // Distant glowing nebula cloud particle cluster
-  const nebulaCount = 120;
+  const nebulaCount = 140;
   const nebulaGeo = new THREE.BufferGeometry();
   const nebulaPos = new Float32Array(nebulaCount * 3);
   const nebulaColors = new Float32Array(nebulaCount * 3);
   for (let i = 0; i < nebulaCount; i++) {
-    nebulaPos[i * 3 + 0] = (Math.random() - 0.5) * 18 - 2;
-    nebulaPos[i * 3 + 1] = Math.random() * 10 + 4;
-    nebulaPos[i * 3 + 2] = -22 - Math.random() * 10;
+    nebulaPos[i * 3 + 0] = (Math.random() - 0.5) * 22 - 2;
+    nebulaPos[i * 3 + 1] = Math.random() * 12 + 3;
+    nebulaPos[i * 3 + 2] = -24 - Math.random() * 12;
     const isMagenta = Math.random() > 0.45;
     nebulaColors[i * 3 + 0] = isMagenta ? 0.75 : 0.2;
     nebulaColors[i * 3 + 1] = isMagenta ? 0.2 : 0.55;
@@ -489,11 +713,13 @@ export function createAstroScene(
   nebulaGeo.setAttribute('position', new THREE.BufferAttribute(nebulaPos, 3));
   nebulaGeo.setAttribute('color', new THREE.BufferAttribute(nebulaColors, 3));
   const nebulaMat = new THREE.PointsMaterial({
-    size: 1.8,
+    size: 3.2,
     vertexColors: true,
     transparent: true,
-    opacity: 0.15,
+    opacity: 0.28,
+    blending: THREE.AdditiveBlending,
     depthWrite: false,
+    fog: false,
   });
   const nebulaPoints = new THREE.Points(nebulaGeo, nebulaMat);
   scene.add(nebulaPoints);
@@ -1531,6 +1757,15 @@ export function createAstroScene(
     // Sun gentle breathing pulsation
     const sunPulse = 1 + Math.sin(now * 0.003) * 0.03;
     sunMesh.scale.set(sunPulse, sunPulse, sunPulse);
+
+    // Rotate 3D Moon gently
+    moonMesh.rotation.y += 0.0004;
+
+    // Animate twinkling landmark stars
+    landmarkStars.forEach((star) => {
+      const twinkle = 1 + Math.sin(now * 0.001 * star.twinkleSpeed + star.phase) * 0.28;
+      star.sprite.scale.set(star.baseScale * twinkle, star.baseScale * twinkle, 1);
+    });
 
     // Smooth keyboard turning
     const turnSpeed = 2.1;

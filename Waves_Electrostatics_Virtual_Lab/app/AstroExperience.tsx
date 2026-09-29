@@ -518,34 +518,34 @@ export default function AstroExperience() {
           </div>
 
           {/* Quick Station Navigation Menu */}
-          <nav className="astro-station-dock" aria-label="Room 04 Stations">
-            <button onClick={() => { openStationModal('solar_system'); sceneApi.current?.teleportTo('solar_system'); }}>
+          <nav className="astro-top-dock" aria-label="Room 04 Stations">
+            <button className="astro-top-btn" onClick={() => { openStationModal('solar_system'); sceneApi.current?.teleportTo('solar_system'); }}>
               🪐 Solar System
             </button>
-            <button onClick={() => { openStationModal('virtual_observatory'); sceneApi.current?.teleportTo('virtual_observatory'); }}>
+            <button className="astro-top-btn" onClick={() => { openStationModal('virtual_observatory'); sceneApi.current?.teleportTo('virtual_observatory'); }}>
               🔭 Observatory
             </button>
-            <button onClick={() => { openStationModal('constellations'); sceneApi.current?.teleportTo('constellations'); }}>
+            <button className="astro-top-btn" onClick={() => { openStationModal('constellations'); sceneApi.current?.teleportTo('constellations'); }}>
               ⭐ Constellations
             </button>
-            <button onClick={() => { openStationModal('activities'); sceneApi.current?.teleportTo('activities'); }}>
+            <button className="astro-top-btn" onClick={() => { openStationModal('activities'); sceneApi.current?.teleportTo('activities'); }}>
               📋 10 Activities
             </button>
-            <button onClick={() => { openStationModal('astrophotography'); sceneApi.current?.teleportTo('astrophotography'); }}>
+            <button className="astro-top-btn" onClick={() => { openStationModal('astrophotography'); sceneApi.current?.teleportTo('astrophotography'); }}>
               📷 Astrophoto
             </button>
-            <button onClick={() => { openStationModal('research'); sceneApi.current?.teleportTo('research'); }}>
+            <button className="astro-top-btn" onClick={() => { openStationModal('research'); sceneApi.current?.teleportTo('research'); }}>
               💻 Research
             </button>
-            <button onClick={() => { openStationModal('space_missions'); sceneApi.current?.teleportTo('space_missions'); }}>
+            <button className="astro-top-btn" onClick={() => { openStationModal('space_missions'); sceneApi.current?.teleportTo('space_missions'); }}>
               🚀 Missions
             </button>
-            <button className="survey-btn-pill" onClick={() => { openStationModal('membership_survey'); sceneApi.current?.teleportTo('membership_survey'); }}>
+            <button className="astro-top-btn survey-btn" onClick={() => { openStationModal('membership_survey'); sceneApi.current?.teleportTo('membership_survey'); }}>
               ✍️ Join / Survey
             </button>
             <button
               type="button"
-              className="astro-hud-collapse-btn"
+              className="astro-top-btn collapse-btn"
               onClick={toggleHud}
               title="Minimize HUD for unobstructed 3D view"
             >
@@ -603,25 +603,14 @@ export default function AstroExperience() {
         </footer>
       )}
 
-      {/* Mobile Touch Joystick */}
-      {!activeModal && !externalOverlay && (
+      {/* Mobile action button when near exhibit (walk analog joystick removed) */}
+      {!activeModal && !externalOverlay && interaction && (
         <div className="astro-mobile-controls">
-          <div
-            className="astro-mobile-joystick"
-            onPointerDown={startJoystick}
-            onPointerMove={moveJoystick}
-            onPointerUp={releaseJoystick}
-            onPointerCancel={releaseJoystick}
-          >
-            <span className="knob" style={{ transform: `translate(${joystickKnob.x}px, ${joystickKnob.y}px)` }} />
-            <small>WALK</small>
-          </div>
           <button
-            className={`astro-mobile-action ${interaction ? 'ready' : ''}`}
+            className="astro-mobile-action ready"
             onClick={() => sceneApi.current?.interact()}
-            disabled={!interaction}
           >
-            {interaction ? `E · ${interaction.action}` : 'LOOK AT EXHIBIT'}
+            {`E · ${interaction.action}`}
           </button>
         </div>
       )}
