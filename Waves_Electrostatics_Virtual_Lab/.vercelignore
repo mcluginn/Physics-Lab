@@ -1,0 +1,21 @@
+# Vercel Deployment Optimization Ignore for Next.js app
+# Prevents raw 3D assets, DCC project files, and backups from inflating deployment storage
+
+# Raw 3D authoring formats
+*.max
+*.blend
+*.c4d
+*.ma
+*.e3d
+*.pdf
+
+# Backups and temporary files
+*backup*.html
+temp_*
+scratch_*
+archive/
+*.log
+
+# Duplicate references
+public/assets/references/
+public/assets/README.md

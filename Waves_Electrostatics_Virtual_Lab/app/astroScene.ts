@@ -2084,33 +2084,6 @@ export function createAstroScene(
   );
   innerCelestialGroup.add(centralEarth);
 
-  // Load the authentic Armillary.obj from assets/armillary
-  const armillaryObjLoader = new OBJLoader();
-  armillaryObjLoader.load(
-    '/assets/armillary/Armillary.obj',
-    (loadedObj) => {
-      while (armillaryModelGroup.children.length > 0) {
-        armillaryModelGroup.remove(armillaryModelGroup.children[0]);
-      }
-      loadedObj.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          const m = child as THREE.Mesh;
-          m.geometry.center();
-          m.material = antiqueBrassMaterial;
-          m.castShadow = true;
-          m.receiveShadow = true;
-        }
-      });
-      loadedObj.scale.set(0.00115, 0.00115, 0.00115);
-      loadedObj.position.set(0, 0, 0);
-      armillaryModelGroup.add(loadedObj);
-    },
-    undefined,
-    (err) => {
-      console.warn('Armillary OBJ load note:', err);
-    }
-  );
-
   // Spotlight highlighting the Armillary Sphere
   const armillarySpot = new THREE.SpotLight(0xfff1d0, 3.6, 9.0, Math.PI / 4, 0.4, 1.2);
   armillarySpot.position.set(4.2, 4.2, -6.8);

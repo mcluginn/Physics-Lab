@@ -1,0 +1,23 @@
+# Vercel Deployment Optimization Ignore
+# Prevents raw 3D assets, DCC project files, and backups from inflating deployment storage
+
+# Raw 3D authoring formats
+*.max
+*.blend
+*.c4d
+*.ma
+*.e3d
+*.pdf
+
+# Backups and temporary files
+*backup*.html
+temp_*
+scratch_*
+archive/
+
+# Test models & raw texture dumps
+character_texture_*
+*extracted*
+8d96bc9d*
+122a9240*
+*.log
