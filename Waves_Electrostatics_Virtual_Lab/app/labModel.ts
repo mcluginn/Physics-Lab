@@ -37,6 +37,7 @@ export type StationProgress = {
   conclusion: string; // Scientific Conclusion & Physical Law Deduction
   recommendations: string; // Practical Recommendations & Apparatus Improvements
   errors: string[];
+  guideAnswers?: number[];
 };
 
 export type LabProgress = Record<StationId, StationProgress>;
@@ -181,6 +182,7 @@ export function createDefaultProgress(): LabProgress {
     conclusion: '',
     recommendations: '',
     errors: [],
+    guideAnswers: [-1, -1, -1],
   });
   return { wave: station(), sound: station(), electro: station() };
 }
@@ -238,3 +240,188 @@ export function calculateElectro(settings: ElectroSettings) {
     potentialEnergy,
   };
 }
+
+export type GuideQuestion = {
+  id: string;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+};
+
+export const STATION_GUIDE_QUESTIONS: Record<StationId, GuideQuestion[]> = {
+  wave: [
+    {
+      id: 'w-q1',
+      question: 'If the string tension T is quadrupled (multiplied by 4) while linear density μ is unchanged, how does wave speed change?',
+      options: [
+        'Wave speed doubles (2×) because v = √(T/μ)',
+        'Wave speed quadruples (4×) in direct proportion to tension',
+        'Wave speed is halved (0.5×)',
+        'Wave speed remains unchanged; only amplitude increases',
+      ],
+      correctIndex: 0,
+      explanation: 'Because v = √(T/μ), multiplying tension by 4 yields √(4) = 2 times the original speed.',
+    },
+    {
+      id: 'w-q2',
+      question: 'Why does changing the oscillator driving frequency f NOT alter the wave speed v on the string?',
+      options: [
+        'Wave speed is determined strictly by medium properties (tension T and density μ), so wavelength adjusts as λ = v/f',
+        'Frequency only affects sound waves, not transverse waves',
+        'Wave speed increases linearly with frequency',
+        'The oscillator absorbs excess kinetic energy',
+      ],
+      correctIndex: 0,
+      explanation: 'Wave speed is an intrinsic medium property (v = √(T/μ)). When frequency f is varied, the wavelength λ proportionally contracts or expands according to λ = v/f.',
+    },
+    {
+      id: 'w-q3',
+      question: 'In the linear regression of v² versus T, what physical property does the reciprocal of the slope (1/slope) represent?',
+      options: [
+        'String linear mass density μ (kg/m)',
+        'Oscillator driving frequency f (Hz)',
+        'Gravitational acceleration g (m/s²)',
+        'Total mass of the string M (kg)',
+      ],
+      correctIndex: 0,
+      explanation: 'From v² = (1/μ)·T, a plot of v² (y-axis) vs T (x-axis) has slope m = 1/μ. Thus μ_exp = 1/m.',
+    },
+  ],
+  sound: [
+    {
+      id: 's-q1',
+      question: 'How does an increase in ambient air temperature t affect the speed of sound and resonance frequencies in an air tube?',
+      options: [
+        'Sound speed increases (v ≈ 331.3 + 0.606t), causing resonant frequencies to shift upward',
+        'Sound speed decreases because warm air is less dense',
+        'Sound speed remains constant, but wavelength doubles',
+        'Resonance ceases to occur at elevated temperatures',
+      ],
+      correctIndex: 0,
+      explanation: 'Thermodynamic sound speed in air increases with temperature (v ∝ √T_K). Since f_r = n·v/(4L), higher speed shifts resonance peaks to higher frequencies.',
+    },
+    {
+      id: 's-q2',
+      question: 'Why does a closed-open resonance tube support only odd harmonic modes (n = 1, 3, 5...)?',
+      options: [
+        'The closed end forces a displacement node while the open end forces an antinode, requiring L = (2n-1)λ/4',
+        'Even harmonics are absorbed by the glass tube walls',
+        'Air molecules cannot oscillate in even numbered intervals',
+        'Closed tubes actually support all integer harmonics',
+      ],
+      correctIndex: 0,
+      explanation: 'Boundary conditions dictate a displacement node at the rigid closed boundary and an antinode at the open boundary, supporting only quarter-wavelength odd multiples: L = (2n-1)λ/4.',
+    },
+    {
+      id: 's-q3',
+      question: 'What is the physical cause of the acoustic end-correction factor (ΔL ≈ 0.61·r) at the tube opening?',
+      options: [
+        'Acoustic pressure antinodes extend slightly beyond the physical rim before fully expanding into 3D free space',
+        'Viscous friction along the inner tube wall slows the air column',
+        'Sound waves reflect backwards before reaching the opening',
+        'Thermal conduction through the lip of the tube',
+      ],
+      correctIndex: 0,
+      explanation: 'Air just outside the open tube mouth moves together with the oscillating air inside, shifting the effective acoustic boundary outward by approximately 0.61 times the tube radius.',
+    },
+  ],
+  electro: [
+    {
+      id: 'e-q1',
+      question: 'If the center-to-center separation distance r between two point charges is tripled (3×), what is the resulting Coulomb force?',
+      options: [
+        'Force decreases to 1/9 of its initial value (inverse-square law)',
+        'Force decreases to 1/3 of its initial value',
+        'Force increases by a factor of 9',
+        'Force becomes zero beyond 1 meter',
+      ],
+      correctIndex: 0,
+      explanation: 'Coulomb’s law states F ∝ 1/r². Tripling r divides the force by 3² = 9 (F_new = F_initial / 9).',
+    },
+    {
+      id: 'e-q2',
+      question: 'At the exact midpoint between two equal and opposite charges (+q and -q), what is the net electric field vector?',
+      options: [
+        'Non-zero and directed toward the negative charge -q (both field contributions point in the same direction)',
+        'Zero, because equal magnitude charges always cancel at the center',
+        'Directed perpendicular to the separation axis',
+        'Infinite due to electrostatic singularity',
+      ],
+      correctIndex: 0,
+      explanation: 'The electric field from +q points away from +q (toward -q). The field from -q points toward -q. Thus both field vectors point toward -q and add constructively: E_net = 2·k·q/(r/2)².',
+    },
+    {
+      id: 'e-q3',
+      question: 'What is the primary physical cause of charge leakage and experimental error in electrostatic bench measurements?',
+      options: [
+        'Ambient humidity forming microscopic conductive water films on insulating stands and air ionization',
+        'Gravitational pull on free electrons',
+        'Thermal radiation from lab fluorescent lighting',
+        'Magnetic induction from the Earth’s geomagnetic field',
+      ],
+      correctIndex: 0,
+      explanation: 'Water vapor in humid air condenses on insulating surfaces and adsorbs ions, providing high-resistance conduction pathways that dissipate electrostatic charge over time.',
+    },
+  ],
+};
+
+export function hashString(str: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < str.length; i += 1) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+export function getSeededParameters(studentId: string, stationId: StationId) {
+  const seed = hashString((studentId || 'STUDENT').trim().toUpperCase());
+  const rng = (offset: number) => {
+    const val = Math.sin(seed + offset) * 10000;
+    return val - Math.floor(val);
+  };
+  if (stationId === 'wave') {
+    const density = Number((0.035 + rng(1) * 0.010).toFixed(4));
+    const tension = Math.round(32 + rng(2) * 8);
+    return { density, tension };
+  }
+  if (stationId === 'sound') {
+    const temperature = Math.round(18 + rng(3) * 8);
+    const length = Number((0.74 + rng(4) * 0.08).toFixed(2));
+    return { temperature, length };
+  }
+  const q1 = Math.round(3 + rng(5) * 3);
+  const q2 = -Math.round(5 + rng(6) * 3);
+  const separation = Number((0.55 + rng(7) * 0.10).toFixed(2));
+  return { q1, q2, separation };
+}
+
+export function calculateTrialStats(values: number[]) {
+  if (!values || values.length === 0) return { mean: 0, stdDev: 0, sem: 0, min: 0, max: 0 };
+  const n = values.length;
+  const mean = values.reduce((sum, v) => sum + v, 0) / n;
+  const variance = n > 1 ? values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / (n - 1) : 0;
+  const stdDev = Math.sqrt(variance);
+  const sem = stdDev / Math.sqrt(n);
+  return {
+    mean,
+    stdDev,
+    sem,
+    min: Math.min(...values),
+    max: Math.max(...values),
+  };
+}
+
+export function generateTrialsCSV(stationId: StationId, trials: TrialRecord[], studentName: string, studentId: string): string {
+  if (!trials || !trials.length) return '';
+  const headers = Object.keys(trials[0]);
+  const lines = [
+    `# Physics University Virtual Laboratory - Station ${stationId.toUpperCase()} Experimental Dataset`,
+    `# Student: ${studentName || 'Student'} | Student ID: ${studentId || 'N/A'} | Generated: ${new Date().toISOString()}`,
+    headers.join(','),
+    ...trials.map((t) => headers.map((h) => JSON.stringify(t[h] ?? '')).join(',')),
+  ];
+  return lines.join('\r\n');
+}
+

@@ -15,6 +15,10 @@ import {
   createDefaultProgress,
   isStationFinished,
   stationScore,
+  STATION_GUIDE_QUESTIONS,
+  getSeededParameters,
+  calculateTrialStats,
+  generateTrialsCSV,
   type ElectroSettings,
   type LabProgress,
   type SoundSettings,
@@ -22,6 +26,7 @@ import {
   type TrialRecord,
   type WaveSettings,
 } from './labModel';
+import { LabGraph, computeRegressionData } from './LabGraph';
 import { createLabScene, type EquipmentInteraction, type LabSceneApi } from './labScene';
 import { createLaboratoryPdf } from './pdfReport';
 import { type CharacterType } from './characterController';
@@ -160,6 +165,7 @@ function safeProgress(input: unknown): LabProgress {
       conclusion: typeof saved.conclusion === 'string' ? saved.conclusion : '',
       recommendations: typeof saved.recommendations === 'string' ? saved.recommendations : '',
       errors: Array.isArray(saved.errors) ? saved.errors.filter((entry): entry is string => typeof entry === 'string') : [],
+      guideAnswers: Array.isArray(saved.guideAnswers) ? saved.guideAnswers.slice(0, 3).map((v) => Number(v)) : [-1, -1, -1],
     };
   });
   return fallback;
@@ -202,7 +208,9 @@ export default function LabExperience() {
   const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'correct' | 'incorrect'>('idle');
   const [analysisFeedback, setAnalysisFeedback] = useState('');
   const [studentName, setStudentName] = useState('Student');
+  const [studentId, setStudentId] = useState('PHY-2026-001');
   const [studentSection, setStudentSection] = useState('Section A');
+  const [step4View, setStep4View] = useState<'table' | 'graph'>('table');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soundVolume, setSoundVolume] = useState(0.7);
   const [joystickKnob, setJoystickKnob] = useState({ x: 0, y: 0 });
@@ -527,6 +535,24 @@ export default function LabExperience() {
     returnToApparatus('Baseline values loaded. Follow the pulsing marker and operate each required control on the apparatus.');
   };
 
+  const applySeededSetup = () => {
+    const seeded = getSeededParameters(studentId, stationId);
+    if (stationId === 'wave') {
+      const s = seeded as { density: number; tension: number };
+      setWave((current) => ({ ...current, density: s.density, tension: s.tension }));
+    } else if (stationId === 'sound') {
+      const s = seeded as { temperature: number; length: number };
+      setSound((current) => ({ ...current, temperature: s.temperature, length: s.length }));
+    } else {
+      const s = seeded as { q1: number; q2: number; separation: number };
+      setElectro((current) => ({ ...current, q1: s.q1, q2: s.q2, separation: s.separation }));
+    }
+    setProgress((current) => ({ ...current, [stationId]: { ...current[stationId], setupActions: [] } }));
+    setPaused(true);
+    setTrialReady((current) => ({ ...current, [stationId]: false }));
+    returnToApparatus(`Calibrated unique parameters for Student ID ${studentId}. Complete physical setup on the apparatus.`);
+  };
+
   function ensureAudioContext() {
     if (typeof window === 'undefined') return;
     const AudioContextConstructor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -839,13 +865,24 @@ export default function LabExperience() {
   const analysisHasEvidence = observationHasEvidence && conclusionHasEvidence && recommendationsHaveEvidence;
 
   const submitAnalysis = () => {
+    const guideQuestions = STATION_GUIDE_QUESTIONS[stationId];
+    const allGuideAnswered = (stationProgress.guideAnswers ?? []).length === 3 &&
+      (stationProgress.guideAnswers ?? []).every((ans) => ans !== -1);
+    const allGuideCorrect = allGuideAnswered &&
+      guideQuestions.every((q, idx) => (stationProgress.guideAnswers?.[idx] ?? -1) === q.correctIndex);
+
     if (!analysisHasEvidence || stationProgress.errors.length === 0) {
       setAnalysisStatus('incorrect');
       setAnalysisFeedback('❌ Incomplete: Please complete Observation, Conclusion, and Recommendations sections, and select at least one uncertainty source.');
       return;
     }
+    if (!allGuideCorrect) {
+      setAnalysisStatus('incorrect');
+      setAnalysisFeedback('❌ Review Guide Questions: Please answer all 3 conceptual guide questions correctly before submitting.');
+      return;
+    }
     setAnalysisStatus('correct');
-    setAnalysisFeedback('✅ Correct! Scientific observation, conclusion, recommendations, and uncertainty analysis verified (+10 pts).');
+    setAnalysisFeedback('✅ Correct! Scientific observation, conclusion, recommendations, uncertainties, and conceptual guide questions verified (+10 pts).');
     completeStep(6);
   };
 
@@ -854,10 +891,14 @@ export default function LabExperience() {
     const averageError = active.trials.length
       ? active.trials.reduce((sum, trial) => sum + Number(trial.percentError ?? 0), 0) / active.trials.length
       : 0;
+    const reg = computeRegressionData(stationId, active.trials);
+    const guideQuestions = STATION_GUIDE_QUESTIONS[stationId];
+
     const lines = [
       '=== PHYSICS UNIVERSITY VIRTUAL LABORATORY ===',
       'CERTIFIED EXPERIMENTAL RECORD',
       `Student: ${studentName}`,
+      `Student ID: ${studentId}`,
       `Section: ${studentSection}`,
       `Generated: ${new Date().toLocaleString()}`,
       `Station: ${station.title}`,
@@ -870,6 +911,18 @@ export default function LabExperience() {
       '',
       `Mean instrument error: ${averageError.toFixed(2)}%`,
       `Submitted calculations: ${active.calculations.map((value, index) => `T${index + 1}=${value || '—'}`).join(' · ')}`,
+      '',
+      '=== LEAST-SQUARES REGRESSION ANALYSIS ===',
+      reg ? `Fit equation: y = ${reg.slope >= 0 ? '' : '-'}${Math.abs(reg.slope).toFixed(3)}x ${reg.intercept >= 0 ? '+' : '-'} ${Math.abs(reg.intercept).toFixed(3)}` : 'Insufficient trials for regression.',
+      reg ? `Coefficient of determination (R^2): ${reg.rSquared.toFixed(4)}` : 'R^2: N/A',
+      reg ? `Physical interpretation: ${reg.physicalInterpretation}` : '',
+      '',
+      '=== CONCEPTUAL GUIDE QUESTIONS (FORMATIVE ASSESSMENT) ===',
+      ...guideQuestions.map((q, idx) => {
+        const userAns = active.guideAnswers?.[idx] ?? -1;
+        const isCorrect = userAns === q.correctIndex;
+        return `Q${idx + 1}: [${isCorrect ? 'PASS' : 'INCOMPLETE'}] ${q.question.slice(0, 70)}...`;
+      }),
       '',
       '=== 1. SCIENTIFIC OBSERVATIONS & TRENDS ===',
       active.analysis || (active.skipped?.[6] ? 'Observations: SKIPPED (0 pts)' : 'No observation entered.'),
@@ -890,6 +943,18 @@ export default function LabExperience() {
       'Certified locally by the Physics University Virtual Laboratory.',
     ];
     return lines.join('\r\n');
+  };
+
+  const downloadCSV = () => {
+    const csv = generateTrialsCSV(stationId, stationProgress.trials, studentName, studentId);
+    if (!csv) return;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${stationId}-trials-data-${studentId || 'student'}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
   const downloadReport = () => {
@@ -1312,7 +1377,33 @@ export default function LabExperience() {
         <h3>Reference setup</h3>
         <p>{station.steps[2].prompt}</p>
         <div className="setup-spec">{station.steps[2].target}</div>
-        <p className="muted-copy">The setup button loads the lesson-based baseline, but setup credit is earned only after you confirm every required control on the physical apparatus.</p>
+
+        <div className="student-seed-card">
+          <div className="seed-header">
+            <span className="seed-badge">ACADEMIC WORKSTATION CALIBRATION</span>
+            <b>Student Equipment Seeding</b>
+          </div>
+          <p className="seed-note">To discourage copying while ensuring dimensional validity, your physical apparatus parameters can be uniquely calibrated based on your Student ID.</p>
+          <div className="seed-input-row">
+            <label>
+              <span>Student ID</span>
+              <input
+                type="text"
+                value={studentId}
+                onChange={(e) => setStudentId(e.target.value.toUpperCase())}
+                placeholder="e.g. PHY-2026-001"
+                disabled={isCompleted}
+              />
+            </label>
+            {!isCompleted && (
+              <button type="button" className="btn-seed" onClick={applySeededSetup}>
+                🎯 Load Seeded Parameters
+              </button>
+            )}
+          </div>
+        </div>
+
+        <p className="muted-copy">The setup button loads standard baseline values, or load your unique student-seeded parameters above. Setup credit is earned after you confirm controls on the physical apparatus.</p>
         {isCompleted ? (
           <div className="feedback good">✅ Step 3 Complete (+10 pts) — Baseline configuration verified.</div>
         ) : isSkipped ? (
@@ -1390,7 +1481,29 @@ export default function LabExperience() {
         </div>
 
         <div className="trial-banner">TRIALS RECORDED · {stationProgress.trials.length} / {TOTAL_TRIALS}</div>
-        <TrialTable stationId={stationId} trials={stationProgress.trials} />
+        
+        <div className="view-toggle-row">
+          <button
+            type="button"
+            className={`view-tab-btn ${step4View === 'table' ? 'active' : ''}`}
+            onClick={() => setStep4View('table')}
+          >
+            📊 Data Record Table ({stationProgress.trials.length}/{TOTAL_TRIALS})
+          </button>
+          <button
+            type="button"
+            className={`view-tab-btn ${step4View === 'graph' ? 'active' : ''}`}
+            onClick={() => setStep4View('graph')}
+          >
+            📈 Least-Squares Regression Plot
+          </button>
+        </div>
+
+        {step4View === 'table' ? (
+          <TrialTable stationId={stationId} trials={stationProgress.trials} />
+        ) : (
+          <LabGraph stationId={stationId} trials={stationProgress.trials} accentColor={station.accent} />
+        )}
         {isCompleted ? (
           <div className="feedback good">✅ Step 5 Complete (+15 pts) — All {TOTAL_TRIALS} multi-trial conditions recorded.</div>
         ) : isSkipped ? (
@@ -1478,6 +1591,18 @@ export default function LabExperience() {
                 </label>
               ))}
             </div>
+            <div className="view-toggle-row">
+              <button
+                type="button"
+                className={`view-tab-btn ${step4View === 'graph' ? 'active' : ''}`}
+                onClick={() => setStep4View((v) => (v === 'graph' ? 'table' : 'graph'))}
+              >
+                📈 {step4View === 'graph' ? 'Hide Regression & Physical Slope' : 'Inspect Regression Plot & Physical Slope'}
+              </button>
+            </div>
+            {step4View === 'graph' && (
+              <LabGraph stationId={stationId} trials={stationProgress.trials} accentColor={station.accent} />
+            )}
             {calculationFeedback && <div className={calculationStatus === 'correct' || isCompleted ? 'feedback good' : 'feedback'}>{calculationFeedback}</div>}
             {isCompleted ? (
               <div className="feedback good">✅ Step 6 Complete (+20 pts) — All {TOTAL_TRIALS} trial calculations verified within ±2%.</div>
@@ -1554,6 +1679,66 @@ export default function LabExperience() {
               <span className={`validation-pill ${(stationProgress.recommendations || '').trim().length >= 35 ? 'valid' : ''}`}>{(stationProgress.recommendations || '').trim().length >= 35 ? '✓' : '○'} Length: {(stationProgress.recommendations || '').trim().length}/35 chars</span>
             </div>
           </div>
+
+          {/* 4. Formative Assessment: Conceptual Guide Questions */}
+          <div className="analysis-card">
+            <div className="card-header-row">
+              <h4>4. Conceptual Guide Questions & Error Analysis</h4>
+              <span className="formula-badge">3 QUESTIONS · FORMATIVE ASSESSMENT</span>
+            </div>
+            <p>Answer all 3 conceptual questions to demonstrate quantitative mastery of the physical model and error propagation.</p>
+            <div className="guide-questions-container">
+              {STATION_GUIDE_QUESTIONS[stationId].map((q, qIndex) => {
+                const selectedAnswer = stationProgress.guideAnswers?.[qIndex] ?? -1;
+                const isAnswered = selectedAnswer !== -1;
+                const isCorrect = selectedAnswer === q.correctIndex;
+                return (
+                  <div key={q.id} className={`guide-question-card ${isCorrect ? 'answered-correct' : ''}`}>
+                    <div className="guide-question-header">
+                      <span className="guide-q-tag">QUESTION {qIndex + 1} OF 3</span>
+                      {isAnswered && (
+                        <span className={`validation-pill ${isCorrect ? 'valid' : ''}`}>
+                          {isCorrect ? '✓ CORRECT' : '○ INCORRECT'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="guide-question-title">{q.question}</p>
+                    <div className="guide-options">
+                      {q.options.map((opt, optIndex) => (
+                        <label
+                          key={optIndex}
+                          className={`guide-option-label ${selectedAnswer === optIndex ? 'selected' : ''}`}
+                        >
+                          <input
+                            type="radio"
+                            name={`guide-q-${stationId}-${qIndex}`}
+                            checked={selectedAnswer === optIndex}
+                            onChange={() => {
+                              const next = [...(stationProgress.guideAnswers ?? [-1, -1, -1])];
+                              next[qIndex] = optIndex;
+                              setProgress((current) => ({
+                                ...current,
+                                [stationId]: { ...current[stationId], guideAnswers: next },
+                              }));
+                              setAnalysisStatus('idle');
+                              setAnalysisFeedback('');
+                            }}
+                            disabled={isCompleted}
+                          />
+                          <span>{String.fromCharCode(65 + optIndex)}. {opt}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {isAnswered && (
+                      <div className={`guide-feedback ${isCorrect ? 'good' : 'bad'}`}>
+                        {isCorrect ? `✅ ${q.explanation}` : '❌ Incorrect. Re-examine the physical principles and choose again.'}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         <fieldset className="error-list">
@@ -1601,17 +1786,21 @@ export default function LabExperience() {
         <p>Review the submission summary, identify the student, and download a university-formatted PDF certificate.</p>
         <div className="student-grid">
           <label><span>Student name</span><input value={studentName} onChange={(event) => setStudentName(event.target.value)} /></label>
+          <label><span>Student ID</span><input value={studentId} onChange={(event) => setStudentId(event.target.value.toUpperCase())} /></label>
           <label><span>Section</span><input value={studentSection} onChange={(event) => setStudentSection(event.target.value)} /></label>
         </div>
         <div className="report-summary">
           <div><span>Completed / Skipped</span><b>{completedCount} Done / {skippedCount} Skipped</b></div>
-          <div><span>Analysis</span><b>{stationProgress.completed[6] ? 'Verified' : stationProgress.skipped?.[6] ? 'Skipped (0 pts)' : 'Incomplete'}</b></div>
+          <div><span>Analysis & Questions</span><b>{stationProgress.completed[6] ? 'Verified (3/3 Passed)' : stationProgress.skipped?.[6] ? 'Skipped (0 pts)' : 'Incomplete'}</b></div>
           <div><span>Total Station Score</span><b>{score} / 100</b></div>
           <div><span>Source</span><b>{station.sourceLesson}</b></div>
         </div>
         <div className="button-row">
           <button className="notebook-action" onClick={downloadReport} disabled={!studentName.trim() || !studentSection.trim() || !steps0To6Resolved}>
             {isCompleted ? 'Download PDF again' : 'Certify station & download PDF (+10 pts)'}
+          </button>
+          <button type="button" className="btn-export-csv" onClick={downloadCSV} disabled={!stationProgress.trials.length}>
+            📥 Export CSV Dataset
           </button>
           {!steps0To6Resolved && (
             <button className="btn-choice btn-skip" onClick={skipAllRemainingStepsAndSubmit}>
@@ -1846,11 +2035,59 @@ export default function LabExperience() {
 function TrialTable({ stationId, trials }: { stationId: StationId; trials: TrialRecord[] }) {
   const columns = TRIAL_COLUMNS[stationId];
   if (!trials.length) return <div className="empty-table">No trials recorded yet. Close the notebook, vary a live control, then return to record the trial.</div>;
+
+  const numericStats: Record<string, { mean: number; sem: number; stdDev: number }> = {};
+  columns.forEach((col) => {
+    if (col.key !== 'trial' && col.key !== 'tube' && col.key !== 'relationship') {
+      const vals = trials.map((t) => Number(t[col.key])).filter((v) => Number.isFinite(v));
+      if (vals.length > 0) {
+        numericStats[col.key] = calculateTrialStats(vals);
+      }
+    }
+  });
+
   return (
     <div className="table-scroll">
       <table className="trial-table">
-        <thead><tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr></thead>
-        <tbody>{trials.map((trial, index) => <tr key={index}>{columns.map((column) => <td key={column.key}>{formatTrialValue(trial[column.key] ?? '—')}</td>)}</tr>)}</tbody>
+        <thead>
+          <tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr>
+        </thead>
+        <tbody>
+          {trials.map((trial, index) => (
+            <tr key={index}>
+              {columns.map((column) => (
+                <td key={column.key}>{formatTrialValue(trial[column.key] ?? '—')}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+        {trials.length >= 2 && (
+          <tfoot>
+            <tr className="stats-row">
+              {columns.map((column) => {
+                if (column.key === 'trial') {
+                  return (
+                    <td key={column.key} className="stats-label">
+                      <strong>MEAN (x̄)</strong>
+                    </td>
+                  );
+                }
+                const stat = numericStats[column.key];
+                if (!stat) return <td key={column.key}>—</td>;
+                return (
+                  <td
+                    key={column.key}
+                    className="stats-cell"
+                    title={`Standard deviation s = ${stat.stdDev.toFixed(3)}, SEM = ${stat.sem.toFixed(3)}`}
+                  >
+                    <strong>{formatTrialValue(stat.mean)}</strong>
+                    <small className="sem-subscript"> ± {formatTrialValue(stat.sem)}</small>
+                  </td>
+                );
+              })}
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );

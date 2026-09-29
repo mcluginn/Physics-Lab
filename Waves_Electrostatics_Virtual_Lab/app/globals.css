@@ -1148,4 +1148,419 @@ button { color: inherit; }
   50% { box-shadow: 0 0 16px rgba(168, 85, 247, 0.7); }
 }
 
+/* === Academic Transformation: LabGraph & Regression Styles === */
+.lab-graph-card {
+  background: rgba(12, 22, 38, 0.95);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 14px 0;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.lab-graph-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 10px;
+}
+
+.graph-title-group {
+  display: grid;
+  gap: 4px;
+}
+
+.graph-badge {
+  font: 800 9px/1 ui-monospace, monospace;
+  color: #38bdf8;
+  letter-spacing: 0.12em;
+}
+
+.graph-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.graph-metrics {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.metric-pill {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  font: 700 11px/1 ui-monospace, monospace;
+  color: #e2e8f0;
+}
+
+.metric-pill.accent {
+  background: rgba(14, 116, 144, 0.25);
+  border-color: rgba(56, 189, 248, 0.45);
+  color: #38bdf8;
+}
+
+.svg-container {
+  position: relative;
+  width: 100%;
+  max-width: 580px;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+.regression-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: rgba(3, 7, 18, 0.6);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.graph-tooltip {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid #38bdf8;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: #f8fafc;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  display: grid;
+  gap: 3px;
+  z-index: 10;
+}
+
+.graph-tooltip .residual {
+  font-size: 10px;
+  color: #94a3b8;
+  font-family: monospace;
+}
+
+.lab-graph-empty {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 32px 20px;
+  border: 1px dashed rgba(148, 163, 184, 0.3);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.4);
+  margin: 14px 0;
+}
+
+.graph-empty-icon {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.lab-graph-empty b {
+  font: 800 11px/1 ui-monospace, monospace;
+  color: #94a3b8;
+  letter-spacing: 0.1em;
+}
+
+.lab-graph-empty p {
+  margin: 8px 0 0;
+  max-width: 420px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.physical-deduction-footer {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(2, 132, 199, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.deduction-icon {
+  font-size: 18px;
+}
+
+.deduction-body {
+  display: grid;
+  gap: 3px;
+}
+
+.deduction-body b {
+  font-size: 11px;
+  font-weight: 700;
+  color: #38bdf8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.deduction-body p {
+  margin: 0;
+  font-size: 12px;
+  color: #e0f2fe;
+  line-height: 1.4;
+  font-family: ui-monospace, monospace;
+}
+
+/* === View Mode Toggle Tabs === */
+.view-toggle-row {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.view-tab-btn {
+  flex: 1;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.view-tab-btn:hover {
+  background: rgba(30, 41, 59, 0.8);
+  color: #f1f5f9;
+}
+
+.view-tab-btn.active {
+  background: rgba(14, 116, 144, 0.25);
+  border-color: #38bdf8;
+  color: #38bdf8;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.15);
+}
+
+/* === Statistical Summary Table Row === */
+.stats-row {
+  background: rgba(15, 29, 48, 0.85);
+  border-top: 2px solid rgba(56, 189, 248, 0.35);
+  font-family: ui-monospace, monospace;
+}
+
+.stats-label {
+  color: #38bdf8;
+  font-weight: 800;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+}
+
+.stats-cell {
+  color: #f1f5f9;
+  font-size: 11px;
+}
+
+.sem-subscript {
+  color: #94a3b8;
+  font-size: 9.5px;
+}
+
+/* === Student Seeding Card === */
+.student-seed-card {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 14px 0;
+}
+
+.seed-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.seed-badge {
+  font: 800 9px/1 ui-monospace, monospace;
+  color: #a78bfa;
+  letter-spacing: 0.12em;
+}
+
+.seed-note {
+  margin: 4px 0 10px;
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.45;
+}
+
+.seed-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.seed-input-row label {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  min-width: 160px;
+}
+
+.seed-input-row label span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.seed-input-row input {
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: #091220;
+  border: 1px solid #334155;
+  color: #f8fafc;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.btn-seed {
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: rgba(167, 139, 250, 0.2);
+  border: 1px solid rgba(167, 139, 250, 0.5);
+  color: #ddd6fe;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-seed:hover {
+  background: rgba(167, 139, 250, 0.35);
+  border-color: #a78bfa;
+}
+
+/* === Conceptual Guide Questions === */
+.guide-questions-container {
+  display: grid;
+  gap: 14px;
+  margin: 16px 0;
+}
+
+.guide-question-card {
+  background: rgba(12, 22, 38, 0.85);
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.guide-question-card.answered-correct {
+  border-color: rgba(52, 211, 153, 0.45);
+  background: rgba(6, 78, 59, 0.15);
+}
+
+.guide-question-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.guide-q-tag {
+  font: 800 9.5px/1 ui-monospace, monospace;
+  color: #38bdf8;
+  letter-spacing: 0.08em;
+}
+
+.guide-question-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f1f5f9;
+  line-height: 1.45;
+  margin: 0 0 10px;
+}
+
+.guide-options {
+  display: grid;
+  gap: 6px;
+}
+
+.guide-option-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.guide-option-label:hover {
+  background: rgba(30, 41, 59, 0.7);
+  border-color: #64748b;
+}
+
+.guide-option-label.selected {
+  background: rgba(14, 116, 144, 0.25);
+  border-color: #38bdf8;
+  color: #f8fafc;
+}
+
+.guide-feedback {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.guide-feedback.good {
+  background: rgba(6, 78, 59, 0.3);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  color: #6ee7b7;
+}
+
+.guide-feedback.bad {
+  background: rgba(127, 29, 29, 0.3);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: #fca5a5;
+}
+
+/* === CSV Export Button === */
+.btn-export-csv {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 7px;
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #a7f3d0;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-export-csv:hover {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: #10b981;
+}
+
+
 
