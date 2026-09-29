@@ -20,14 +20,122 @@ import {
 import { createAstroScene, type AstroInteraction, type AstroSceneApi } from './astroScene';
 import { type CharacterType } from './characterController';
 
+// Procedural Astrophotography Canvas Simulator
+function renderAstroCanvas(
+  canvas: HTMLCanvasElement,
+  frames: number,
+  exposure: number,
+  contrast: number
+) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Deep space background
+  ctx.fillStyle = '#060812';
+  ctx.fillRect(0, 0, w, h);
+
+  // Background thermal sensor noise (suppressed by sqrt(frames))
+  const noiseAmt = Math.max(3, Math.round(50 / Math.sqrt(frames)));
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const data = imgData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    if (Math.random() < 0.22) {
+      const n = (Math.random() - 0.48) * noiseAmt * (1.8 - contrast * 0.4);
+      data[i] = Math.min(255, Math.max(0, data[i] + n * 1.1));
+      data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + n * 0.9));
+      data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + n * 1.3));
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  // Blend mode for emission nebulosity
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+
+  // H-alpha pink/magenta outer cloud
+  const haGrad = ctx.createRadialGradient(w * 0.52, h * 0.48, 8, w * 0.52, h * 0.48, 175);
+  const haAlpha = Math.min(0.92, (frames / 45) * 0.52 * exposure);
+  haGrad.addColorStop(0, `rgba(245, 60, 115, ${haAlpha})`);
+  haGrad.addColorStop(0.3, `rgba(205, 45, 95, ${haAlpha * 0.8})`);
+  haGrad.addColorStop(0.65, `rgba(120, 25, 70, ${haAlpha * 0.35})`);
+  haGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = haGrad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Secondary filament wing
+  const wingGrad = ctx.createRadialGradient(w * 0.38, h * 0.55, 6, w * 0.38, h * 0.55, 120);
+  const wingAlpha = Math.min(0.75, (frames / 55) * 0.4 * exposure);
+  wingGrad.addColorStop(0, `rgba(180, 50, 140, ${wingAlpha})`);
+  wingGrad.addColorStop(0.5, `rgba(130, 30, 90, ${wingAlpha * 0.5})`);
+  wingGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = wingGrad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Oxygen-III turquoise/cyan core
+  const oiiiGrad = ctx.createRadialGradient(w * 0.50, h * 0.46, 4, w * 0.50, h * 0.46, 85);
+  const oiiiAlpha = Math.min(0.88, (frames / 35) * 0.58 * exposure);
+  oiiiGrad.addColorStop(0, `rgba(120, 245, 255, ${oiiiAlpha})`);
+  oiiiGrad.addColorStop(0.4, `rgba(70, 185, 215, ${oiiiAlpha * 0.65})`);
+  oiiiGrad.addColorStop(0.8, `rgba(30, 100, 140, ${oiiiAlpha * 0.2})`);
+  oiiiGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = oiiiGrad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Dark dust lanes (multiply mode)
+  ctx.globalCompositeOperation = 'multiply';
+  const dustGrad = ctx.createRadialGradient(w * 0.51, h * 0.43, 15, w * 0.51, h * 0.43, 90);
+  const dustStr = Math.min(0.75, contrast * 0.45);
+  dustGrad.addColorStop(0, `rgba(15, 18, 28, ${dustStr})`);
+  dustGrad.addColorStop(0.55, `rgba(45, 40, 50, ${dustStr * 0.4})`);
+  dustGrad.addColorStop(1, 'rgba(255, 255, 255, 1)');
+  ctx.fillStyle = dustGrad;
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.restore();
+
+  // Draw Pinpoint Stars
+  const stars = [
+    { x: w * 0.505, y: h * 0.46, r: 2.8, color: '#ffffff', glow: 8 },
+    { x: w * 0.495, y: h * 0.445, r: 2.3, color: '#e2f2ff', glow: 5 },
+    { x: w * 0.525, y: h * 0.455, r: 2.0, color: '#fff6e2', glow: 4 },
+    { x: w * 0.512, y: h * 0.485, r: 1.8, color: '#ffffff', glow: 3 },
+    { x: w * 0.22, y: h * 0.24, r: 2.7, color: '#ffd6a4', glow: 6 },
+    { x: w * 0.77, y: h * 0.31, r: 2.4, color: '#b5dcff', glow: 6 },
+    { x: w * 0.86, y: h * 0.78, r: 2.0, color: '#ffffff', glow: 4 },
+    { x: w * 0.14, y: h * 0.76, r: 2.1, color: '#ffffff', glow: 4 },
+    { x: w * 0.33, y: h * 0.68, r: 1.7, color: '#d8e8ff', glow: 3 },
+    { x: w * 0.68, y: h * 0.18, r: 1.8, color: '#ffffff', glow: 3 },
+    { x: w * 0.41, y: h * 0.85, r: 1.5, color: '#ffe2ba', glow: 2 },
+    { x: w * 0.62, y: h * 0.72, r: 1.6, color: '#ffffff', glow: 2 },
+    { x: w * 0.88, y: h * 0.16, r: 1.5, color: '#c4e0ff', glow: 3 },
+    { x: w * 0.08, y: h * 0.35, r: 1.4, color: '#ffffff', glow: 2 },
+  ];
+
+  stars.forEach((s) => {
+    ctx.save();
+    if (frames > 4) {
+      ctx.shadowColor = s.color;
+      ctx.shadowBlur = s.glow * Math.min(2.0, exposure * 0.9);
+    }
+    ctx.fillStyle = s.color;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r * Math.min(1.8, Math.max(0.65, exposure * 0.82)), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
 export default function AstroExperience() {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneApi = useRef<AstroSceneApi | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
   const joystickPointerId = useRef<number | null>(null);
 
-  // Exploration & Modal State
+  // Exploration, HUD & Modal State
   const [exploration, setExploration] = useState<ExplorationState>({ visitedStations: [], surveySubmitted: false });
+  const [hudCollapsed, setHudCollapsed] = useState(false);
   const [activeModal, setActiveModal] = useState<AstroActivityId | 'door' | 'guide' | null>(null);
   const [interaction, setInteraction] = useState<AstroInteraction | null>(null);
   const [pointerLocked, setPointerLocked] = useState(false);
@@ -48,15 +156,43 @@ export default function AstroExperience() {
   const [selectedActivityIndex, setSelectedActivityIndex] = useState(0);
   const [selectedMission, setSelectedMission] = useState<SpaceMission>(SPACE_MISSIONS[0]);
 
+  // Astrophotography Simulator State
+  const [stackFrames, setStackFrames] = useState<number>(25);
+  const [exposureStretch, setExposureStretch] = useState<number>(1.3);
+  const [contrastPoint, setContrastPoint] = useState<number>(1.1);
+  const astrophotoCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
   // Survey State
   const [surveyData, setSurveyData] = useState<SurveyResponses>(INITIAL_SURVEY_RESPONSES);
   const [surveyStep, setSurveyStep] = useState<'questions' | 'contact' | 'completed'>('questions');
 
-  // Load exploration state from localStorage on mount
+  // Load exploration and HUD state from localStorage on mount
   useEffect(() => {
     const saved = loadExplorationState();
     setExploration(saved);
+    try {
+      const savedHud = window.localStorage.getItem('uphsd_astro_hud_collapsed');
+      if (savedHud === 'true') setHudCollapsed(true);
+    } catch {}
   }, []);
+
+  const toggleHud = () => {
+    setHudCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem('uphsd_astro_hud_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Redraw astrophotography simulation canvas
+  useEffect(() => {
+    if (activeModal !== 'astrophotography') return;
+    const canvas = astrophotoCanvasRef.current;
+    if (!canvas) return;
+    renderAstroCanvas(canvas, stackFrames, exposureStretch, contrastPoint);
+  }, [activeModal, stackFrames, exposureStretch, contrastPoint]);
 
   const markStationExplored = (id: string) => {
     if (id === 'door' || id === 'guide') return;
@@ -242,7 +378,7 @@ export default function AstroExperience() {
       contactEmail: includeContact ? surveyData.contactEmail : '',
       contactProgramYear: includeContact ? surveyData.contactProgramYear : '',
     };
-    saveSurveyResponses(finalResponses);
+    saveSurveyResponses(finalResponses, exploration.visitedStations.length);
     setExploration((prev) => {
       const next = { ...prev, surveySubmitted: true };
       saveExplorationState(next);
@@ -265,7 +401,7 @@ export default function AstroExperience() {
           {interaction && (
             <div className="astro-reticle-tooltip">
               <kbd>E</kbd>
-              <span>{interaction.action}</span>
+              <span> · {interaction.action}</span>
             </div>
           )}
         </div>
@@ -290,7 +426,7 @@ export default function AstroExperience() {
           <p>{interaction.description}</p>
           <div className="astro-action-prompt">
             <kbd>E</kbd>
-            <span>{interaction.action}</span>
+            <span> · {interaction.action}</span>
           </div>
         </aside>
       )}
@@ -298,104 +434,174 @@ export default function AstroExperience() {
       {/* Toast Notification */}
       {toastMessage && <div className="astro-toast" role="status">{toastMessage}</div>}
 
-      {/* Room 04 Top Navigation Bar */}
-      <header className="astro-topbar">
-        <a
-          href="/"
-          className="astro-brand-lockup"
-          onClick={(e) => {
-            e.preventDefault();
-            sceneApi.current?.openDoor(() => window.location.assign('/'));
-          }}
-          title="Return to University Corridor"
-        >
-          <span className="astro-brand-glyph">✦</span>
-          <div>
-            <strong>UPHSD Astronomical Society</strong>
-            <small>Room 04 · Proposed Student Organization in Development</small>
+      {/* Minimized HUD Bar (when user toggled collapse) */}
+      {hudCollapsed && (
+        <div className="astro-hud-minimized-bar">
+          <button
+            type="button"
+            className="astro-campus-exit-btn compact"
+            onClick={() => {
+              sceneApi.current?.openDoor(() => window.location.assign('/'));
+              showToast('Returning to Campus Hallway...');
+            }}
+            title="Return to Main Campus Corridor"
+          >
+            ← CAMPUS HALL
+          </button>
+          <div
+            className={`astro-milestone-pill compact ${exploration.visitedStations.length >= TOTAL_EXPLORATION_STATIONS ? 'complete' : ''}`}
+            onClick={() => openStationModal('membership_survey')}
+            style={{ cursor: 'pointer' }}
+            title="Click to view Survey / Milestones"
+          >
+            🔭 {exploration.visitedStations.length} / {TOTAL_EXPLORATION_STATIONS}
           </div>
-        </a>
-
-        {/* Exploration Milestone Pill */}
-        <div className="astro-milestone-pill" title="Exploration Milestones (Non-Graded Extracurricular Discovery)">
-          <span>🔭 DISCOVERIES:</span>
-          <b>{exploration.visitedStations.length} / {TOTAL_EXPLORATION_STATIONS} EXPLORED</b>
+          <button
+            type="button"
+            className="astro-hud-expand-btn"
+            onClick={toggleHud}
+            title="Expand Full Room Navigation"
+          >
+            + Expand HUD
+          </button>
         </div>
+      )}
 
-        {/* Quick Station Navigation Menu */}
-        <nav className="astro-station-dock" aria-label="Room 04 Stations">
-          <button onClick={() => { openStationModal('solar_system'); sceneApi.current?.teleportTo('solar_system'); }}>
-            🪐 Solar System
-          </button>
-          <button onClick={() => { openStationModal('virtual_observatory'); sceneApi.current?.teleportTo('virtual_observatory'); }}>
-            🔭 Observatory
-          </button>
-          <button onClick={() => { openStationModal('constellations'); sceneApi.current?.teleportTo('constellations'); }}>
-            ⭐ Constellations
-          </button>
-          <button onClick={() => { openStationModal('activities'); sceneApi.current?.teleportTo('activities'); }}>
-            📋 10 Activities
-          </button>
-          <button onClick={() => { openStationModal('astrophotography'); sceneApi.current?.teleportTo('astrophotography'); }}>
-            📷 Astrophoto
-          </button>
-          <button onClick={() => { openStationModal('research'); sceneApi.current?.teleportTo('research'); }}>
-            💻 Research
-          </button>
-          <button onClick={() => { openStationModal('space_missions'); sceneApi.current?.teleportTo('space_missions'); }}>
-            🚀 Missions
-          </button>
-          <button className="survey-btn-pill" onClick={() => { openStationModal('membership_survey'); sceneApi.current?.teleportTo('membership_survey'); }}>
-            ✍️ Join / Survey
-          </button>
-        </nav>
-      </header>
+      {/* Room 04 Top Navigation Bar */}
+      {!hudCollapsed && (
+        <header className="astro-topbar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button
+              type="button"
+              className="astro-campus-exit-btn"
+              onClick={() => {
+                sceneApi.current?.openDoor(() => window.location.assign('/'));
+                showToast('Returning to Campus Hallway...');
+              }}
+              title="Return to Main Campus Corridor"
+            >
+              ← CAMPUS HALL
+            </button>
+            <a
+              href="/"
+              className="astro-brand-lockup"
+              onClick={(e) => {
+                e.preventDefault();
+                sceneApi.current?.openDoor(() => window.location.assign('/'));
+              }}
+              title="Return to University Corridor"
+            >
+              <span className="astro-brand-glyph">✦</span>
+              <div>
+                <strong>UPHSD Astronomical Society</strong>
+                <small>Room 04 · Proposed Student Organization in Development</small>
+              </div>
+            </a>
+          </div>
+
+          {/* Exploration Milestone Pill */}
+          <div
+            className={`astro-milestone-pill ${exploration.visitedStations.length >= TOTAL_EXPLORATION_STATIONS ? 'complete' : ''}`}
+            title="Exploration Milestones (Non-Graded Extracurricular Discovery)"
+            onClick={() => {
+              if (exploration.visitedStations.length >= TOTAL_EXPLORATION_STATIONS) {
+                openStationModal('membership_survey');
+              }
+            }}
+            style={{ cursor: exploration.visitedStations.length >= TOTAL_EXPLORATION_STATIONS ? 'pointer' : 'default' }}
+          >
+            <span>🔭 DISCOVERIES:</span>
+            <b>{exploration.visitedStations.length} / {TOTAL_EXPLORATION_STATIONS} EXPLORED</b>
+            {exploration.visitedStations.length >= TOTAL_EXPLORATION_STATIONS && !exploration.surveySubmitted && (
+              <span className="survey-prompt-tag">Take Survey →</span>
+            )}
+          </div>
+
+          {/* Quick Station Navigation Menu */}
+          <nav className="astro-station-dock" aria-label="Room 04 Stations">
+            <button onClick={() => { openStationModal('solar_system'); sceneApi.current?.teleportTo('solar_system'); }}>
+              🪐 Solar System
+            </button>
+            <button onClick={() => { openStationModal('virtual_observatory'); sceneApi.current?.teleportTo('virtual_observatory'); }}>
+              🔭 Observatory
+            </button>
+            <button onClick={() => { openStationModal('constellations'); sceneApi.current?.teleportTo('constellations'); }}>
+              ⭐ Constellations
+            </button>
+            <button onClick={() => { openStationModal('activities'); sceneApi.current?.teleportTo('activities'); }}>
+              📋 10 Activities
+            </button>
+            <button onClick={() => { openStationModal('astrophotography'); sceneApi.current?.teleportTo('astrophotography'); }}>
+              📷 Astrophoto
+            </button>
+            <button onClick={() => { openStationModal('research'); sceneApi.current?.teleportTo('research'); }}>
+              💻 Research
+            </button>
+            <button onClick={() => { openStationModal('space_missions'); sceneApi.current?.teleportTo('space_missions'); }}>
+              🚀 Missions
+            </button>
+            <button className="survey-btn-pill" onClick={() => { openStationModal('membership_survey'); sceneApi.current?.teleportTo('membership_survey'); }}>
+              ✍️ Join / Survey
+            </button>
+            <button
+              type="button"
+              className="astro-hud-collapse-btn"
+              onClick={toggleHud}
+              title="Minimize HUD for unobstructed 3D view"
+            >
+              − Minimize
+            </button>
+          </nav>
+        </header>
+      )}
 
       {/* Bottom Status Dock */}
-      <footer className="astro-bottom-dock">
-        <div className="astro-dock-status">
-          <i />
-          <span>ROOM 04 ONLINE · WALK WITH WASD · KEYS 1–8 TELEPORT</span>
-        </div>
-        <div className="astro-dock-controls">
-          <button
-            type="button"
-            className="astro-ctrl-btn"
-            onClick={() => {
-              const next = sceneApi.current?.toggleView();
-              if (typeof next === 'boolean') setIsThirdPerson(next);
-            }}
-          >
-            📷 {isThirdPerson ? '3rd Person' : '1st Person'} (V)
-          </button>
-          <button
-            type="button"
-            className="astro-ctrl-btn"
-            onClick={() => {
-              const next = sceneApi.current?.switchCharacter();
-              if (next) setActiveCharacter(next);
-            }}
-          >
-            👤 {activeCharacter === 'female' ? 'Female (Carla)' : 'Male (Eric)'} (C)
-          </button>
-          <button
-            type="button"
-            className="astro-ctrl-btn"
-            onClick={() => setSoundEnabled((v) => !v)}
-          >
-            {soundEnabled ? '🔊 Sound' : '🔇 Muted'}
-          </button>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={soundVolume}
-            onChange={(e) => setSoundVolume(Number(e.target.value))}
-            aria-label="Sound Volume"
-          />
-        </div>
-      </footer>
+      {!hudCollapsed && (
+        <footer className="astro-bottom-dock">
+          <div className="astro-dock-status">
+            <i />
+            <span>ROOM 04 ONLINE · WALK WITH WASD · KEYS 1–8 TELEPORT</span>
+          </div>
+          <div className="astro-dock-controls">
+            <button
+              type="button"
+              className="astro-ctrl-btn"
+              onClick={() => {
+                const next = sceneApi.current?.toggleView();
+                if (typeof next === 'boolean') setIsThirdPerson(next);
+              }}
+            >
+              📷 {isThirdPerson ? '3rd Person' : '1st Person'} (V)
+            </button>
+            <button
+              type="button"
+              className="astro-ctrl-btn"
+              onClick={() => {
+                const next = sceneApi.current?.switchCharacter();
+                if (next) setActiveCharacter(next);
+              }}
+            >
+              👤 {activeCharacter === 'female' ? 'Female (Carla)' : 'Male (Eric)'} (C)
+            </button>
+            <button
+              type="button"
+              className="astro-ctrl-btn"
+              onClick={() => setSoundEnabled((v) => !v)}
+            >
+              {soundEnabled ? '🔊 Sound' : '🔇 Muted'}
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={soundVolume}
+              onChange={(e) => setSoundVolume(Number(e.target.value))}
+              aria-label="Sound Volume"
+            />
+          </div>
+        </footer>
+      )}
 
       {/* Mobile Touch Joystick */}
       {!activeModal && !externalOverlay && (
@@ -415,7 +621,7 @@ export default function AstroExperience() {
             onClick={() => sceneApi.current?.interact()}
             disabled={!interaction}
           >
-            {interaction ? 'INTERACT [E]' : 'LOOK AT EXHIBIT'}
+            {interaction ? `E · ${interaction.action}` : 'LOOK AT EXHIBIT'}
           </button>
         </div>
       )}
@@ -618,15 +824,37 @@ export default function AstroExperience() {
                         <h3>{act.title}</h3>
                         <p className="act-tagline">{act.tagline}</p>
                       </div>
-                      <p className="act-desc">{act.description}</p>
-                      
+
+                      {/* 1. What Is It? */}
                       <div className="act-section">
-                        <h4>What Members Do:</h4>
+                        <h4>1. What Is It?</h4>
+                        <p className="act-desc">{act.whatIsIt || act.description}</p>
+                      </div>
+                      
+                      {/* 2. What Would Members Do? */}
+                      <div className="act-section">
+                        <h4>2. What Would Members Do?</h4>
                         <ul>
-                          {act.whatMembersDo.map((item, i) => (
+                          {act.whatWouldMembersDo.map((item, i) => (
                             <li key={i}>{item}</li>
                           ))}
                         </ul>
+                      </div>
+
+                      {/* 3. What Could I Contribute? */}
+                      <div className="act-section">
+                        <h4>3. What Could I Contribute?</h4>
+                        <div className="act-contributions-grid">
+                          {act.whatCouldIContribute.map((item, i) => {
+                            const [role, desc] = item.includes(':') ? item.split(/:\s*(.+)/) : ['', item];
+                            return (
+                              <div key={i} className="contribution-pill-card">
+                                {role && <strong>{role}:</strong>}
+                                <span>{desc || item}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
 
                       <div className="act-meta-row">
@@ -653,7 +881,7 @@ export default function AstroExperience() {
       {/* ============================================================== */}
       {activeModal === 'astrophotography' && (
         <div className="astro-modal-backdrop" onClick={() => setActiveModal(null)}>
-          <div className="astro-modal-card" onClick={(e) => e.stopPropagation()}>
+          <div className="astro-modal-card wide-card" onClick={(e) => e.stopPropagation()}>
             <header className="astro-modal-header">
               <span className="astro-modal-kicker">PRACTICAL ASTROPHOTOGRAPHY WORKSTATION</span>
               <h2>Astrophotography & Image Stacking</h2>
@@ -683,9 +911,111 @@ export default function AstroExperience() {
                 </div>
               </div>
 
-              <div className="astro-notice-box">
+              {/* Interactive Image Processing Simulator */}
+              <div className="astro-sim-card">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '15px', color: '#c7d2fe', fontFamily: 'Georgia, serif' }}>
+                      Interactive Stacking & Histogram Simulator
+                    </h3>
+                    <small style={{ color: '#94a3b8' }}>
+                      Drag sliders to simulate multi-frame sensor noise reduction and non-linear contrast stretching.
+                    </small>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      type="button"
+                      className="astro-preset-btn"
+                      onClick={() => { setStackFrames(1); setExposureStretch(0.8); setContrastPoint(0.7); }}
+                    >
+                      Single RAW Frame
+                    </button>
+                    <button
+                      type="button"
+                      className="astro-preset-btn"
+                      onClick={() => { setStackFrames(25); setExposureStretch(1.3); setContrastPoint(1.1); }}
+                    >
+                      Stacked (25x)
+                    </button>
+                    <button
+                      type="button"
+                      className="astro-preset-btn"
+                      onClick={() => { setStackFrames(60); setExposureStretch(1.8); setContrastPoint(1.4); }}
+                    >
+                      Master Stack (60x + Stretch)
+                    </button>
+                  </div>
+                </div>
+
+                <div className="astro-sim-canvas-wrapper">
+                  <canvas ref={astrophotoCanvasRef} width={640} height={360} className="astro-sim-canvas" />
+                  <div className="astro-sim-canvas-badge">
+                    TARGET: Messier 42 (Great Orion Nebula) · 1,344 ly
+                  </div>
+                  <div className="astro-sim-readout">
+                    <span>⚡ +{(Math.sqrt(stackFrames)).toFixed(1)}x SNR</span>
+                    <span>·</span>
+                    <span>{Math.round(50 / Math.sqrt(stackFrames))}% Noise</span>
+                  </div>
+                </div>
+
+                <div className="astro-sim-controls">
+                  <div className="astro-sim-slider-group">
+                    <label>
+                      <span>Calibration Stacking (Light Frames):</span>
+                      <b style={{ color: '#38bdf8' }}>{stackFrames} frames</b>
+                    </label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="60"
+                      step="1"
+                      value={stackFrames}
+                      onChange={(e) => setStackFrames(Number(e.target.value))}
+                      aria-label="Stacking Light Frames"
+                    />
+                    <small style={{ fontSize: '10.5px', color: '#64748b' }}>Averages out random thermal noise (SNR ∝ √N)</small>
+                  </div>
+
+                  <div className="astro-sim-slider-group">
+                    <label>
+                      <span>Histogram Stretch (Exposure):</span>
+                      <b style={{ color: '#38bdf8' }}>{exposureStretch.toFixed(2)}x</b>
+                    </label>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.5"
+                      step="0.05"
+                      value={exposureStretch}
+                      onChange={(e) => setExposureStretch(Number(e.target.value))}
+                      aria-label="Exposure Stretch"
+                    />
+                    <small style={{ fontSize: '10.5px', color: '#64748b' }}>Boosts faint ionized hydrogen & oxygen filaments</small>
+                  </div>
+
+                  <div className="astro-sim-slider-group">
+                    <label>
+                      <span>Black Point / Contrast:</span>
+                      <b style={{ color: '#38bdf8' }}>{contrastPoint.toFixed(2)}x</b>
+                    </label>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.0"
+                      step="0.05"
+                      value={contrastPoint}
+                      onChange={(e) => setContrastPoint(Number(e.target.value))}
+                      aria-label="Contrast Point"
+                    />
+                    <small style={{ fontSize: '10.5px', color: '#64748b' }}>Removes light pollution and defines dark dust lanes</small>
+                  </div>
+                </div>
+              </div>
+
+              <div className="astro-notice-box" style={{ marginTop: '16px' }}>
                 <b>Camera Equipment Showcase:</b>
-                <span>The workstation features a telephoto zoom prime lens on a micro-tripod coupled to an image processing terminal demonstrating post-calibration curves.</span>
+                <span>The workstation features a telephoto prime lens on a micro-tripod coupled to an image processing terminal demonstrating post-calibration curves.</span>
               </div>
             </div>
           </div>
@@ -705,7 +1035,13 @@ export default function AstroExperience() {
             </header>
             <div className="astro-modal-body">
               <div className="research-pillars-banner">
-                <span>OBSERVE</span> · <span>ANALYZE</span> · <span>DOCUMENT</span> · <span>SHARE</span>
+                <span className="pillar-item">🔭 OBSERVE</span>
+                <span className="pillar-arrow">→</span>
+                <span className="pillar-item">📊 ANALYZE</span>
+                <span className="pillar-arrow">→</span>
+                <span className="pillar-item">📝 DOCUMENT</span>
+                <span className="pillar-arrow">→</span>
+                <span className="pillar-item">🌐 SHARE</span>
               </div>
               <p className="astro-modal-lead">
                 Proposed student science projects showcasing how university club members can participate in real data collection and international citizen science.
@@ -802,14 +1138,34 @@ export default function AstroExperience() {
                   <p>{selectedConstellation.mythology}</p>
                 </div>
 
-                <div className="const-action-row">
+                {/* Philippine Visibility Card */}
+                <div className="philippines-visibility-card">
+                  <div className="ph-badge-row">
+                    <span>🇵🇭</span>
+                    <h4>Can I see this from the Philippines?</h4>
+                  </div>
+                  <p>{selectedConstellation.philippinesVisibility}</p>
+                </div>
+
+                <div className="const-action-row" style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn-astro-primary"
+                    onClick={() => {
+                      setActiveModal(null);
+                      launchStellariumOverlay();
+                      showToast(`Locating ${selectedConstellation.name} in Stellarium Web...`);
+                    }}
+                  >
+                    🔭 Locate {selectedConstellation.name} in Stellarium Overlay
+                  </button>
                   <a
                     href="https://stellarium-web.org/"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn-astro-secondary"
                   >
-                    ↗ Locate {selectedConstellation.name} in Stellarium Web
+                    ↗ Open Stellarium Web in New Tab
                   </a>
                 </div>
               </div>
@@ -864,6 +1220,17 @@ export default function AstroExperience() {
                   <h4>Scientific Significance:</h4>
                   <p>{selectedMission.significance}</p>
                 </div>
+
+                <div style={{ marginTop: '16px', display: 'flex', gap: '10px' }}>
+                  <a
+                    href={selectedMission.officialUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-astro-primary"
+                  >
+                    ↗ Visit Official {selectedMission.name.split('(')[0].trim()} Site
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -888,6 +1255,9 @@ export default function AstroExperience() {
                     <b>Help shape the proposed Astronomical Society!</b>
                     <p>Your feedback helps us understand which activities, topics, and events students want to see. This survey is interest-focused and anonymous by default.</p>
                   </div>
+
+                  {/* Section 1 */}
+                  <div className="survey-section-header">SECTION 1: COSMIC INTEREST & EXPLORATION (Q1 – Q2)</div>
 
                   {/* Question 1 */}
                   <div className="survey-q-card">
@@ -924,6 +1294,9 @@ export default function AstroExperience() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Section 2 */}
+                  <div className="survey-section-header">SECTION 2: PROPOSED ACTIVITIES & EXCITEMENT (Q3 – Q4)</div>
 
                   {/* Question 3 */}
                   <div className="survey-q-card">
@@ -972,6 +1345,9 @@ export default function AstroExperience() {
                       onChange={(e) => setSurveyData({ ...surveyData, q4_mostExcitedActivity: e.target.value })}
                     />
                   </div>
+
+                  {/* Section 3 */}
+                  <div className="survey-section-header">SECTION 3: TIME AVAILABILITY & MEMBER CONTRIBUTIONS (Q5 – Q6)</div>
 
                   {/* Question 5 */}
                   <div className="survey-q-card">
@@ -1024,6 +1400,9 @@ export default function AstroExperience() {
                     </div>
                   </div>
 
+                  {/* Section 4 */}
+                  <div className="survey-section-header">SECTION 4: CLUB INITIATIVES & ORGANIZING COMMITTEE (Q7 – Q8)</div>
+
                   {/* Question 7 */}
                   <div className="survey-q-card">
                     <label className="survey-q-title">7. What specific events or projects would you love the club to organize?</label>
@@ -1053,6 +1432,9 @@ export default function AstroExperience() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Section 5 */}
+                  <div className="survey-section-header">SECTION 5: FUTURE UPDATES & OPEN FEEDBACK (Q9 – Q10)</div>
 
                   {/* Question 9 */}
                   <div className="survey-q-card">

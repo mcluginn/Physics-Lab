@@ -482,7 +482,7 @@ export function createAstroScene(
     activityId: 'solar_system',
     category: 'EDUCATIONAL MODEL',
     name: 'Interactive Solar System Model',
-    action: 'Explore NASA Eyes on the Solar System',
+    action: 'EXPLORE SOLAR SYSTEM',
     description: 'Physical educational model showing the Sun and eight planets. Proximity unlocks the NASA Eyes interactive 3D simulation.',
   });
 
@@ -564,7 +564,7 @@ export function createAstroScene(
     activityId: 'virtual_observatory',
     category: 'VIRTUAL OBSERVATORY',
     name: 'Astronomical Observation Telescope',
-    action: 'Observe the Night Sky via Stellarium Web',
+    action: 'OBSERVE NIGHT SKY',
     description: 'Calibrated optical telescope pointing out the observatory star window. Launches Stellarium Web planetarium.',
   });
 
@@ -599,7 +599,7 @@ export function createAstroScene(
     activityId: 'society_information',
     category: 'SOCIETY INFORMATION',
     name: 'UPHSD Astronomical Society Board',
-    action: 'Read Mission, Vision, and Joining Details',
+    action: 'READ SOCIETY INFORMATION',
     description: 'Overview of the proposed student organization in development: mission, vision, core values, and membership information.',
   });
 
@@ -646,7 +646,7 @@ export function createAstroScene(
     activityId: 'activities',
     category: 'EXHIBITION WALL',
     name: 'Astronomy Activities Board (10 Areas)',
-    action: 'Explore What Club Members Do',
+    action: 'VIEW ASTRONOMY ACTIVITIES',
     description: 'Detailed showcase of 10 proposed club activities: stargazing, astrophotography, lectures, citizen science, and research.',
   });
 
@@ -708,7 +708,7 @@ export function createAstroScene(
     activityId: 'astrophotography',
     category: 'PRACTICAL STATION',
     name: 'Astrophotography & Image Stacking Desk',
-    action: 'Learn Imaging Techniques & Stacking',
+    action: 'EXPLORE ASTROPHOTOGRAPHY',
     description: 'Camera gear, deep-sky stacking software showcase, and framed astrophotography gallery.',
   });
 
@@ -745,7 +745,7 @@ export function createAstroScene(
     activityId: 'research',
     category: 'RESEARCH STATION',
     name: 'Astronomy Research Desk',
-    action: 'Explore Student Research & Citizen Science',
+    action: 'EXPLORE RESEARCH',
     description: 'Observe, Analyze, Document, Share: Light-pollution mapping, variable-star monitoring, and citizen science.',
   });
 
@@ -769,7 +769,7 @@ export function createAstroScene(
     activityId: 'constellations',
     category: 'CELESTIAL MAP',
     name: 'Constellation Explorer Wall',
-    action: 'Explore 6 Major Constellations',
+    action: 'EXPLORE CONSTELLATIONS',
     description: 'Detailed star charts of Orion, Ursa Major, Cassiopeia, Scorpius, Cygnus, and Taurus with mythology and coordinates.',
   });
 
@@ -791,7 +791,7 @@ export function createAstroScene(
     activityId: 'space_missions',
     category: 'EXHIBITION WALL',
     name: 'Space Missions & Exploration Gallery',
-    action: 'Explore JWST, Voyager, Artemis, and Mars Rovers',
+    action: 'EXPLORE SPACE MISSIONS',
     description: 'Interactive exhibition of humanity’s greatest robotic and human space exploration programs.',
   });
 
@@ -820,7 +820,7 @@ export function createAstroScene(
     activityId: 'membership_survey',
     category: 'MEMBERSHIP & SURVEY',
     name: 'Membership & Interest Desk',
-    action: 'Take 10-Question Interest Survey',
+    action: 'TAKE INTEREST SURVEY',
     description: 'Share your interest, event preferences, and ideas for the proposed UPHSD Astronomical Society.',
   });
 
@@ -871,7 +871,7 @@ export function createAstroScene(
     activityId: 'guide',
     category: 'SOCIETY GUIDE',
     name: 'Astronomy Club Guide',
-    action: 'Talk to Society Guide for orientation',
+    action: 'TALK TO ASTRONOMY GUIDE',
     description: 'Welcome to the Astronomical Society Room! This space explores what an astronomy-focused student organization could offer.',
   });
 
@@ -899,7 +899,7 @@ export function createAstroScene(
     activityId: 'door',
     category: 'CAMPUS HALLWAY',
     name: 'Exit to Laboratory Hallway',
-    action: 'Return to university corridor',
+    action: 'RETURN TO CAMPUS HALL',
     description: 'Return to the main campus corridor connecting Rooms 01, 02, and 04.',
   });
 

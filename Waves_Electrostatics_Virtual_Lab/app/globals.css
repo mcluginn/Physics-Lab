@@ -3079,9 +3079,317 @@ button { color: inherit; }
     max-height: 180px;
   }
   .research-pillars-banner {
-    grid-template-columns: 1fr;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 }
+
+/* === Room 04 Production Polish Upgrades === */
+.astro-campus-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: #f1f5f9;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.astro-campus-exit-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #fca5a5;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+}
+
+.astro-campus-exit-btn.compact {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.astro-hud-collapse-btn {
+  padding: 6px 12px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: #cbd5e1;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  white-space: nowrap;
+}
+
+.astro-hud-collapse-btn:hover {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: #818cf8;
+  color: #ffffff;
+}
+
+.astro-hud-minimized-bar {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(8, 13, 27, 0.88);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  padding: 6px 12px;
+  border-radius: 999px;
+  animation: astroFadeIn 0.2s ease-out;
+}
+
+.astro-hud-expand-btn {
+  padding: 4px 12px;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.85) 0%, rgba(37, 99, 235, 0.85) 100%);
+  border: 1px solid rgba(165, 180, 252, 0.5);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.astro-hud-expand-btn:hover {
+  transform: scale(1.04);
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+}
+
+.astro-milestone-pill.complete {
+  border-color: #38bdf8;
+  background: rgba(14, 116, 144, 0.35);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.4);
+}
+
+.survey-prompt-tag {
+  background: #38bdf8;
+  color: #040711;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  animation: pulse 1.8s infinite;
+}
+
+/* --- Astrophotography Interactive Simulator --- */
+.astro-sim-card {
+  background: rgba(10, 15, 29, 0.85);
+  border: 1.5px solid rgba(99, 102, 241, 0.35);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.astro-sim-canvas-wrapper {
+  position: relative;
+  width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  background: #060812;
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.8);
+}
+
+.astro-sim-canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  aspect-ratio: 16 / 9;
+}
+
+.astro-sim-canvas-badge {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  background: rgba(4, 7, 18, 0.8);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  color: #c7d2fe;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.astro-sim-readout {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(4, 7, 18, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #38bdf8;
+  font-weight: 700;
+}
+
+.astro-sim-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.astro-sim-slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.astro-sim-slider-group label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+.astro-sim-slider-group input[type="range"] {
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+
+.astro-sim-presets-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.astro-preset-btn {
+  padding: 5px 12px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #cbd5e1;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.astro-preset-btn:hover {
+  background: rgba(79, 70, 229, 0.3);
+  border-color: #818cf8;
+  color: #ffffff;
+}
+
+/* --- Philippine Visibility Badge --- */
+.philippines-visibility-card {
+  background: rgba(14, 116, 144, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin-top: 14px;
+}
+
+.ph-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ph-badge-row h4 {
+  margin: 0;
+  font-size: 13.5px;
+  color: #7dd3fc;
+  font-weight: 700;
+}
+
+.philippines-visibility-card p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #e0f2fe;
+}
+
+/* --- Activities Contributions Grid --- */
+.act-contributions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.contribution-pill-card {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #e2e8f0;
+}
+
+.contribution-pill-card strong {
+  color: #a5b4fc;
+  margin-right: 4px;
+}
+
+/* --- Research Pillars Banner --- */
+.research-pillars-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pillar-item {
+  color: #c7d2fe;
+  letter-spacing: 0.05em;
+}
+
+.pillar-arrow {
+  color: #6366f1;
+  font-weight: 900;
+}
+
+/* --- Survey 5 Section Dividers --- */
+.survey-section-header {
+  background: rgba(79, 70, 229, 0.16);
+  border-left: 3px solid #818cf8;
+  padding: 8px 14px;
+  margin: 18px 0 10px 0;
+  border-radius: 0 8px 8px 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #c7d2fe;
+  text-transform: uppercase;
+}
+
 
 
 

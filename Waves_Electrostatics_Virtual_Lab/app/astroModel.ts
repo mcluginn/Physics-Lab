@@ -29,6 +29,8 @@ export type Constellation = {
   englishName: string;
   coordinates: { ra: string; dec: string };
   bestSeason: string;
+  philippinesVisibility: string;
+  stellariumQuery: string;
   brightestStars: Array<{ name: string; designation: string; mag: string; dist: string }>;
   deepSkyObjects: Array<{ name: string; type: string; desc: string }>;
   mythology: string;
@@ -43,6 +45,8 @@ export const CONSTELLATIONS: Constellation[] = [
     englishName: 'The Hunter',
     coordinates: { ra: '05h 35m', dec: '+09° 56′' },
     bestSeason: 'Northern Winter (December – February)',
+    philippinesVisibility: 'Yes, prominently visible across the entire Philippines from November through April. Orion’s Belt and luminous supergiants Betelgeuse and Rigel pass nearly overhead due to the Philippines’ low northern latitude (~13°N).',
+    stellariumQuery: 'Orion',
     brightestStars: [
       { name: 'Betelgeuse', designation: 'Alpha Orionis', mag: '0.42 (var)', dist: '640 light-years (red supergiant)' },
       { name: 'Rigel', designation: 'Beta Orionis', mag: '0.18', dist: '860 light-years (blue-white supergiant)' },
@@ -62,7 +66,9 @@ export const CONSTELLATIONS: Constellation[] = [
     pronunciation: 'UR-suh MAY-jer',
     englishName: 'The Great Bear (The Big Dipper / Plough)',
     coordinates: { ra: '11h 20m', dec: '+50° 40′' },
-    bestSeason: 'Circumpolar (Visible year-round from mid-northern latitudes; best in Spring)',
+    bestSeason: 'Spring (February – June)',
+    philippinesVisibility: 'Yes, visible low on the northern horizon across the Philippines from February to June. Unlike in mid-to-high northern countries where it is circumpolar, in the Philippines it dips below the northern horizon during late autumn and early winter.',
+    stellariumQuery: 'Ursa Major',
     brightestStars: [
       { name: 'Alioth', designation: 'Epsilon Ursae Majoris', mag: '1.76', dist: '81 light-years' },
       { name: 'Dubhe', designation: 'Alpha Ursae Majoris', mag: '1.79', dist: '123 light-years' },
@@ -82,7 +88,9 @@ export const CONSTELLATIONS: Constellation[] = [
     pronunciation: 'kass-ee-oh-PEE-uh',
     englishName: 'The Queen',
     coordinates: { ra: '01h 00m', dec: '+60° 00′' },
-    bestSeason: 'Circumpolar (Best in Autumn / Northern Winter)',
+    bestSeason: 'Autumn / Early Winter (September – January)',
+    philippinesVisibility: 'Yes, visible low on the northern horizon from September to January in the Philippines. Its distinctive "W" shape skims just above the skyline, best observed from vantage points with clear northern views.',
+    stellariumQuery: 'Cassiopeia',
     brightestStars: [
       { name: 'Schedar', designation: 'Alpha Cassiopeiae', mag: '2.24', dist: '228 light-years' },
       { name: 'Caph', designation: 'Beta Cassiopeiae', mag: '2.28', dist: '54 light-years' },
@@ -101,7 +109,9 @@ export const CONSTELLATIONS: Constellation[] = [
     pronunciation: 'SKOR-pee-us',
     englishName: 'The Scorpion',
     coordinates: { ra: '16h 53m', dec: '-30° 44′' },
-    bestSeason: 'Northern Summer (June – August)',
+    bestSeason: 'Northern Summer (May – August)',
+    philippinesVisibility: 'Yes, spectacularly visible from the Philippines during dry and summer months (March to August). Passes very high across the southern sky, with Antares ("The Rival of Mars") and the curved Stinger blazing in pristine clarity.',
+    stellariumQuery: 'Scorpius',
     brightestStars: [
       { name: 'Antares', designation: 'Alpha Scorpii', mag: '1.06 (var)', dist: '550 light-years (red supergiant "Rival of Mars")' },
       { name: 'Shaula', designation: 'Lambda Scorpii', mag: '1.62', dist: '570 light-years ("The Stinger")' },
@@ -120,7 +130,9 @@ export const CONSTELLATIONS: Constellation[] = [
     pronunciation: 'SIG-nus',
     englishName: 'The Swan (The Northern Cross)',
     coordinates: { ra: '20h 35m', dec: '+42° 00′' },
-    bestSeason: 'Northern Summer and Autumn (July – October)',
+    bestSeason: 'Northern Summer and Autumn (July – November)',
+    philippinesVisibility: 'Yes, visible from July to November across the Philippines. Deneb and the Northern Cross soar high overhead through the heart of the Milky Way, passing nearly zenith during late evening in September.',
+    stellariumQuery: 'Cygnus',
     brightestStars: [
       { name: 'Deneb', designation: 'Alpha Cygni', mag: '1.25', dist: '2,600 light-years (luminous blue-white supergiant)' },
       { name: 'Albireo', designation: 'Beta Cygni', mag: '3.08', dist: '430 light-years (spectacular gold & blue double star)' },
@@ -139,7 +151,9 @@ export const CONSTELLATIONS: Constellation[] = [
     pronunciation: 'TAW-rus',
     englishName: 'The Bull',
     coordinates: { ra: '04h 42m', dec: '+16° 30′' },
-    bestSeason: 'Northern Winter (November – February)',
+    bestSeason: 'Northern Winter (November – March)',
+    philippinesVisibility: 'Yes, visible from November through March throughout the Philippines. The bright orange eye of Aldebaran and the sparkling Pleiades star cluster ("Moroporo" in indigenous Tagalog astronomy) pass almost directly overhead across the Philippine sky.',
+    stellariumQuery: 'Taurus',
     brightestStars: [
       { name: 'Aldebaran', designation: 'Alpha Tauri', mag: '0.85', dist: '65 light-years (orange giant "Eye of the Bull")' },
       { name: 'Elnath', designation: 'Beta Tauri', mag: '1.65', dist: '134 light-years' },
@@ -162,7 +176,10 @@ export type AstronomyActivity = {
   subtitle: string;
   tagline: string;
   description: string;
-  whatMembersDo: string[];
+  whatIsIt: string;
+  whatWouldMembersDo: string[];
+  whatCouldIContribute: string[];
+  whatMembersDo?: string[];
   equipmentUsed: string[];
   recommendedFor: string;
 };
@@ -175,6 +192,19 @@ export const ASTRONOMY_ACTIVITIES: AstronomyActivity[] = [
     subtitle: 'Naked-eye & binocular night-sky tours',
     tagline: 'Step outside and discover the constellations, satellites, and meteor showers over the campus.',
     description: 'Casual, relaxing evening gatherings on campus open grounds or nearby dark-sky spots. Members learn naked-eye star identification, green-laser pointer celestial tours, binocular observing of star clusters, and real-time tracking of the International Space Station (ISS) overhead.',
+    whatIsIt: 'Casual evening gatherings on campus grounds or dark-sky locations to observe constellations, satellites, and meteor showers under open skies.',
+    whatWouldMembersDo: [
+      'Learn naked-eye seasonal constellation orientation and celestial navigation.',
+      'Spot passing satellites and International Space Station (ISS) flyovers in real time.',
+      'Observe major meteor showers like the Perseids, Geminids, and Orionids.',
+      'Share informal space discussions and hot drinks under the stars.',
+    ],
+    whatCouldIContribute: [
+      'Laser Pointer Guides: Lead celestial tours and share constellation mythology.',
+      'Event Setup: Help with blankets, ground mats, and red-light safety lanterns.',
+      'Hospitality: Organize refreshments and welcoming spaces for curious newcomers.',
+      'Community Outreach: Invite friends and campus classmates to look up.',
+    ],
     whatMembersDo: [
       'Learn seasonal constellation lore and navigational orientation.',
       'Spot bright satellites, iridium flares, and orbital passes.',
@@ -191,6 +221,19 @@ export const ASTRONOMY_ACTIVITIES: AstronomyActivity[] = [
     subtitle: 'Hands-on optical astronomy training',
     tagline: 'Learn how to collimate, align, and pilot optical telescopes to observe the Moon, planets, and nebulae.',
     description: 'Practical training on real optical instruments. Members gain hands-on experience setting up Dobsonian reflectors, computerized GoTo Schmidt-Cassegrains, and refractor telescopes. Learn celestial coordinates (Right Ascension & Declination), polar alignment, and eyepiece magnification matching.',
+    whatIsIt: 'Practical hands-on training with astronomical telescopes to observe the Moon, planets, star clusters, and deep-sky nebulae.',
+    whatWouldMembersDo: [
+      'Assemble, collimate, and polar-align Dobsonian and computerized GoTo telescopes.',
+      'Resolve lunar craters, maria, and mountain shadows in razor-sharp detail.',
+      'Observe Saturn’s rings, Jupiter’s cloud bands and 4 Galilean moons, and bright nebulae.',
+      'Master celestial coordinates (RA / Dec) and optical magnification calculations.',
+    ],
+    whatCouldIContribute: [
+      'Telescope Navigators: Learn to steer and target celestial objects quickly.',
+      'Queue Coordinators: Guide visitors and ensure everyone gets eyepiece time.',
+      'Hardware Keepers: Help inspect, pack, and maintain delicate optical lenses and mirrors.',
+      'Technical Mentors: Teach fellow members how optics and focal lengths work.',
+    ],
     whatMembersDo: [
       'Resolve the cratered rim of Copernicus and lunar rilles.',
       'Observe Saturn’s rings and the Cassini Division.',
@@ -207,6 +250,19 @@ export const ASTRONOMY_ACTIVITIES: AstronomyActivity[] = [
     subtitle: 'Capturing photons across deep time',
     tagline: 'Combine photography and digital metrology to capture stunning cosmic portraits.',
     description: 'Exploring how standard DSLR cameras, mirrorless cameras, and dedicated cooled astronomical sensors capture faint deep-sky nebulae and galaxies invisible to the human eye. Members learn exposure calibration, polar tracking, and modern image processing.',
+    whatIsIt: 'Digital long-exposure photography and image stacking to reveal colorful nebulae, galaxies, and the Milky Way invisible to the human eye.',
+    whatWouldMembersDo: [
+      'Capture wide-field Milky Way panoramas with DSLRs, mirrorless cameras, and smartphones.',
+      'Couple cameras to telescopes via T-rings for high-magnification planetary imaging.',
+      'Calibrate exposures using Light, Dark, Flat, and Bias frames.',
+      'Stack and process deep-sky FITS frames using Siril, DeepSkyStacker, and Photoshop/GIMP.',
+    ],
+    whatCouldIContribute: [
+      'Photographers & Camera Owners: Bring personal cameras, lenses, or tripods.',
+      'Image Processors: Edit raw data, stretch histogram curves, and remove sensor noise.',
+      'Creative Curators: Produce society gallery exhibitions, posters, and social media reels.',
+      'Technical Specialists: Optimize camera settings and tracking mount balance.',
+    ],
     whatMembersDo: [
       'Capture wide-field Milky Way landscape panoramas.',
       'Attach cameras to telescopes via T-rings for lunar and planetary imaging.',
@@ -223,6 +279,19 @@ export const ASTRONOMY_ACTIVITIES: AstronomyActivity[] = [
     subtitle: 'Invited talks, webinars & seminars',
     tagline: 'Engage with visiting astrophysicists, educators, and space industry researchers.',
     description: 'Inviting university faculty, national astronomy researchers (e.g. PAGASA Astronomy, DOST), and visiting scientists to deliver accessible, inspiring colloquia on active frontiers in astronomy, space telescope operations, and space exploration.',
+    whatIsIt: 'Guest lectures, faculty seminars, and live webinars featuring professional astronomers, astrophysicists, and aerospace researchers.',
+    whatWouldMembersDo: [
+      'Attend accessible talks on black holes, cosmology, and planetary science.',
+      'Host live webinar watch parties for international rocket launches and discoveries.',
+      'Participate in interactive Q&A sessions with guest researchers and faculty mentors.',
+      'Curate follow-up discussion summaries for the society community.',
+    ],
+    whatCouldIContribute: [
+      'Event Hosts & MCs: Introduce speakers and moderate lively audience Q&A sessions.',
+      'Audiovisual Techs: Manage stage microphones, projectors, and live webinar streams.',
+      'Science Communicators: Write approachable talk recaps and infographics for social channels.',
+      'Liaison Officers: Reach out to faculty and guest researchers to coordinate appearances.',
+    ],
     whatMembersDo: [
       'Attend interactive lecture series on astrophysics and cosmology.',
       'Participate in live Q&A sessions with working scientists.',
@@ -239,6 +308,19 @@ export const ASTRONOMY_ACTIVITIES: AstronomyActivity[] = [
     subtitle: 'Cosmology, exoplanets & astrobiology',
     tagline: 'Debate big questions: The Fermi Paradox, James Webb discoveries, and the future of human spaceflight.',
     description: 'Informal roundtable discussions examining cutting-edge space science news, philosophical questions of extraterrestrial life, commercial spaceflight ethics, orbital debris management, and cosmology debates over dark matter and cosmic inflation.',
+    whatIsIt: 'Open roundtable discussions and friendly debates exploring cutting-edge space science, cosmology, and astrobiology.',
+    whatWouldMembersDo: [
+      'Discuss breakthroughs from the James Webb Space Telescope and Mars rovers.',
+      'Debate the Fermi Paradox, Drake Equation, and biosignatures on exoplanets.',
+      'Explore the ethics, physics, and feasibility of Mars settlements and asteroid mining.',
+      'Analyze scientific realism vs. creative license in science fiction cinema and literature.',
+    ],
+    whatCouldIContribute: [
+      'Discussion Facilitators: Select engaging topics, formulate open questions, and keep dialogue constructive.',
+      'Topic Researchers: Prepare short 3-minute primers to introduce new topics.',
+      'Active Participants: Share unique perspectives from philosophy, engineering, medicine, or the arts.',
+      'Scribes: Record standout insights and quotes for society newsletters.',
+    ],
     whatMembersDo: [
       'Deconstruct the latest research papers from arXiv and NASA press releases.',
       'Debate the ethics and engineering challenges of Mars colonization.',
@@ -255,6 +337,19 @@ export const ASTRONOMY_ACTIVITIES: AstronomyActivity[] = [
     subtitle: 'Public science communication & education',
     tagline: 'Share the wonder of the cosmos with campus visitors, high schools, and local communities.',
     description: 'Taking telescopes to public plazas, university open houses, and local elementary/high schools. Society members become science communicators, explaining lunar craters, solar safety, and basic physics to eager young learners.',
+    whatIsIt: 'Campus and community science communication events bringing telescopes, safe solar viewing, and cosmic wonder to the public.',
+    whatWouldMembersDo: [
+      'Set up sidewalk telescopes for passersby, students, and campus visitors.',
+      'Conduct safe solar observation using certified white-light and hydrogen-alpha filters.',
+      'Deliver interactive astronomy demonstrations and scale models for nearby schools.',
+      'Produce accessible educational infographics on space science and celestial events.',
+    ],
+    whatCouldIContribute: [
+      'Science Communicators: Explain cosmic phenomena simply to children and curious adults.',
+      'Community Liaisons: Coordinate with student affairs, schools, and local groups.',
+      'Graphic Designers: Create engaging flyers, bookmarks, and stickers.',
+      'Activity Guides: Lead hands-on scale model demonstrations and lunar crater simulations.',
+    ],
     whatMembersDo: [
       'Set up sidewalk astronomy stations for passersby to view the Moon.',
       'Conduct safe white-light and H-alpha solar telescope viewing events.',
@@ -271,6 +366,19 @@ export const ASTRONOMY_ACTIVITIES: AstronomyActivity[] = [
     subtitle: 'Contributing to real international research',
     tagline: 'Analyze real astronomical data alongside global astronomers via platforms like Zooniverse.',
     description: 'Students do not need to wait for a master’s degree to participate in real science. Through NASA and international citizen science programs, members inspect actual spacecraft and telescope datasets to classify galaxies, detect exoplanet dips, and spot gravitational lenses.',
+    whatIsIt: 'Collaborative participation in real international research programs analyzing space agency and observatory datasets.',
+    whatWouldMembersDo: [
+      'Classify galaxy morphologies with Galaxy Zoo using real Hubble and JWST data.',
+      'Identify candidate exoplanet transit dips with Planet Hunters (Kepler/TESS).',
+      'Detect solar coronal mass ejections with Solar Stormwatch.',
+      'Contribute to open scientific publications and validated candidate catalogs.',
+    ],
+    whatCouldIContribute: [
+      'Data Analysts: Inspect light curves and filter statistical anomalies.',
+      'Python / Code Enthusiasts: Automate bulk queries and generate distribution charts.',
+      'Dedicated Pattern Finders: Review and flag unusual celestial candidates.',
+      'Documentation Leads: Compile project walkthroughs for newer club members.',
+    ],
     whatMembersDo: [
       'Participate in Galaxy Zoo morphology classification.',
       'Analyze Kepler and TESS light curves with Planet Hunters.',
@@ -287,6 +395,19 @@ export const ASTRONOMY_ACTIVITIES: AstronomyActivity[] = [
     subtitle: 'Student-led empirical documentation',
     tagline: 'Conduct observational surveys, measure light pollution, and time variable stars.',
     description: 'Proposed student research projects exploring accessible empirical physics: Measuring municipal sky glow using Sky Quality Meters (Bortle scale mapping), tracking variable star periods (AAVSO collaboration), and recording meteor shower flux rates.',
+    whatIsIt: 'Student-designed empirical projects documenting local sky conditions, light pollution, and celestial variations.',
+    whatWouldMembersDo: [
+      'Measure campus and local sky brightness with Sky Quality Meters (Bortle scale mapping).',
+      'Record variable star brightness changes to construct light curves (AAVSO collaboration).',
+      'Track meteor shower hourly rates and correlate with cometary debris streams.',
+      'Synthesize observations into undergraduate papers or science fair presentations.',
+    ],
+    whatCouldIContribute: [
+      'Field Observers: Take systematic evening readings and log environmental factors.',
+      'Documenters & Writers: Structure research methodology and co-write reports.',
+      'Advocacy Coordinators: Present dark-sky lighting proposals to campus administrators.',
+      'Statistical Modellers: Plot linear regressions and trend curves from collected data.',
+    ],
     whatMembersDo: [
       'Collect multi-point campus Bortle scale sky brightness readings.',
       'Record lunar crater shadow progressions to calculate crater wall heights.',
@@ -303,6 +424,19 @@ export const ASTRONOMY_ACTIVITIES: AstronomyActivity[] = [
     subtitle: 'NASA Space Apps & Astronomy Olympiads',
     tagline: 'Form multidisciplinary campus teams to solve real space exploration challenges.',
     description: 'Representing the university in regional and international space challenges like the annual NASA International Space Apps Challenge, national astronomy quizzes, astrophysics hackathons, and small satellite / CanSat conceptual design competitions.',
+    whatIsIt: 'Interdisciplinary teams competing in space challenges, hackathons, and national astronomy Olympiads.',
+    whatWouldMembersDo: [
+      'Participate in the annual NASA International Space Apps Challenge.',
+      'Compete in national collegiate astronomy and astrophysics quiz bowls.',
+      'Develop software, web visualizations, or small hardware prototypes.',
+      'Network with mentors from aerospace, academia, and open-source tech.',
+    ],
+    whatCouldIContribute: [
+      'Software Developers: Build web dashboards, interactive maps, or simulation engines.',
+      'UI/UX Designers & Illustrators: Craft stunning visual interfaces and pitch decks.',
+      'Researchers & Strategists: Conduct literature reviews and formulate pitch narratives.',
+      'Presenters: Deliver crisp 4-minute demo pitches to contest judging panels.',
+    ],
     whatMembersDo: [
       'Form cross-disciplinary teams (programmers, designers, scientists).',
       'Develop open-source web apps, games, or hardware prototypes during hackathons.',
@@ -319,6 +453,19 @@ export const ASTRONOMY_ACTIVITIES: AstronomyActivity[] = [
     subtitle: 'Eclipses, conjunctions & dark-sky retreats',
     tagline: 'Experience rare astronomical spectacles with fellow club members under pristine dark skies.',
     description: 'Organizing expeditions and campus viewing parties for once-in-a-decade celestial alignments: total lunar eclipses, rare planetary conjunctions, comet flybys (e.g. Tsuchinshan-ATLAS), and overnight weekend observing trips to remote dark-sky locations.',
+    whatIsIt: 'Dedicated observing expeditions and watch parties for major celestial occurrences like eclipses, meteor peaks, and comets.',
+    whatWouldMembersDo: [
+      'Host campus viewing parties for total lunar eclipses and rare planetary conjunctions.',
+      'Track newly discovered naked-eye comets and bright transient events.',
+      'Organize weekend camping trips to pristine dark-sky provincial locations.',
+      'Build lasting community bonds through shared late-night cosmic experiences.',
+    ],
+    whatCouldIContribute: [
+      'Logistics & Safety Leads: Plan transportation, safety protocols, and campsite itineraries.',
+      'Gear Managers: Ensure battery power banks, red lights, and weatherproofing are prepared.',
+      'Campout Documenters: Capture group memories and memorable timelapses.',
+      'Weather Scouts: Monitor satellite cloud covers and seeing conditions in real time.',
+    ],
     whatMembersDo: [
       'Host campus watch parties for lunar and solar eclipses.',
       'Track newly discovered naked-eye comets and supernovae.',
@@ -338,6 +485,7 @@ export type SpaceMission = {
   launchDate: string;
   status: string;
   headline: string;
+  officialUrl: string;
   keyDiscoveries: string[];
   significance: string;
 };
@@ -350,6 +498,7 @@ export const SPACE_MISSIONS: SpaceMission[] = [
     launchDate: 'December 25, 2021',
     status: 'Active at Sun-Earth L2 (1.5 million km from Earth)',
     headline: 'Unfolding the early universe in deep infrared',
+    officialUrl: 'https://webbtelescope.org/',
     keyDiscoveries: [
       'Revealed the earliest luminous galaxies formed just 300 million years after the Big Bang (JADES-GS-z14-0).',
       'Detected water vapor, carbon dioxide, and sulfur dioxide in exoplanetary atmospheres (WASP-39b, WASP-96b).',
@@ -364,6 +513,7 @@ export const SPACE_MISSIONS: SpaceMission[] = [
     launchDate: 'August / September 1977',
     status: 'Active in Interstellar Space (>24 billion km from Earth)',
     headline: 'Humanity’s farthest reaching ambassadors',
+    officialUrl: 'https://voyager.jpl.nasa.gov/',
     keyDiscoveries: [
       'First detailed close-up flybys of Jupiter, Saturn, Uranus, and Neptune.',
       'Discovered active volcanism on Jupiter’s moon Io and fractured ice plains on Europa.',
@@ -378,6 +528,7 @@ export const SPACE_MISSIONS: SpaceMission[] = [
     launchDate: 'Artemis I launched Nov 2022 (Artemis II crewed upcoming)',
     status: 'Active Lunar Architecture',
     headline: 'Returning humans to the Moon and preparing for Mars',
+    officialUrl: 'https://www.nasa.gov/humans-in-space/artemis/',
     keyDiscoveries: [
       'Artemis I validated the Space Launch System (SLS) and uncrewed Orion spacecraft beyond the Moon and back.',
       'Targeting human landings at the Lunar South Pole to prospect water ice in permanently shadowed craters.',
@@ -392,6 +543,7 @@ export const SPACE_MISSIONS: SpaceMission[] = [
     launchDate: 'Perseverance launched July 2020 (Landed Feb 2021)',
     status: 'Actively exploring Jezero Crater, Mars',
     headline: 'Seeking ancient biosignatures on the Red Planet',
+    officialUrl: 'https://mars.nasa.gov/mars2020/',
     keyDiscoveries: [
       'Confirmed that Jezero Crater once hosted a deep river delta and standing lake billions of years ago.',
       'Cached hermetically sealed Martian rock and regolith cores for future return to Earth.',
@@ -406,6 +558,7 @@ export const SPACE_MISSIONS: SpaceMission[] = [
     launchDate: 'October 1997 (Saturn arrival 2004; Grand Finale 2017)',
     status: 'Mission completed; data analysis ongoing',
     headline: 'Thirteen years revealing the wonders of Saturn',
+    officialUrl: 'https://science.nasa.gov/mission/cassini/',
     keyDiscoveries: [
       'Landed the ESA Huygens probe on Titan, discovering liquid methane-ethane lakes, rivers, and dunes under a thick nitrogen atmosphere.',
       'Discovered active cryovolcanic geysers erupting from a subsurface global liquid water ocean on tiny moon Enceladus.',
@@ -478,12 +631,53 @@ export function saveExplorationState(state: ExplorationState) {
   }
 }
 
-export function saveSurveyResponses(responses: SurveyResponses) {
+export async function saveSurveyResponses(responses: SurveyResponses, visitedCount = 0) {
   if (typeof window === 'undefined') return;
+  const enriched = { ...responses, timestamp: new Date().toISOString() };
   try {
-    const enriched = { ...responses, timestamp: new Date().toISOString() };
     window.localStorage.setItem(ASTRO_SURVEY_KEY, JSON.stringify(enriched));
   } catch (err) {
-    console.warn('Could not save astro survey responses', err);
+    console.warn('Could not save astro survey responses to localStorage', err);
+  }
+
+  // Also submit to backend API route for aggregate persistence
+  try {
+    await fetch('/api/astro-survey', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'survey_submission',
+        data: {
+          q1_spaceInterest: responses.q1_spaceInterest,
+          q2_joinInterest: responses.q2_joinInterest,
+          q3_activities: responses.q3_activities,
+          q4_mostExcitedActivity: responses.q4_mostExcitedActivity,
+          q5_frequency: responses.q5_frequency,
+          q6_contributions: responses.q6_contributions,
+          q7_desiredEvents: responses.q7_desiredEvents,
+          q8_committeeInterest: responses.q8_committeeInterest,
+          q9_receiveUpdates: responses.q9_receiveUpdates,
+          q10_generalFeedback: responses.q10_generalFeedback,
+          visitedCount,
+        },
+      }),
+    });
+
+    if (responses.contactOption === 'yes' && (responses.contactName || responses.contactEmail)) {
+      await fetch('/api/astro-survey', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'contact_submission',
+          data: {
+            contactName: responses.contactName,
+            contactEmail: responses.contactEmail,
+            contactProgramYear: responses.contactProgramYear,
+          },
+        }),
+      });
+    }
+  } catch (err) {
+    console.warn('Could not submit survey to /api/astro-survey, local storage maintained', err);
   }
 }
