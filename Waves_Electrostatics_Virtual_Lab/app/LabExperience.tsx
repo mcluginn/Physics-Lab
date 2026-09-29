@@ -214,6 +214,7 @@ export default function LabExperience() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soundVolume, setSoundVolume] = useState(0.7);
   const [joystickKnob, setJoystickKnob] = useState({ x: 0, y: 0 });
+  const [mobilePanel, setMobilePanel] = useState<'none' | 'objective' | 'controls'>('none');
 
   const station = STATIONS[stationId];
   const stationProgress = progress[stationId];
@@ -1907,8 +1908,54 @@ export default function LabExperience() {
         </nav>
       </header>
 
-      <section className="objective-panel" aria-labelledby="objective-title">
-        <div className="eyebrow"><span className="live-dot" /> STATION {station.number} · STEP {stationProgress.currentStep + 1}/8 · {STEP_NAMES[stationProgress.currentStep].toUpperCase()}</div>
+      {/* Mobile Navigation Toolbar */}
+      <div className="mobile-view-tabs" role="toolbar" aria-label="Mobile lab panel selector">
+        <button
+          type="button"
+          className={`mobile-tab-btn ${mobilePanel === 'none' ? 'active' : ''}`}
+          onClick={() => setMobilePanel('none')}
+          title="Return to full 3D interactive view"
+        >
+          👁️ 3D View
+        </button>
+        <button
+          type="button"
+          className={`mobile-tab-btn ${mobilePanel === 'objective' ? 'active' : ''}`}
+          onClick={() => setMobilePanel((v) => v === 'objective' ? 'none' : 'objective')}
+          title="Open Current Objective and Step Guide"
+        >
+          📋 Objective (Step {stationProgress.currentStep + 1})
+        </button>
+        <button
+          type="button"
+          className={`mobile-tab-btn ${mobilePanel === 'controls' ? 'active' : ''}`}
+          onClick={() => setMobilePanel((v) => v === 'controls' ? 'none' : 'controls')}
+          title="Open Live Apparatus Sliders and Controls"
+        >
+          🎛️ Controls
+        </button>
+        <button
+          type="button"
+          className="mobile-tab-btn notebook"
+          onClick={() => openNotebook()}
+          title="Open Laboratory Notebook"
+        >
+          ▣ Notebook
+        </button>
+      </div>
+
+      <section className={`objective-panel ${mobilePanel === 'objective' ? 'mobile-visible' : 'mobile-hidden'}`} aria-labelledby="objective-title">
+        <div className="objective-panel-header-row">
+          <div className="eyebrow"><span className="live-dot" /> STATION {station.number} · STEP {stationProgress.currentStep + 1}/8 · {STEP_NAMES[stationProgress.currentStep].toUpperCase()}</div>
+          <button
+            type="button"
+            className="mobile-panel-close-btn"
+            onClick={() => setMobilePanel('none')}
+            title="Close panel to view 3D apparatus"
+          >
+            ✕ Back to 3D
+          </button>
+        </div>
         <h1 id="objective-title">{currentObjective.title}</h1>
         <p>{currentObjective.prompt}</p>
         <figure className="station-asset">
@@ -1920,10 +1967,20 @@ export default function LabExperience() {
         <div className="progress-track"><span style={{ width: `${(completedStepCount / 8) * 100}%` }} /></div>
       </section>
 
-      <aside className="control-panel" aria-label={`${station.shortName} live controls`}>
+      <aside className={`control-panel ${mobilePanel === 'controls' ? 'mobile-visible' : 'mobile-hidden'}`} aria-label={`${station.shortName} live controls`}>
         <div className="panel-heading">
           <div><span>{station.subtitle.toUpperCase()}</span><h2>Live controls</h2></div>
-          <button className="icon-button" onClick={() => sceneApi.current?.resetView()} aria-label="Reset camera view">⌖</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button className="icon-button" onClick={() => sceneApi.current?.resetView()} aria-label="Reset camera view">⌖</button>
+            <button
+              type="button"
+              className="mobile-panel-close-btn"
+              onClick={() => setMobilePanel('none')}
+              title="Close panel to view 3D apparatus"
+            >
+              ✕ Back to 3D
+            </button>
+          </div>
         </div>
 
         {stationId === 'wave' && <>
@@ -1974,14 +2031,72 @@ export default function LabExperience() {
         <button onClick={() => openNotebook()}>▣ Notebook</button>
       </div>
 
-      {!notebookOpen && <div className="mobile-lab-controls" aria-label="Touch laboratory controls">
-        <div className="mobile-joystick" role="group" aria-label="Analog walking joystick" onPointerDown={startJoystick} onPointerMove={moveJoystick} onPointerUp={releaseJoystick} onPointerCancel={releaseJoystick}>
-          <span className="mobile-joystick-rings" aria-hidden="true" />
-          <span className="mobile-joystick-knob" aria-hidden="true" style={{ transform: `translate(${joystickKnob.x}px, ${joystickKnob.y}px)` }} />
-          <small aria-hidden="true">WALK</small>
+      {!notebookOpen && (
+        <div className="mobile-lab-controls" aria-label="Touch laboratory controls">
+          <div
+            className="mobile-joystick"
+            role="group"
+            aria-label="Analog walking joystick"
+            onPointerDown={startJoystick}
+            onPointerMove={moveJoystick}
+            onPointerUp={releaseJoystick}
+            onPointerCancel={releaseJoystick}
+          >
+            <span className="mobile-joystick-rings" aria-hidden="true" />
+            <span
+              className="mobile-joystick-knob"
+              aria-hidden="true"
+              style={{ transform: `translate(${joystickKnob.x}px, ${joystickKnob.y}px)` }}
+            />
+            <small aria-hidden="true">WALK</small>
+          </div>
+
+          <div className="mobile-lab-action-cluster">
+            <button
+              type="button"
+              className={`mobile-equipment-action ${interaction ? 'ready' : ''}`}
+              onClick={() => sceneApi.current?.interact()}
+              disabled={!interaction}
+            >
+              <span className="mobile-btn-icon">⚡</span>
+              <span className="mobile-btn-text">{interaction ? interaction.action : 'LOOK AT APPARATUS'}</span>
+            </button>
+
+            <div className="mobile-lab-subactions">
+              <button
+                type="button"
+                className="mobile-subaction-btn"
+                onClick={() => {
+                  const next = sceneApi.current?.toggleView();
+                  if (typeof next === 'boolean') setIsThirdPerson(next);
+                }}
+                title="Toggle 1st / 3rd Person View (Key V)"
+              >
+                <span>{isThirdPerson ? '📷 3RD' : '👁️ 1ST'}</span>
+              </button>
+              <button
+                type="button"
+                className="mobile-subaction-btn"
+                onClick={() => {
+                  const next = sceneApi.current?.switchCharacter();
+                  if (next) setActiveCharacter(next);
+                }}
+                title="Switch Character (Key C)"
+              >
+                <span>{activeCharacter === 'female' ? '👩 CARLA' : '👨 ERIC'}</span>
+              </button>
+              <button
+                type="button"
+                className="mobile-subaction-btn"
+                onClick={() => sceneApi.current?.resetView()}
+                title="Reset Camera View"
+              >
+                <span>🎯 RESET</span>
+              </button>
+            </div>
+          </div>
         </div>
-        <button className={`mobile-equipment-action ${interaction ? 'ready' : ''}`} onClick={() => sceneApi.current?.interact()} disabled={!interaction}>{interaction ? 'INTERACT' : 'LOOK AT EQUIPMENT'}</button>
-      </div>}
+      )}
 
       {notebookOpen && (
         <div className="notebook-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setNotebookOpen(false); }}>

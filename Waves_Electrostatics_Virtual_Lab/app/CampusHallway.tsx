@@ -58,6 +58,8 @@ type HallControls = {
   interact: () => void;
   lock: () => void;
   setMove: (direction: 'forward' | 'backward' | 'left' | 'right', active: boolean) => void;
+  setMoveVector?: (right: number, forward: number) => void;
+  setSprint?: (active: boolean) => void;
   toggleView?: () => boolean;
   switchCharacter?: () => CharacterType;
   setCharacter?: (type: CharacterType) => void;
@@ -67,10 +69,13 @@ type HallControls = {
 export default function CampusHallway() {
   const sceneContainer = useRef<HTMLDivElement>(null);
   const controls = useRef<HallControls | null>(null);
+  const joystickPointerId = useRef<number | null>(null);
   const [target, setTarget] = useState<DoorInfo | null>(null);
   const [locked, setLocked] = useState(false);
   const [isThirdPerson, setIsThirdPerson] = useState(true);
   const [activeCharacter, setActiveCharacter] = useState<CharacterType>('female');
+  const [joystickKnob, setJoystickKnob] = useState({ x: 0, y: 0 });
+  const [isMobileSprint, setIsMobileSprint] = useState(false);
   const [message, setMessage] = useState('Walk toward a door and press E to enter · V view · C character.');
 
   useEffect(() => {
@@ -863,6 +868,8 @@ export default function CampusHallway() {
     let yaw = 0;
     let pitch = -0.04;
     const movement = { forward: false, backward: false, left: false, right: false, shift: false };
+    const joystickVector = { x: 0, y: 0 };
+    let isMobileSprintActive = false;
     let currentDoor: DoorInfo | null = null;
     let currentDoorId = '';
     let lastTime = performance.now();
@@ -949,16 +956,24 @@ export default function CampusHallway() {
       if (movement.backward) direction.sub(forward);
       if (movement.left) direction.sub(right);
       if (movement.right) direction.add(right);
+
+      // Support analog joystick input
+      if (Math.abs(joystickVector.x) > 0.05 || Math.abs(joystickVector.y) > 0.05) {
+        direction.addScaledVector(right, joystickVector.x);
+        direction.addScaledVector(forward, -joystickVector.y);
+      }
+
+      const isSprinting = movement.shift || isMobileSprintActive;
       if (direction.lengthSq() > 0) {
         // Calibrated walking pace in third-person:
         // Normal walk: 1.25 m/s (natural indoor university hallway pace, grounded zero-skate kinematics)
-        // Sprint (holding Shift): 2.85 m/s (athletic jog down corridor)
-        const walkSpeed = movement.shift ? 2.85 : 1.25;
+        // Sprint (holding Shift or Mobile Run): 2.85 m/s (athletic jog down corridor)
+        const walkSpeed = isSprinting ? 2.85 : 1.25;
         direction.normalize().multiplyScalar(delta * walkSpeed);
         player.x = THREE.MathUtils.clamp(player.x + direction.x, -6.1, 6.1);
         player.z = THREE.MathUtils.clamp(player.z + direction.z, -10.25, 10.5);
       }
-      character.update(delta, player, direction, yaw, pitch, camera, movement.shift);
+      character.update(delta, player, direction, yaw, pitch, camera, isSprinting);
     };
 
     const resize = () => {
@@ -967,24 +982,93 @@ export default function CampusHallway() {
     };
     resize();
     const resizeObserver = new ResizeObserver(resize); resizeObserver.observe(container);
+
+    let dragPointerId: number | null = null;
+    let isDragging = false;
+    let lastPointerX = 0;
+    let lastPointerY = 0;
+    let pointerDownX = 0;
+    let pointerDownY = 0;
+    let pointerDownTime = 0;
+
     const onPointerDown = (event: PointerEvent) => {
-      if (event.pointerType === 'touch') return;
-      const rect = renderer.domElement.getBoundingClientRect();
-      const pointer = new THREE.Vector2(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -((event.clientY - rect.top) / rect.height) * 2 + 1
-      );
-      raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObjects(doorObjects, false).find((e) => e.distance < 16.0);
-      if (hit) {
-        const clickedDoor = doorInfoByObject.get(hit.object);
-        if (clickedDoor) {
-          enterDoor(clickedDoor);
-          return;
+      if (dragPointerId !== null && dragPointerId !== event.pointerId) return;
+      dragPointerId = event.pointerId;
+      isDragging = true;
+      lastPointerX = event.clientX;
+      lastPointerY = event.clientY;
+      pointerDownX = event.clientX;
+      pointerDownY = event.clientY;
+      pointerDownTime = performance.now();
+      try {
+        renderer.domElement.setPointerCapture(event.pointerId);
+      } catch {}
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (document.pointerLockElement === renderer.domElement) return;
+      if (!isDragging || event.pointerId !== dragPointerId) return;
+
+      const deltaX = event.clientX - lastPointerX;
+      const deltaY = event.clientY - lastPointerY;
+      lastPointerX = event.clientX;
+      lastPointerY = event.clientY;
+
+      const sensitivity = event.pointerType === 'touch' ? 0.0042 : 0.0028;
+      yaw -= deltaX * sensitivity;
+      pitch = THREE.MathUtils.clamp(pitch - deltaY * sensitivity, -1.2, 1.2);
+      updateCamera();
+    };
+
+    const onPointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== dragPointerId) return;
+      isDragging = false;
+      dragPointerId = null;
+      try {
+        renderer.domElement.releasePointerCapture(event.pointerId);
+      } catch {}
+
+      const travel = Math.hypot(event.clientX - pointerDownX, event.clientY - pointerDownY);
+      const duration = performance.now() - pointerDownTime;
+      const maxTravel = event.pointerType === 'touch' ? 24 : 8;
+      const maxDuration = event.pointerType === 'touch' ? 500 : 350;
+
+      if (travel < maxTravel && duration < maxDuration) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const pointer = new THREE.Vector2(
+          ((event.clientX - rect.left) / rect.width) * 2 - 1,
+          -((event.clientY - rect.top) / rect.height) * 2 + 1
+        );
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObjects(doorObjects, false).find((e) => e.distance < 16.0);
+        if (hit) {
+          const clickedDoor = doorInfoByObject.get(hit.object);
+          if (clickedDoor) {
+            enterDoor(clickedDoor);
+            return;
+          }
+        }
+        if (event.pointerType !== 'touch') {
+          if (document.pointerLockElement !== renderer.domElement) requestWalkMode();
+          else enterDoor();
+        } else {
+          if (currentDoor) {
+            enterDoor(currentDoor);
+          }
         }
       }
-      if (document.pointerLockElement !== renderer.domElement) requestWalkMode(); else enterDoor();
     };
+
+    const onPointerCancel = (event: PointerEvent) => {
+      if (event.pointerId === dragPointerId) {
+        isDragging = false;
+        dragPointerId = null;
+        try {
+          renderer.domElement.releasePointerCapture(event.pointerId);
+        } catch {}
+      }
+    };
+
     const onMouseMove = (event: MouseEvent) => {
       if (document.pointerLockElement !== renderer.domElement) return;
       yaw -= event.movementX * 0.0022;
@@ -1022,6 +1106,9 @@ export default function CampusHallway() {
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') movement.shift = false;
     };
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    renderer.domElement.addEventListener('pointermove', onPointerMove);
+    renderer.domElement.addEventListener('pointerup', onPointerUp);
+    renderer.domElement.addEventListener('pointercancel', onPointerCancel);
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('pointerlockchange', onLockChange);
     window.addEventListener('keydown', onKeyDown);
@@ -1072,6 +1159,13 @@ export default function CampusHallway() {
       openDoor: (door: DoorInfo) => enterDoor(door),
       lock: requestWalkMode,
       setMove: (direction, active) => { movement[direction] = active; },
+      setMoveVector: (x: number, y: number) => {
+        joystickVector.x = x;
+        joystickVector.y = y;
+      },
+      setSprint: (active: boolean) => {
+        isMobileSprintActive = active;
+      },
       toggleView: () => {
         const is3rd = character.toggleView();
         setIsThirdPerson(is3rd);
@@ -1093,6 +1187,9 @@ export default function CampusHallway() {
       cancelAnimationFrame(frame); resizeObserver.disconnect();
       character.dispose();
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
+      renderer.domElement.removeEventListener('pointerup', onPointerUp);
+      renderer.domElement.removeEventListener('pointercancel', onPointerCancel);
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('pointerlockchange', onLockChange);
       window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp);
@@ -1101,6 +1198,57 @@ export default function CampusHallway() {
       floorTexture.dispose(); renderer.dispose(); container.replaceChildren(); controls.current = null;
     };
   }, []);
+
+  const startJoystick = (e: React.PointerEvent) => {
+    e.preventDefault();
+    joystickPointerId.current = e.pointerId;
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+    updateJoystickPos(e);
+  };
+
+  const moveJoystick = (e: React.PointerEvent) => {
+    if (joystickPointerId.current !== e.pointerId) return;
+    e.preventDefault();
+    updateJoystickPos(e);
+  };
+
+  const releaseJoystick = (e: React.PointerEvent) => {
+    if (joystickPointerId.current !== e.pointerId) return;
+    joystickPointerId.current = null;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+    setJoystickKnob({ x: 0, y: 0 });
+    controls.current?.setMoveVector?.(0, 0);
+  };
+
+  const updateJoystickPos = (e: React.PointerEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const maxRadius = 38;
+    const rawX = e.clientX - centerX;
+    const rawY = e.clientY - centerY;
+    const dist = Math.hypot(rawX, rawY);
+    const clampedDist = Math.min(dist, maxRadius);
+    const angle = Math.atan2(rawY, rawX);
+    const knobX = Math.cos(angle) * clampedDist;
+    const knobY = Math.sin(angle) * clampedDist;
+    setJoystickKnob({ x: knobX, y: knobY });
+    const normX = knobX / maxRadius;
+    const normY = knobY / maxRadius;
+    controls.current?.setMoveVector?.(normX, normY);
+  };
+
+  const toggleMobileSprint = () => {
+    setIsMobileSprint((v) => {
+      const next = !v;
+      controls.current?.setSprint?.(next);
+      return next;
+    });
+  };
 
   const goTo = (door: DoorInfo) => {
     if (controls.current?.openDoor) {
@@ -1193,7 +1341,80 @@ export default function CampusHallway() {
       </div>
       {target && <div className={`hallway-door-prompt ${target.href ? '' : 'reserved'}`}><span>ROOM {target.number}</span><b>{target.title}</b><small>{target.subtitle}</small><button onClick={() => goTo(target)}>{target.href ? 'ENTER ROOM' : 'COMING SOON'}</button></div>}
       <nav className="hallway-directory" aria-label="Laboratory room directory">{DOORS.map((door) => <button key={door.id} className={target?.id === door.id ? 'active' : ''} onClick={() => goTo(door)}><span>{door.number}</span><div><b>{door.title}</b><small>{door.subtitle}</small></div></button>)}</nav>
-      <div className="hallway-mobile-controls"><div><button onPointerDown={() => controls.current?.setMove('forward', true)} onPointerUp={() => controls.current?.setMove('forward', false)}>▲</button><button onPointerDown={() => controls.current?.setMove('left', true)} onPointerUp={() => controls.current?.setMove('left', false)}>◀</button><button onPointerDown={() => controls.current?.setMove('backward', true)} onPointerUp={() => controls.current?.setMove('backward', false)}>▼</button><button onPointerDown={() => controls.current?.setMove('right', true)} onPointerUp={() => controls.current?.setMove('right', false)}>▶</button></div><button onClick={() => controls.current?.interact()} disabled={!target}>ENTER</button></div>
+
+      {/* Mobile HUD with smooth virtual joystick and responsive action buttons */}
+      <div className="hallway-mobile-hud">
+        {/* Bottom-Left Virtual Joystick */}
+        <div
+          className="hallway-mobile-joystick-wrap"
+          onPointerDown={startJoystick}
+          onPointerMove={moveJoystick}
+          onPointerUp={releaseJoystick}
+          onPointerCancel={releaseJoystick}
+          title="Drag to walk through hallway"
+        >
+          <div className="hallway-mobile-joystick-ring">
+            <span className="hallway-joy-arrow joy-n">▲</span>
+            <span className="hallway-joy-arrow joy-s">▼</span>
+            <span className="hallway-joy-arrow joy-w">◄</span>
+            <span className="hallway-joy-arrow joy-e">►</span>
+            <div
+              className="hallway-mobile-joystick-knob"
+              style={{
+                transform: `translate(calc(-50% + ${joystickKnob.x}px), calc(-50% + ${joystickKnob.y}px))`,
+              }}
+            >
+              <div className="hallway-knob-core" />
+            </div>
+          </div>
+          <div className="hallway-mobile-joystick-label">TOUCH TO MOVE</div>
+        </div>
+
+        {/* Bottom-Right Action Cluster */}
+        <div className="hallway-mobile-action-bar">
+          <button
+            type="button"
+            className={`hallway-mobile-btn hallway-mobile-btn-enter ${target ? 'ready' : 'idle'}`}
+            onClick={() => {
+              if (target) {
+                goTo(target);
+              } else {
+                setMessage('Walk closer to a door or click a room in the directory below to enter.');
+              }
+            }}
+          >
+            <span className="btn-icon">⚡</span>
+            <span className="btn-label">{target ? (target.href ? `ENTER ${target.number}` : 'INFO') : 'WALK TO DOOR'}</span>
+          </button>
+
+          <div className="hallway-mobile-secondary-actions">
+            <button
+              type="button"
+              className="hallway-mobile-btn-small"
+              onClick={() => controls.current?.toggleView?.()}
+              title="Toggle Camera View (V)"
+            >
+              <span>{isThirdPerson ? '📷 3RD' : '👁️ 1ST'}</span>
+            </button>
+            <button
+              type="button"
+              className={`hallway-mobile-btn-small ${isMobileSprint ? 'active' : ''}`}
+              onClick={toggleMobileSprint}
+              title="Toggle Sprint (Shift)"
+            >
+              <span>{isMobileSprint ? '⚡ RUN' : '🚶 WALK'}</span>
+            </button>
+            <button
+              type="button"
+              className="hallway-mobile-btn-small"
+              onClick={() => controls.current?.switchCharacter?.()}
+              title="Switch Character (C)"
+            >
+              <span>{activeCharacter === 'female' ? '👩 CARLA' : '👨 ERIC'}</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </main>
   );
 }

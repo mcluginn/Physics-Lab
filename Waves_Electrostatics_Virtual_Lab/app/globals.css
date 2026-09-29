@@ -547,8 +547,9 @@ button { color: inherit; }
 @media (max-width: 900px) {
   .hallway-header { height: 70px; }
   .hallway-status, .hallway-header .campus-brand small { display: none; }
-  .hallway-welcome { top: 86px; }
-  .hallway-directory { right: 12px; bottom: 12px; width: min(330px, calc(100vw - 24px)); }
+  .hallway-welcome { display: none !important; }
+  .hallway-character-dock { display: none !important; }
+  .hallway-directory { top: 76px; bottom: auto; right: 12px; width: min(300px, calc(100vw - 24px)); }
   .hallway-directory button { padding: 7px 9px; }
   .campus-shell { overflow: auto; padding: 0 16px; }
   .campus-header { height: 72px; }
@@ -567,17 +568,137 @@ button { color: inherit; }
   .station-chip-image { width: 32px; height: 32px; flex-basis: 32px; }
   .station-chip-number { display: none; }
   .station-chip > div { display: none; }
-  .objective-panel { top: 76px; left: 12px; width: calc(100vw - 24px); }
+
+  /* Room 02 Mobile Tab Navigation */
+  .mobile-view-tabs {
+    position: absolute;
+    top: 66px;
+    left: 12px;
+    right: 12px;
+    z-index: 22;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 3px 0;
+  }
+  .mobile-tab-btn {
+    padding: 6px 12px;
+    background: rgba(10, 20, 35, 0.88);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    color: #cbd5e1;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 999px;
+    white-space: nowrap;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition: all 0.16s ease;
+  }
+  .mobile-tab-btn.active {
+    background: color-mix(in srgb, var(--station-accent) 26%, #0b1a2f);
+    border-color: var(--station-accent);
+    color: #ffffff;
+    box-shadow: 0 0 12px color-mix(in srgb, var(--station-accent) 40%, transparent);
+  }
+  .mobile-tab-btn.notebook {
+    border-color: rgba(99, 102, 241, 0.45);
+    color: #c7d2fe;
+    margin-left: auto;
+  }
+
+  /* Room 02 Mobile Collapsible Panels */
+  .objective-panel.mobile-hidden,
+  .control-panel.mobile-hidden {
+    display: none !important;
+  }
+  .objective-panel.mobile-visible {
+    display: flex !important;
+    flex-direction: column;
+    position: absolute;
+    z-index: 35;
+    top: 104px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: calc(100dvh - 170px);
+    overflow-y: auto;
+    background: rgba(7, 16, 29, 0.96);
+    backdrop-filter: blur(14px);
+    border: 1.5px solid var(--station-accent);
+    border-radius: 12px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85);
+    padding: 14px;
+  }
+  .control-panel.mobile-visible {
+    display: flex !important;
+    flex-direction: column;
+    position: absolute;
+    z-index: 35;
+    top: 104px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: calc(100dvh - 170px);
+    overflow-y: auto;
+    background: rgba(7, 16, 29, 0.96);
+    backdrop-filter: blur(14px);
+    border: 1.5px solid var(--station-accent);
+    border-radius: 12px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85);
+    padding: 14px;
+  }
+  .objective-panel-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .mobile-panel-close-btn {
+    padding: 4px 10px;
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.5);
+    color: #fca5a5;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
   .station-asset { height: 76px; }
-  .equipment-inspector { display: none; }
-  .mobile-target-card { position: absolute; z-index: 11; left: 12px; right: 12px; bottom: 76px; display: grid; gap: 4px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--station-accent) 54%, transparent); border-left: 4px solid var(--station-accent); border-radius: 9px; background: rgba(6,15,28,.92); box-shadow: 0 15px 45px rgba(0,0,0,.4); pointer-events: none; }
-  .mobile-target-card b { font-size: 13px; color: #f8fafc; }
-  .mobile-target-card p { margin: 2px 0 4px; color: #cbd5e1; font-size: 11px; line-height: 1.35; }
-  .mobile-target-card span { color: #38bdf8; font: 700 10px/1.3 ui-monospace, monospace; }
-  .mobile-target-card small { color: var(--station-accent); font-weight: 700; font-size: 10px; display: flex; align-items: center; gap: 4px; }
-  .mobile-target-card kbd { display: inline-grid; min-width: 18px; height: 16px; place-items: center; border-radius: 3px; background: rgba(255,255,255,0.1); border: 1px solid var(--station-accent); color: #fff; font-size: 9px; }
+  .equipment-inspector { display: none !important; }
+  .mobile-target-card {
+    position: absolute;
+    z-index: 21;
+    top: 104px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(340px, calc(100vw - 28px));
+    bottom: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 12px;
+    border: 1px solid color-mix(in srgb, var(--station-accent) 54%, transparent);
+    border-left: 4px solid var(--station-accent);
+    border-radius: 8px;
+    background: rgba(6, 15, 28, 0.94);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+    backdrop-filter: blur(10px);
+  }
+  .mobile-target-card b { font-size: 12px; color: #f8fafc; }
+  .mobile-target-card p { margin: 1px 0 2px; color: #cbd5e1; font-size: 10px; line-height: 1.3; }
+  .mobile-target-card span { color: #38bdf8; font: 700 9.5px/1.3 ui-monospace, monospace; }
+  .mobile-target-card small { color: var(--station-accent); font-weight: 700; font-size: 9.5px; display: flex; align-items: center; gap: 4px; }
+  .mobile-target-card kbd { display: inline-grid; min-width: 16px; height: 14px; place-items: center; border-radius: 3px; background: rgba(255,255,255,0.1); border: 1px solid var(--station-accent); color: #fff; font-size: 8px; }
+
+  /* Room 04 Inspector Card completely hidden on mobile/touch (replaced by mobile action bar) */
+  .astro-inspector-card { display: none !important; }
+  .astro-enter-walk { display: none !important; }
+
   .equipment-toast { top: 74px; }
-  .control-panel { top: auto; right: 12px; bottom: 68px; width: min(310px, calc(100vw - 24px)); max-height: 50vh; overflow: auto; }
   .status-dock { bottom: 12px; max-width: calc(100vw - 24px); }
   .status-dock > span:nth-child(2) { display: none; }
   .notebook-backdrop { padding: 8px; }
@@ -597,29 +718,262 @@ button { color: inherit; }
 }
 
 @media (pointer: coarse) {
-  .hallway-enter { display: none; }
-  .hallway-directory { bottom: 92px; }
-  .hallway-mobile-controls { position: absolute; z-index: 24; inset: auto 14px 14px; display: flex; align-items: flex-end; justify-content: space-between; pointer-events: none; }
-  .hallway-mobile-controls > div { display: grid; grid-template-columns: repeat(3, 42px); grid-template-rows: repeat(2, 42px); gap: 5px; pointer-events: auto; }
-  .hallway-mobile-controls button { border: 1px solid rgba(122,170,205,.36); border-radius: 9px; background: rgba(8,19,34,.88); color: #d5edf5; touch-action: none; }
-  .hallway-mobile-controls > div button:nth-child(1) { grid-column: 2; }
-  .hallway-mobile-controls > div button:nth-child(2) { grid-column: 1; grid-row: 2; }
-  .hallway-mobile-controls > div button:nth-child(3) { grid-column: 2; grid-row: 2; }
-  .hallway-mobile-controls > div button:nth-child(4) { grid-column: 3; grid-row: 2; }
-  .hallway-mobile-controls > button { min-width: 94px; min-height: 46px; padding: 0 14px; border-color: rgba(103,232,249,.5); color: #8ef2fc; font: 800 10px/1 ui-monospace, monospace; pointer-events: auto; }
-  .hallway-mobile-controls > button:disabled { opacity: .42; }
-  .enter-walk-mode { display: none; }
-  .mobile-lab-controls { position: absolute; z-index: 24; inset: auto 14px 72px; display: flex; align-items: flex-end; justify-content: space-between; pointer-events: none; }
-  .mobile-joystick { position: relative; display: grid; width: 118px; height: 118px; place-items: center; border: 1px solid rgba(122,170,205,.42); border-radius: 50%; background: radial-gradient(circle, rgba(22,48,70,.8), rgba(5,14,27,.82)); box-shadow: inset 0 0 22px rgba(34,211,238,.09), 0 14px 34px rgba(0,0,0,.32); pointer-events: auto; touch-action: none; user-select: none; }
-  .mobile-joystick-rings { position: absolute; inset: 20px; border: 1px dashed rgba(103,232,249,.26); border-radius: 50%; }
-  .mobile-joystick-rings::before, .mobile-joystick-rings::after { position: absolute; background: rgba(103,232,249,.18); content: ''; }
+  .hallway-enter { display: none !important; }
+  .enter-walk-mode { display: none !important; }
+  .astro-enter-walk { display: none !important; }
+  .astro-inspector-card { display: none !important; }
+  .hallway-character-dock { display: none !important; }
+
+  /* --- Campus Hallway Mobile Touch HUD --- */
+  .hallway-mobile-hud {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 25;
+  }
+  .hallway-mobile-joystick-wrap {
+    position: absolute;
+    bottom: 22px;
+    left: 18px;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .hallway-mobile-joystick-ring {
+    width: 118px;
+    height: 118px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(15, 23, 42, 0.70) 0%, rgba(8, 14, 28, 0.90) 100%);
+    border: 2px solid rgba(56, 189, 248, 0.45);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.75), inset 0 0 20px rgba(14, 116, 144, 0.3);
+    position: relative;
+    backdrop-filter: blur(10px);
+  }
+  .hallway-joy-arrow {
+    position: absolute;
+    color: rgba(148, 163, 184, 0.55);
+    font-size: 11px;
+    font-weight: 900;
+    pointer-events: none;
+  }
+  .hallway-joy-arrow.joy-n { top: 6px; left: 50%; transform: translateX(-50%); }
+  .hallway-joy-arrow.joy-s { bottom: 6px; left: 50%; transform: translateX(-50%); }
+  .hallway-joy-arrow.joy-w { left: 8px; top: 50%; transform: translateY(-50%); }
+  .hallway-joy-arrow.joy-e { right: 8px; top: 50%; transform: translateY(-50%); }
+  .hallway-mobile-joystick-knob {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #38bdf8 0%, #0284c7 70%, #0369a1 100%);
+    border: 2px solid rgba(224, 242, 254, 0.9);
+    box-shadow: 0 4px 16px rgba(14, 165, 233, 0.65), 0 0 12px rgba(56, 189, 248, 0.6);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.05s ease-out;
+  }
+  .hallway-mobile-joystick-knob .hallway-knob-core {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 0 8px #ffffff;
+  }
+  .hallway-mobile-joystick-label {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    color: rgba(148, 163, 184, 0.7);
+    text-transform: uppercase;
+    font-family: ui-monospace, monospace;
+  }
+  .hallway-mobile-action-bar {
+    position: absolute;
+    bottom: 22px;
+    right: 18px;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+  }
+  .hallway-mobile-btn-enter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    border: 1.5px solid;
+    max-width: 260px;
+  }
+  .hallway-mobile-btn-enter.idle {
+    background: rgba(15, 23, 42, 0.85);
+    border-color: rgba(148, 163, 184, 0.4);
+    color: #94a3b8;
+    backdrop-filter: blur(10px);
+  }
+  .hallway-mobile-btn-enter.ready {
+    background: linear-gradient(135deg, #0284c7 0%, #06b6d4 100%);
+    border-color: #e0f2fe;
+    color: #ffffff;
+    box-shadow: 0 0 24px rgba(6, 182, 212, 0.7), 0 8px 24px rgba(0, 0, 0, 0.6);
+    transform: scale(1.04);
+    animation: pulseReady 1.6s infinite;
+  }
+  .hallway-mobile-secondary-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .hallway-mobile-btn-small {
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(56, 189, 248, 0.45);
+    color: #e2e8f0;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+    transition: all 0.16s ease;
+    min-height: 38px;
+    min-width: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .hallway-mobile-btn-small.active {
+    background: rgba(14, 116, 144, 0.75);
+    border-color: #38bdf8;
+    color: #ffffff;
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.6);
+  }
+  .hallway-mobile-btn-small:active {
+    transform: scale(0.94);
+  }
+
+  /* --- Room 02 Mobile Touch Controls --- */
+  .mobile-lab-controls {
+    position: absolute;
+    z-index: 24;
+    inset: auto 18px 22px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    pointer-events: none;
+  }
+  .mobile-joystick {
+    position: relative;
+    display: grid;
+    width: 118px;
+    height: 118px;
+    place-items: center;
+    border: 2px solid rgba(122, 170, 205, 0.45);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(22, 48, 70, 0.8), rgba(5, 14, 27, 0.88));
+    box-shadow: inset 0 0 22px rgba(34, 211, 238, 0.12), 0 14px 34px rgba(0, 0, 0, 0.45);
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+  }
+  .mobile-joystick-rings {
+    position: absolute;
+    inset: 20px;
+    border: 1px dashed rgba(103, 232, 249, 0.26);
+    border-radius: 50%;
+  }
+  .mobile-joystick-rings::before, .mobile-joystick-rings::after {
+    position: absolute;
+    background: rgba(103, 232, 249, 0.18);
+    content: '';
+  }
   .mobile-joystick-rings::before { left: 50%; top: -14px; bottom: -14px; width: 1px; }
   .mobile-joystick-rings::after { left: -14px; right: -14px; top: 50%; height: 1px; }
-  .mobile-joystick-knob { position: absolute; z-index: 2; width: 48px; height: 48px; border: 1px solid color-mix(in srgb, var(--station-accent) 64%, white); border-radius: 50%; background: color-mix(in srgb, var(--station-accent) 30%, #0a1828); box-shadow: 0 7px 20px rgba(0,0,0,.4), inset 0 0 10px rgba(255,255,255,.08); transition: transform 40ms linear; }
-  .mobile-joystick small { position: absolute; bottom: 8px; color: rgba(207,235,245,.58); font: 800 7px/1 ui-monospace, monospace; letter-spacing: .16em; }
-  .mobile-equipment-action { width: 72px; height: 72px; max-width: 170px; padding: 10px; border: 1px solid rgba(122,170,205,.42); border-radius: 50%; background: rgba(8,19,34,.88); color: #71879d; font: 800 9px/1.2 ui-monospace, monospace; pointer-events: auto; box-shadow: 0 0 0 0 color-mix(in srgb, var(--station-accent) 45%, transparent); }
-  .mobile-equipment-action.ready { animation: interact-pulse 1.65s ease-out infinite; }
-  .mobile-equipment-action.ready { border-color: color-mix(in srgb, var(--station-accent) 62%, transparent); background: color-mix(in srgb, var(--station-accent) 17%, #09172a); color: #f2fdff; }
+  .mobile-joystick-knob {
+    position: absolute;
+    z-index: 2;
+    width: 48px;
+    height: 48px;
+    border: 2px solid color-mix(in srgb, var(--station-accent) 64%, white);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--station-accent) 30%, #0a1828);
+    box-shadow: 0 7px 20px rgba(0, 0, 0, 0.45), inset 0 0 10px rgba(255, 255, 255, 0.12);
+    transition: transform 40ms linear;
+  }
+  .mobile-joystick small {
+    position: absolute;
+    bottom: 8px;
+    color: rgba(207, 235, 245, 0.58);
+    font: 800 7px/1 ui-monospace, monospace;
+    letter-spacing: .16em;
+  }
+  .mobile-lab-action-cluster {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: auto;
+  }
+  .mobile-equipment-action {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 18px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.88);
+    border: 1.5px solid rgba(122, 170, 205, 0.42);
+    color: #cbd5e1;
+    font: 800 11.5px/1.2 ui-monospace, monospace;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    max-width: 250px;
+    white-space: nowrap;
+    transition: all 0.18s ease;
+  }
+  .mobile-equipment-action.ready {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--station-accent) 80%, #000) 0%, var(--station-accent) 100%);
+    border-color: #ffffff;
+    color: #ffffff;
+    box-shadow: 0 0 20px color-mix(in srgb, var(--station-accent) 60%, transparent);
+    animation: interact-pulse 1.65s ease-out infinite;
+  }
+  .mobile-lab-subactions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mobile-subaction-btn {
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.88);
+    border: 1px solid rgba(122, 170, 205, 0.42);
+    color: #e2e8f0;
+    font: 700 10.5px/1 ui-monospace, monospace;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    min-height: 36px;
+    min-width: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 @keyframes interact-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--station-accent) 45%, transparent); } 70% { box-shadow: 0 0 0 14px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
@@ -631,12 +985,53 @@ button { color: inherit; }
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
-  .topbar { height: 58px; padding: 7px 12px; }
-  .objective-panel { top: 68px; left: 12px; width: min(370px, 42vw); max-height: calc(100dvh - 130px); overflow: auto; padding: 12px; }
-  .objective-panel .station-asset { height: 66px; }
-  .control-panel { top: 68px; right: 12px; width: min(285px, 32vw); max-height: calc(100dvh - 124px); overflow: auto; padding: 12px; }
-  .status-dock { bottom: max(8px, env(safe-area-inset-bottom)); }
+  /* Campus Hallway Landscape */
+  .hallway-mobile-joystick-wrap { bottom: 10px !important; left: 10px !important; }
+  .hallway-mobile-joystick-ring { width: 96px !important; height: 96px !important; }
+  .hallway-mobile-action-bar { bottom: 10px !important; right: 10px !important; gap: 6px !important; }
+  .hallway-mobile-btn-enter { padding: 8px 14px !important; font-size: 11px !important; }
+  .hallway-mobile-btn-small { padding: 5px 10px !important; font-size: 10px !important; min-height: 32px !important; min-width: 32px !important; }
+  .hallway-directory { display: none !important; }
+  .hallway-character-dock { display: none !important; }
+
+  /* Room 02 Landscape */
+  .topbar { height: 50px !important; padding: 4px 12px !important; }
+  .mobile-view-tabs { top: 48px !important; padding: 2px 0 !important; }
+  .mobile-tab-btn { padding: 4px 9px !important; font-size: 10px !important; }
+  .objective-panel.mobile-visible { top: 46px !important; left: 10px !important; right: auto !important; width: min(440px, 86vw) !important; max-height: calc(100dvh - 54px) !important; padding: 10px !important; }
+  .control-panel.mobile-visible { top: 46px !important; right: 10px !important; left: auto !important; width: min(420px, 86vw) !important; max-height: calc(100dvh - 54px) !important; padding: 10px !important; }
+  .mobile-target-card { top: 48px !important; max-width: 260px !important; padding: 4px 10px !important; font-size: 10px !important; }
+  .mobile-lab-controls { bottom: 10px !important; inset: auto 10px 10px !important; }
+  .mobile-joystick { width: 96px !important; height: 96px !important; }
+  .mobile-joystick-knob { width: 40px !important; height: 40px !important; }
+  .mobile-lab-action-cluster { gap: 6px !important; }
+  .mobile-equipment-action { padding: 8px 14px !important; font-size: 11px !important; }
+  .mobile-subaction-btn { padding: 5px 10px !important; font-size: 10px !important; min-height: 32px !important; min-width: 32px !important; }
+  .status-dock { display: none !important; }
   .notebook-backdrop { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+
+  /* Room 04 Landscape */
+  .astro-topbar { padding: 4px 10px !important; gap: 4px !important; }
+  .astro-brand-lockup small { display: none !important; }
+  .astro-top-dock { padding: 2px 4px !important; }
+  .astro-top-btn { padding: 4px 8px !important; font-size: 10px !important; }
+  .astro-inspector-card { display: none !important; }
+  .astro-enter-walk { display: none !important; }
+  .astro-bottom-dock { display: none !important; }
+  .astro-mobile-joystick-wrap { bottom: 10px !important; left: 10px !important; }
+  .astro-mobile-joystick-ring { width: 96px !important; height: 96px !important; }
+  .astro-mobile-action-bar { bottom: 10px !important; right: 10px !important; gap: 6px !important; }
+  .astro-mobile-btn-interact { padding: 8px 14px !important; font-size: 11px !important; }
+  .astro-mobile-btn-small { padding: 5px 10px !important; font-size: 10px !important; min-height: 32px !important; min-width: 32px !important; }
+}
+
+@media (min-width: 901px) {
+  .mobile-view-tabs { display: none !important; }
+  .mobile-panel-close-btn { display: none !important; }
+  .objective-panel.mobile-hidden, .control-panel.mobile-hidden { display: grid !important; }
+  .hallway-mobile-hud { display: none !important; }
+  .astro-mobile-hud { display: none !important; }
+  .mobile-lab-controls { display: none !important; }
 }
 
 @supports (height: 100dvh) {
