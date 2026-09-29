@@ -306,11 +306,11 @@ export const ASTRONOMY_ACTIVITIES: AstronomyActivity[] = [
     number: '05',
     title: 'Space Science Discussions & Debates',
     subtitle: 'Cosmology, exoplanets & astrobiology',
-    tagline: 'Debate big questions: The Fermi Paradox, James Webb discoveries, and the future of human spaceflight.',
+    tagline: 'Debate big questions: The Fermi Paradox, space telescope discoveries, and the future of human spaceflight.',
     description: 'Informal roundtable discussions examining cutting-edge space science news, philosophical questions of extraterrestrial life, commercial spaceflight ethics, orbital debris management, and cosmology debates over dark matter and cosmic inflation.',
     whatIsIt: 'Open roundtable discussions and friendly debates exploring cutting-edge space science, cosmology, and astrobiology.',
     whatWouldMembersDo: [
-      'Discuss breakthroughs from the James Webb Space Telescope and Mars rovers.',
+      'Discuss breakthroughs from space observatories and Mars rovers.',
       'Debate the Fermi Paradox, Drake Equation, and biosignatures on exoplanets.',
       'Explore the ethics, physics, and feasibility of Mars settlements and asteroid mining.',
       'Analyze scientific realism vs. creative license in science fiction cinema and literature.',
@@ -368,7 +368,7 @@ export const ASTRONOMY_ACTIVITIES: AstronomyActivity[] = [
     description: 'Students do not need to wait for a master’s degree to participate in real science. Through NASA and international citizen science programs, members inspect actual spacecraft and telescope datasets to classify galaxies, detect exoplanet dips, and spot gravitational lenses.',
     whatIsIt: 'Collaborative participation in real international research programs analyzing space agency and observatory datasets.',
     whatWouldMembersDo: [
-      'Classify galaxy morphologies with Galaxy Zoo using real Hubble and JWST data.',
+      'Classify galaxy morphologies with Galaxy Zoo using real Hubble and sky survey data.',
       'Identify candidate exoplanet transit dips with Planet Hunters (Kepler/TESS).',
       'Detect solar coronal mass ejections with Solar Stormwatch.',
       'Contribute to open scientific publications and validated candidate catalogs.',
@@ -492,19 +492,19 @@ export type SpaceMission = {
 
 export const SPACE_MISSIONS: SpaceMission[] = [
   {
-    id: 'jwst',
-    name: 'James Webb Space Telescope (JWST)',
-    agency: 'NASA / ESA / CSA',
-    launchDate: 'December 25, 2021',
-    status: 'Active at Sun-Earth L2 (1.5 million km from Earth)',
-    headline: 'Unfolding the early universe in deep infrared',
-    officialUrl: 'https://webbtelescope.org/',
+    id: 'hubble',
+    name: 'Hubble Space Telescope (HST)',
+    agency: 'NASA / ESA',
+    launchDate: 'April 24, 1990',
+    status: 'Active in Low Earth Orbit (~535 km altitude)',
+    headline: 'Over three decades of cosmic discovery and public inspiration',
+    officialUrl: 'https://hubblesite.org/',
     keyDiscoveries: [
-      'Revealed the earliest luminous galaxies formed just 300 million years after the Big Bang (JADES-GS-z14-0).',
-      'Detected water vapor, carbon dioxide, and sulfur dioxide in exoplanetary atmospheres (WASP-39b, WASP-96b).',
-      'Unprecedented high-resolution views inside dusty stellar nurseries like the Pillars of Creation and Carina Nebula.',
+      'Determined the precise rate of expansion of the universe (Hubble Constant).',
+      'Hubble Deep Field revealed thousands of primordial galaxies in an apparently blank patch of sky.',
+      'Confirmed the existence of supermassive black holes at the centers of nearly all galaxies.',
     ],
-    significance: 'Equipped with a 6.5-meter gold-coated beryllium mirror and tennis-court-sized sunshield, Webb operates at cryogenic temperatures (~40 K) to peer through cosmic dust.',
+    significance: 'The first major optical space observatory above Earth’s atmosphere, revolutionizing every branch of modern astronomy with iconic imagery like the Pillars of Creation.',
   },
   {
     id: 'voyager',

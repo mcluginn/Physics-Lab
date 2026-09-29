@@ -738,14 +738,26 @@ export function createAstroScene(
     orbitLine.position.y = 0.88;
     solarGroup.add(orbitLine);
 
-    // Planet sphere
+    // Planet sphere elevated cleanly above the table surface
     const planetMesh = new THREE.Mesh(
       new THREE.SphereGeometry(p.size, 20, 20),
       new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.5, metalness: 0.1 })
     );
     planetMesh.castShadow = true;
     const initialAngle = (idx * Math.PI) / 3.2;
-    planetMesh.position.set(Math.cos(initialAngle) * p.dist, 0.92, Math.sin(initialAngle) * p.dist);
+    const planetElevation = 1.10;
+    planetMesh.position.set(Math.cos(initialAngle) * p.dist, planetElevation, Math.sin(initialAngle) * p.dist);
+
+    // Polished brass support stem mounting the planet to the tabletop orbit ring (y=0.88 to 1.10)
+    const stemHeight = planetElevation - 0.88;
+    const planetStem = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.005, 0.005, stemHeight, 8),
+      brassTrimMaterial
+    );
+    planetStem.position.y = -stemHeight / 2;
+    planetStem.castShadow = true;
+    planetMesh.add(planetStem);
+
     solarGroup.add(planetMesh);
 
     if (p.hasRings) {
@@ -1026,31 +1038,252 @@ export function createAstroScene(
   });
 
   // ==============================================================
-  // STATION 6: ASTRONOMY RESEARCH DESK (Area F)
+  // STATION 6: ASTRONOMY RESEARCH WORKSTATION ("2 PC" DESK) (Area F)
   // ==============================================================
   const researchDeskGroup = new THREE.Group();
   researchDeskGroup.position.set(6.5, 0, -1.5);
   researchDeskGroup.rotation.y = -Math.PI / 2;
   scene.add(researchDeskGroup);
 
-  const resTable = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.82, 0.9), mahoganyDeskMaterial);
+  // High-grade mahogany research desk with beveled edge and brass perimeter trim
+  const resTable = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.82, 0.95), mahoganyDeskMaterial);
   resTable.position.set(0, 0.41, 0);
   resTable.castShadow = true;
   resTable.receiveShadow = true;
   researchDeskGroup.add(resTable);
 
-  // Dual research monitors
-  [-0.4, 0.4].forEach((mx) => {
-    const mon = new THREE.Mesh(
-      new THREE.BoxGeometry(0.55, 0.34, 0.02),
-      new THREE.MeshStandardMaterial({ color: 0x0f172a, emissive: 0x10b981, emissiveIntensity: 0.3 })
-    );
-    mon.position.set(mx, 1.12, -0.2);
-    researchDeskGroup.add(mon);
+  const resTableTrim = new THREE.Mesh(new THREE.BoxGeometry(2.32, 0.03, 0.97), brassTrimMaterial);
+  resTableTrim.position.set(0, 0.81, 0);
+  researchDeskGroup.add(resTableTrim);
 
-    const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.25, 8), brassTrimMaterial);
-    stand.position.set(mx, 0.94, -0.2);
-    researchDeskGroup.add(stand);
+  // Monitor Display Screen Textures
+  const createSpectrumScreenTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 320;
+    const ctx = canvas.getContext('2d')!;
+
+    ctx.fillStyle = '#0a0f1d';
+    ctx.fillRect(0, 0, 512, 320);
+
+    // Top menu bar
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 0, 512, 32);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText('UPHSD ASTRO-LAB // STELLAR SPECTROSCOPY & TRANSIT PHOTOMETRY', 14, 21);
+
+    // Grid
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1;
+    for (let x = 30; x < 490; x += 40) {
+      ctx.beginPath(); ctx.moveTo(x, 45); ctx.lineTo(x, 195); ctx.stroke();
+    }
+    for (let y = 45; y < 195; y += 30) {
+      ctx.beginPath(); ctx.moveTo(30, y); ctx.lineTo(490, y); ctx.stroke();
+    }
+
+    // Rainbow emission spectrum
+    const specGrad = ctx.createLinearGradient(40, 0, 480, 0);
+    specGrad.addColorStop(0.0, '#3b82f6');
+    specGrad.addColorStop(0.25, '#06b6d4');
+    specGrad.addColorStop(0.5, '#10b981');
+    specGrad.addColorStop(0.75, '#f59e0b');
+    specGrad.addColorStop(1.0, '#ef4444');
+    ctx.fillStyle = specGrad;
+    ctx.fillRect(40, 50, 440, 20);
+
+    // Dark absorption lines
+    [75, 110, 160, 210, 290, 340, 410, 445].forEach((lx) => {
+      ctx.fillStyle = '#0a0f1d';
+      ctx.fillRect(lx, 50, 3, 20);
+    });
+
+    // Exoplanet transit curve
+    ctx.strokeStyle = '#34d399';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(40, 130);
+    ctx.lineTo(190, 130);
+    ctx.bezierCurveTo(220, 130, 230, 175, 260, 175);
+    ctx.bezierCurveTo(290, 175, 300, 130, 330, 130);
+    ctx.lineTo(480, 130);
+    ctx.stroke();
+
+    // Data panel
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(10, 205, 492, 105);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '11px monospace';
+    ctx.fillText('TARGET: HD 209458 b (Osiris) | FLUX DIP: -1.46% | PERIOD: 3.5247 d', 20, 230);
+    ctx.fillText('RA: 22h 03m 10.8s | DEC: +18° 53′ 04″ | SNR: 48.2 | APERTURE: 0.35m', 20, 252);
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText('STATUS: CONTINUOUS PHOTOMETRIC LOGGING [STABLE]', 20, 276);
+
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  const createSkySurveyScreenTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 320;
+    const ctx = canvas.getContext('2d')!;
+
+    ctx.fillStyle = '#060913';
+    ctx.fillRect(0, 0, 512, 320);
+
+    ctx.fillStyle = '#1e1b4b';
+    ctx.fillRect(0, 0, 512, 32);
+    ctx.fillStyle = '#c084fc';
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText('UPHSD DEEP-SKY SKY SURVEY // FITS CALIBRATION & ASTROMETRY', 14, 21);
+
+    ctx.strokeStyle = 'rgba(99, 102, 241, 0.25)';
+    ctx.lineWidth = 1;
+    for (let x = 40; x < 480; x += 45) {
+      ctx.beginPath(); ctx.moveTo(x, 40); ctx.lineTo(x, 230); ctx.stroke();
+    }
+    for (let y = 40; y < 230; y += 45) {
+      ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(480, y); ctx.stroke();
+    }
+
+    for (let s = 0; s < 120; s++) {
+      const sx = 40 + Math.random() * 440;
+      const sy = 40 + Math.random() * 190;
+      const sr = Math.random() * 2 + 0.5;
+      ctx.fillStyle = Math.random() > 0.3 ? '#e0f2fe' : '#fef08a';
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const galGrad = ctx.createRadialGradient(260, 135, 4, 260, 135, 75);
+    galGrad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+    galGrad.addColorStop(0.25, 'rgba(224, 231, 255, 0.65)');
+    galGrad.addColorStop(0.65, 'rgba(129, 140, 248, 0.28)');
+    galGrad.addColorStop(1, 'rgba(15, 23, 42, 0)');
+    ctx.fillStyle = galGrad;
+    ctx.beginPath();
+    ctx.ellipse(260, 135, 75, 42, Math.PI / 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(260, 135, 18, 0, Math.PI * 2);
+    ctx.moveTo(260, 105); ctx.lineTo(260, 165);
+    ctx.moveTo(230, 135); ctx.lineTo(290, 135);
+    ctx.stroke();
+
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(10, 245, 492, 65);
+    ctx.fillStyle = '#a78bfa';
+    ctx.font = '11px monospace';
+    ctx.fillText('TARGET: M31 / ANDROMEDA CORE | FILTER: H-ALPHA 656.3nm', 20, 268);
+    ctx.fillText('SOLVER: WCS ASTROMETRY.NET | RESIDUAL: 0.18" RMS | EXPOSURE: 300s', 20, 290);
+
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  const pcScreenTextures = [createSpectrumScreenTexture(), createSkySurveyScreenTexture()];
+  const monitorBezelMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.35, metalness: 0.8 });
+  const keyboardMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5, metalness: 0.4 });
+  const mousepadMat = new THREE.MeshStandardMaterial({ color: 0x1e1b4b, roughness: 0.9 });
+  const towerMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.85 });
+
+  // Build the 2 Complete PC Workstations
+  [-0.52, 0.52].forEach((mx, pci) => {
+    // Ergonomic monitor stand
+    const standBase = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.015, 0.18), monitorBezelMat);
+    standBase.position.set(mx, 0.828, -0.22);
+    standBase.castShadow = true;
+    researchDeskGroup.add(standBase);
+
+    const standNeck = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.26, 0.035), monitorBezelMat);
+    standNeck.position.set(mx, 0.95, -0.24);
+    standNeck.castShadow = true;
+    researchDeskGroup.add(standNeck);
+
+    // Slim monitor bezel housing
+    const monHousing = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.40, 0.025), monitorBezelMat);
+    monHousing.position.set(mx, 1.10, -0.21);
+    monHousing.castShadow = true;
+    researchDeskGroup.add(monHousing);
+
+    // High-resolution active screen display
+    const monScreen = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.60, 0.36),
+      new THREE.MeshBasicMaterial({ map: pcScreenTextures[pci] })
+    );
+    monScreen.position.set(mx, 1.10, -0.196);
+    researchDeskGroup.add(monScreen);
+
+    // Desk Mat / Mousepad
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.004, 0.30), mousepadMat);
+    pad.position.set(mx, 0.825, 0.14);
+    researchDeskGroup.add(pad);
+
+    // Mechanical Keyboard
+    const kb = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.016, 0.14), keyboardMat);
+    kb.position.set(mx - 0.08, 0.832, 0.14);
+    kb.castShadow = true;
+    researchDeskGroup.add(kb);
+
+    // Optical Mouse
+    const mouse = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.024, 0.10), keyboardMat);
+    mouse.position.set(mx + 0.20, 0.835, 0.14);
+    mouse.castShadow = true;
+    researchDeskGroup.add(mouse);
+
+    // PC Workstation Mid-Tower (sitting under desk)
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.44, 0.44), towerMat);
+    tower.position.set(mx, 0.22, -0.12);
+    tower.castShadow = true;
+    researchDeskGroup.add(tower);
+
+    // Front intake light
+    const towerLight = new THREE.Mesh(
+      new THREE.BoxGeometry(0.01, 0.18, 0.005),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 1.5 })
+    );
+    towerLight.position.set(mx, 0.26, 0.102);
+    researchDeskGroup.add(towerLight);
+
+    // Office lab task stool/chair
+    const chairGroup = new THREE.Group();
+    chairGroup.position.set(mx, 0, 0.65);
+    chairGroup.rotation.y = Math.PI;
+    researchDeskGroup.add(chairGroup);
+
+    const chairSeat = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.06, 0.42),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 })
+    );
+    chairSeat.position.y = 0.50;
+    chairSeat.castShadow = true;
+    chairGroup.add(chairSeat);
+
+    const chairBack = new THREE.Mesh(
+      new THREE.BoxGeometry(0.40, 0.36, 0.04),
+      new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.7 })
+    );
+    chairBack.position.set(0, 0.72, -0.19);
+    chairBack.castShadow = true;
+    chairGroup.add(chairBack);
+
+    const chairPost = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.03, 0.03, 0.45, 12),
+      brassTrimMaterial
+    );
+    chairPost.position.y = 0.25;
+    chairGroup.add(chairPost);
+
+    const chairBase = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.28, 0.05, 12),
+      monitorBezelMat
+    );
+    chairBase.position.y = 0.025;
+    chairGroup.add(chairBase);
   });
 
   registerTarget(resTable, {
@@ -1182,6 +1415,171 @@ export function createAstroScene(
     name: 'Society Orientation Kiosk',
     action: 'VIEW ORIENTATION GUIDE',
     description: 'Welcome to the Astronomical Society Room! Interactive directory and orientation guide for all Room 04 stations.',
+  });
+
+  // ==============================================================
+  // STATION 11: CLASSICAL CELESTIAL ARMILLARY SPHERE (Area K)
+  // ==============================================================
+  const armillaryGroup = new THREE.Group();
+  armillaryGroup.position.set(4.2, 0, -6.8);
+  scene.add(armillaryGroup);
+
+  // Classical fluted mahogany & brass pedestal
+  const pedestalBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.42, 0.48, 0.14, 24),
+    mahoganyDeskMaterial
+  );
+  pedestalBase.position.y = 0.07;
+  pedestalBase.castShadow = true;
+  armillaryGroup.add(pedestalBase);
+
+  const pedestalColumn = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.24, 0.28, 0.82, 24),
+    mahoganyDeskMaterial
+  );
+  pedestalColumn.position.y = 0.55;
+  pedestalColumn.castShadow = true;
+  armillaryGroup.add(pedestalColumn);
+
+  // Brass capital & base collars
+  [-0.38, 0.38].forEach((cy) => {
+    const collar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.29, 0.29, 0.04, 24),
+      brassTrimMaterial
+    );
+    collar.position.y = 0.55 + cy;
+    armillaryGroup.add(collar);
+  });
+
+  const pedestalCap = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.48, 0.42, 0.08, 24),
+    mahoganyDeskMaterial
+  );
+  pedestalCap.position.y = 0.96;
+  pedestalCap.castShadow = true;
+  pedestalCap.receiveShadow = true;
+  armillaryGroup.add(pedestalCap);
+
+  const pedestalBrassRim = new THREE.Mesh(
+    new THREE.TorusGeometry(0.48, 0.015, 12, 36),
+    brassTrimMaterial
+  );
+  pedestalBrassRim.position.y = 0.96;
+  pedestalBrassRim.rotation.x = Math.PI / 2;
+  armillaryGroup.add(pedestalBrassRim);
+
+  // Brass identification placard
+  const armillaryPlacard = new THREE.Mesh(
+    new THREE.BoxGeometry(0.28, 0.08, 0.02),
+    brassTrimMaterial
+  );
+  armillaryPlacard.position.set(0, 0.65, 0.26);
+  armillaryGroup.add(armillaryPlacard);
+
+  // Brass armillary sphere model (displayed immediately while OBJ loads)
+  const armillaryModelGroup = new THREE.Group();
+  armillaryModelGroup.position.set(0, 1.48, 0);
+  armillaryGroup.add(armillaryModelGroup);
+
+  const antiqueBrassMaterial = new THREE.MeshStandardMaterial({
+    color: 0xd4af37,
+    roughness: 0.26,
+    metalness: 0.92,
+  });
+
+  // Base stand & meridian support
+  const standBase = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.06, 24), antiqueBrassMaterial);
+  standBase.position.y = -0.48;
+  armillaryModelGroup.add(standBase);
+
+  const standPillar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.42, 16), antiqueBrassMaterial);
+  standPillar.position.y = -0.27;
+  armillaryModelGroup.add(standPillar);
+
+  // Meridian outer ring (vertical)
+  const meridianRing = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.018, 16, 48), antiqueBrassMaterial);
+  armillaryModelGroup.add(meridianRing);
+
+  // Horizon ring (horizontal)
+  const horizonRing = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.022, 16, 48), antiqueBrassMaterial);
+  horizonRing.rotation.x = Math.PI / 2;
+  armillaryModelGroup.add(horizonRing);
+
+  // Rotating inner celestial sphere
+  const innerCelestialGroup = new THREE.Group();
+  innerCelestialGroup.rotation.z = (23.5 * Math.PI) / 180; // Earth axial obliquity 23.5°
+  armillaryModelGroup.add(innerCelestialGroup);
+
+  // Equator ring
+  const equatorRing = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.014, 16, 48), antiqueBrassMaterial);
+  equatorRing.rotation.x = Math.PI / 2;
+  innerCelestialGroup.add(equatorRing);
+
+  // Ecliptic zodiac band (tilted relative to equator)
+  const eclipticRing = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.05, 48, 1, true), antiqueBrassMaterial);
+  eclipticRing.rotation.x = (23.5 * Math.PI) / 180;
+  innerCelestialGroup.add(eclipticRing);
+
+  // Solstitial and Equinoctial colures
+  const colure1 = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.012, 16, 48), antiqueBrassMaterial);
+  innerCelestialGroup.add(colure1);
+
+  const colure2 = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.012, 16, 48), antiqueBrassMaterial);
+  colure2.rotation.y = Math.PI / 2;
+  innerCelestialGroup.add(colure2);
+
+  // Polar axis pin
+  const polarAxis = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.92, 12), brassTrimMaterial);
+  innerCelestialGroup.add(polarAxis);
+
+  // Central Terrella (miniature Earth globe at center)
+  const centralEarth = new THREE.Mesh(
+    new THREE.SphereGeometry(0.06, 20, 20),
+    new THREE.MeshStandardMaterial({ color: 0x60a5fa, roughness: 0.4, metalness: 0.6 })
+  );
+  innerCelestialGroup.add(centralEarth);
+
+  // Load the authentic Armillary.obj from assets/armillary
+  const armillaryObjLoader = new OBJLoader();
+  armillaryObjLoader.load(
+    '/assets/armillary/Armillary.obj',
+    (loadedObj) => {
+      while (armillaryModelGroup.children.length > 0) {
+        armillaryModelGroup.remove(armillaryModelGroup.children[0]);
+      }
+      loadedObj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const m = child as THREE.Mesh;
+          m.geometry.center();
+          m.material = antiqueBrassMaterial;
+          m.castShadow = true;
+          m.receiveShadow = true;
+        }
+      });
+      loadedObj.scale.set(0.00115, 0.00115, 0.00115);
+      loadedObj.position.set(0, 0, 0);
+      armillaryModelGroup.add(loadedObj);
+    },
+    undefined,
+    (err) => {
+      console.warn('Armillary OBJ load note:', err);
+    }
+  );
+
+  // Spotlight highlighting the Armillary Sphere
+  const armillarySpot = new THREE.SpotLight(0xfff1d0, 3.6, 9.0, Math.PI / 4, 0.4, 1.2);
+  armillarySpot.position.set(4.2, 4.2, -6.8);
+  armillarySpot.target.position.set(4.2, 1.2, -6.8);
+  scene.add(armillarySpot);
+  scene.add(armillarySpot.target);
+
+  registerTarget(pedestalCap, {
+    id: 'astro-armillary',
+    activityId: 'virtual_observatory',
+    category: 'HISTORICAL INSTRUMENT',
+    name: 'Renaissance Armillary Sphere',
+    action: 'INSPECT CELESTIAL SPHERE',
+    description: 'A classical mechanical model of the celestial sphere. Rings depict the celestial equator, ecliptic plane, tropics, and meridian rings used by ancient and Renaissance astronomers.',
   });
 
   // ==============================================================
@@ -1681,6 +2079,11 @@ export function createAstroScene(
     // Rotate 3D Moon gently
     moonGroup.rotation.y += 0.0003;
 
+    // Rotate Armillary Sphere celestial rings gently
+    if (typeof armillaryModelGroup !== 'undefined' && armillaryModelGroup) {
+      armillaryModelGroup.rotation.y += 0.0012;
+    }
+
     // Animate twinkling landmark stars
     landmarkStars.forEach((star) => {
       const twinkle = 1 + Math.sin(now * 0.001 * star.twinkleSpeed + star.phase) * 0.28;
@@ -1730,15 +2133,51 @@ export function createAstroScene(
       const deltaZ = (-cos * normF - sin * normR) * walkSpeed * delta;
       moveDirection.set(deltaX, 0, deltaZ);
 
-      // Simple bounding box collision (-8.4 < X < 8.4, -9.2 < Z < 5.2)
-      const nextX = Math.max(-8.4, Math.min(8.4, playerPosition.x + deltaX));
+      // Multi-table collision detection covering all stations in Room 04:
+      // Center table, 2 PC research workstation, astrophotography desk,
+      // survey desk, orientation kiosk, telescope tripod, and armillary pedestal.
+      const checkObstacleCollision = (x: number, z: number): boolean => {
+        // 1. Center Solar System table (radius 2.36 + player buffer)
+        if (Math.hypot(x - 0, z - (-1.5)) < 2.72) return true;
+
+        // 2. Research Workstation ("2 PC" desk on East wall, center ~ (6.5, -1.5), width 2.3 x depth 0.95)
+        if (x >= 5.50 && x <= 7.50 && z >= -2.95 && z <= -0.05) return true;
+
+        // 3. Astrophotography Desk (West wall, center ~ (-6.5, -1.5), width 2.2 x depth 0.9)
+        if (x >= -7.50 && x <= -5.50 && z >= -2.95 && z <= -0.05) return true;
+
+        // 4. Membership & Interest Survey table (South-East, center ~ (3.5, 4.2), width 1.8 x depth 0.8)
+        if (x >= 2.20 && x <= 4.80 && z >= 3.40 && z <= 5.00) return true;
+
+        // 5. Society Orientation Kiosk (East entrance, center ~ (5.2, 4.0))
+        if (x >= 4.20 && x <= 6.20 && z >= 3.00 && z <= 5.00) return true;
+
+        // 6. Observation Telescope tripod (North-West, center ~ (-4.5, -6.5))
+        if (Math.hypot(x - (-4.5), z - (-6.5)) < 1.10) return true;
+
+        // 7. Classical Armillary Sphere pedestal (North-East, center ~ (4.2, -6.8))
+        if (Math.hypot(x - 4.2, z - (-6.8)) < 1.05) return true;
+
+        return false;
+      };
+
+      // Room boundary clamping (-8.3 < X < 8.3, -9.2 < Z < 5.2)
+      const nextX = Math.max(-8.3, Math.min(8.3, playerPosition.x + deltaX));
       const nextZ = Math.max(-9.2, Math.min(5.2, playerPosition.z + deltaZ));
 
-      // Table obstruction avoidance (radius 2.6 around X=0, Z=-1.5)
-      const distToTable = Math.hypot(nextX - 0, nextZ - (-1.5));
-      if (distToTable > 2.6) {
+      // Attempt full movement or smooth sliding along unobstructed axis
+      if (!checkObstacleCollision(nextX, nextZ)) {
         playerPosition.x = nextX;
         playerPosition.z = nextZ;
+      } else {
+        // Slide along X if X is unobstructed
+        if (!checkObstacleCollision(nextX, playerPosition.z)) {
+          playerPosition.x = nextX;
+        }
+        // Slide along Z if Z is unobstructed
+        if (!checkObstacleCollision(playerPosition.x, nextZ)) {
+          playerPosition.z = nextZ;
+        }
       }
 
       footstepTimer += delta;
