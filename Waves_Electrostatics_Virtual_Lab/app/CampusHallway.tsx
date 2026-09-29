@@ -45,9 +45,10 @@ const DOORS: DoorInfo[] = [
   },
   {
     id: 'uphsd-astro',
-    number: '✦',
-    title: 'UPHSD - Astronomical Society',
-    subtitle: 'Coming soon',
+    number: '04',
+    title: 'Astronomical Society',
+    subtitle: 'Explore Beyond the Classroom · Active',
+    href: '/room-4',
     color: 0x818cf8,
     position: { x: 6.84, y: 0, z: -0.5, rotationY: -Math.PI / 2 },
   },
@@ -463,20 +464,20 @@ export default function CampusHallway() {
 
       // Line 2: Room Number & Laboratory / Society Name (Gilded intaglio)
       const roomTitle = door.id === 'uphsd-astro'
-        ? 'UPHSD   ·   ASTRONOMICAL SOCIETY'
+        ? 'ROOM 04   ·   UPHSD ASTRONOMICAL SOCIETY'
         : `ROOM ${door.number}   ·   ${door.title.toUpperCase()}`;
       drawCarvedText(
         roomTitle,
         1024,
         250,
-        door.id === 'uphsd-astro' ? '800 52px Georgia, "Times New Roman", serif' : '800 58px Georgia, "Times New Roman", serif',
-        door.id === 'uphsd-astro' ? 52 : 58,
+        door.id === 'uphsd-astro' ? '800 48px Georgia, "Times New Roman", serif' : '800 58px Georgia, "Times New Roman", serif',
+        door.id === 'uphsd-astro' ? 48 : 58,
         true
       );
 
       // Line 3: Laboratory / Society Status
       const statusText = door.id === 'uphsd-astro'
-        ? '✦   OBSERVATORY & SPACE SCIENCE   ·   COMING SOON   ✦'
+        ? '✦   STUDENT DISCOVERY ROOM & OBSERVATORY   ·   PRESS [E] TO ENTER   ✦'
         : door.href
         ? '✦   ACTIVE RESEARCH LABORATORY   ·   PRESS [E] TO ENTER   ✦'
         : '✧   RESERVED FOR UPCOMING SEMESTER COURSES   ✧';
