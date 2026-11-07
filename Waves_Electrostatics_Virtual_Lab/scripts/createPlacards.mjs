@@ -234,32 +234,32 @@ function makeElectricityPlacard() {
   cv.drawText('Voltage - Current - Resistance - RLC Impedance - Power', 50, 102, 2, 148, 163, 184);
 
   // Left Section: DC Circuit & Ohm / Kirchhoff
-  cv.fillRect(40, 150, 530, 290, 14, 25, 42);
-  cv.strokeRect(40, 150, 530, 290, 2, 56, 189, 248, 140);
+  cv.fillRect(40, 150, 545, 290, 14, 25, 42);
+  cv.strokeRect(40, 150, 545, 290, 2, 56, 189, 248, 140);
   cv.drawText('DC STEADY-STATE: OHM & KIRCHHOFF LAWS', 60, 168, 2, 56, 189, 248);
 
   // Schematic DC loop
-  cv.strokeRect(70, 210, 220, 140, 3, 226, 232, 240);
+  cv.strokeRect(55, 210, 175, 140, 3, 226, 232, 240);
   // Source battery
-  cv.fillRect(66, 260, 12, 40, 14, 25, 42);
-  cv.drawLine(60, 270, 84, 270, 4, 56, 189, 248);
-  cv.drawLine(66, 285, 78, 285, 3, 56, 189, 248);
-  cv.drawText('Vs = 12V', 74, 300, 2, 56, 189, 248);
+  cv.fillRect(51, 260, 12, 40, 14, 25, 42);
+  cv.drawLine(45, 270, 69, 270, 4, 56, 189, 248);
+  cv.drawLine(51, 285, 63, 285, 3, 56, 189, 248);
+  cv.drawText('Vs = 12V', 58, 300, 2, 56, 189, 248);
   // Resistors
-  cv.fillRect(140, 206, 50, 10, 245, 158, 11);
-  cv.drawText('R1', 154, 190, 2, 245, 158, 11);
-  cv.fillRect(286, 255, 10, 50, 245, 158, 11);
-  cv.drawText('R2', 304, 270, 2, 245, 158, 11);
-  cv.fillRect(140, 346, 50, 10, 245, 158, 11);
-  cv.drawText('R3', 154, 362, 2, 245, 158, 11);
+  cv.fillRect(115, 206, 50, 10, 245, 158, 11);
+  cv.drawText('R1', 130, 190, 2, 245, 158, 11);
+  cv.fillRect(225, 255, 10, 50, 245, 158, 11);
+  cv.drawText('R2', 200, 270, 2, 245, 158, 11);
+  cv.fillRect(115, 346, 50, 10, 245, 158, 11);
+  cv.drawText('R3', 130, 362, 2, 245, 158, 11);
 
   // Formulas box
-  cv.drawText('Ohm:      V = I * Req', 320, 220, 2, 255, 255, 255);
-  cv.drawText('Series:   Req = R1 + R2 + R3', 320, 250, 2, 148, 163, 184);
-  cv.drawText('Parallel: 1/Req = sum(1/Ri)', 320, 280, 2, 148, 163, 184);
-  cv.drawText('KVL:      sum(V) = 0 around loop', 320, 310, 2, 56, 189, 248);
-  cv.drawText('KCL:      sum(I_in) = sum(I_out)', 320, 340, 2, 56, 189, 248);
-  cv.drawText('Power:    P = V * I = I^2 * R', 320, 370, 2, 245, 158, 11);
+  cv.drawText('Ohm:      V = I * Req', 248, 220, 2, 255, 255, 255);
+  cv.drawText('Series:   Req = R1 + R2 + R3', 248, 250, 2, 148, 163, 184);
+  cv.drawText('Parallel: 1/Req = 1/R1 + 1/R2', 248, 280, 2, 148, 163, 184);
+  cv.drawText('KVL:      sum(V_loop) = 0', 248, 310, 2, 56, 189, 248);
+  cv.drawText('KCL:      sum(I_in) = sum(I_out)', 248, 340, 2, 56, 189, 248);
+  cv.drawText('Power:    P = V * I = I^2 * Req', 248, 370, 2, 245, 158, 11);
 
   // Right Section: AC RLC Circuits & Impedance
   cv.fillRect(630, 150, 530, 290, 14, 25, 42);
@@ -306,7 +306,7 @@ function makeElectricityPlacard() {
   cv.drawText('Real Power:      P = V_rms * I_rms * cos(phi)  (Watts, W)', 300, 615, 2, 226, 232, 240);
   cv.drawText('Reactive Power:  Q = V_rms * I_rms * sin(phi)  (VAR)', 300, 645, 2, 148, 163, 184);
   cv.drawText('Apparent Power:  S = V_rms * I_rms             (Volt-Amps, VA)', 300, 675, 2, 148, 163, 184);
-  cv.drawText('Resonance:       f0 = 1 / (2*pi*sqrt(L*C)) => XL = XC, Z = R, cos(phi) = 1.0', 300, 710, 2, 52, 211, 153);
+  cv.drawText('Resonance:       f0 = 1 / (2*pi*sqrt(L*C))', 300, 710, 2, 52, 211, 153);
 
   return cv.toBuffer();
 }
@@ -345,8 +345,8 @@ function makeOpticsPlacard() {
   cv.drawLine(220, 280, 270, 350, 3, 52, 211, 153); // refracted
   cv.drawLine(220, 280, 300, 220, 2, 239, 68, 68, 120); // reflected
 
-  cv.drawText('n1 sin(theta1) = n2 sin(theta2)', 60, 380, 2, 255, 255, 255);
-  cv.drawText('TIR: theta_c = arcsin(n2 / n1)', 60, 405, 2, 251, 191, 36);
+  cv.drawText('Snell: n1 sin(th1) = n2 sin(th2)', 60, 380, 2, 255, 255, 255);
+  cv.drawText('TIR:   theta_c = arcsin(n2/n1)', 60, 405, 2, 251, 191, 36);
 
   // Middle Section: Thin Lenses & Spherical Mirrors
   cv.fillRect(420, 150, 360, 290, 8, 32, 22);
@@ -380,9 +380,9 @@ function makeOpticsPlacard() {
     cv.fillRect(fx, 280 - hBar, 1, hBar * 2, 52, 211, 153, Math.round(intensity * 255));
   }
 
-  cv.drawText('Double-slit: Delta y = lambda*L / d', 820, 360, 2, 255, 255, 255);
-  cv.drawText('Single-slit: a*sin(theta) = m*lambda', 820, 385, 2, 167, 243, 208);
-  cv.drawText('Central width: w = 2*lambda*L / a', 820, 410, 2, 251, 191, 36);
+  cv.drawText('Fringes:  dy = lambda*L / d', 820, 360, 2, 255, 255, 255);
+  cv.drawText('Minima:   a*sin(th) = m*lam', 820, 385, 2, 167, 243, 208);
+  cv.drawText('Central:  w = 2*lambda*L / a', 820, 410, 2, 251, 191, 36);
 
   // Bottom Summary Panel
   cv.fillRect(40, 460, 1120, 290, 8, 32, 22);
@@ -396,7 +396,7 @@ function makeOpticsPlacard() {
   cv.drawText('   Magnification M < 0 indicates an inverted image; |M| > 1 indicates enlargement.', 60, 605, 2, 167, 243, 208);
 
   cv.drawText('3. INTERFERENCE & DIFFRACTION: Shorter wavelengths (violet 400nm) produce tighter fringes.', 60, 640, 2, 255, 255, 255);
-  cv.drawText('   Longer wavelengths (red 700nm) disperse wider. Narrower slits broaden the diffraction envelope.', 60, 665, 2, 167, 243, 208);
+  cv.drawText('   Longer wavelengths disperse wider. Narrower slits broaden the diffraction envelope.', 60, 665, 2, 167, 243, 208);
   cv.drawText('   Wavelength Color Mapping: 400nm (Violet) -> 532nm (Emerald Green) -> 650nm (Ruby Red)', 60, 700, 2, 251, 191, 36);
 
   return cv.toBuffer();
@@ -439,7 +439,7 @@ function makeRelativityPlacard() {
     cv.fillRect(60 + bx, py, 2, 2, 192, 132, 252);
   }
 
-  cv.drawText('gamma = 1 / sqrt(1 - v^2 / c^2)', 60, 380, 2, 255, 255, 255);
+  cv.drawText('gamma = 1 / sqrt(1 - beta^2)', 60, 380, 2, 255, 255, 255);
   cv.drawText('v = 0.60c -> gamma = 1.250', 60, 405, 2, 216, 180, 254);
   cv.drawText('v = 0.866c -> gamma = 2.000', 60, 425, 2, 251, 191, 36);
 
@@ -461,7 +461,7 @@ function makeRelativityPlacard() {
   cv.drawLine(580, 226, 680, 320, 3, 192, 132, 252); // diagonal hypotenuse
   cv.drawText('Frame S (Moving)', 580, 335, 1, 148, 163, 184);
 
-  cv.drawText('Delta t = gamma * Delta t0', 440, 370, 3, 255, 255, 255);
+  cv.drawText('Delta t = gamma * Delta t0', 440, 370, 2, 255, 255, 255);
   cv.drawText('Moving clocks run slower by factor gamma.', 440, 405, 1, 216, 180, 254);
 
   // Right Section: Length Contraction
@@ -475,9 +475,9 @@ function makeRelativityPlacard() {
 
   // Meter rod moving at 0.866c (L = L0 / 2)
   cv.fillRect(840, 290, 140, 24, 192, 132, 252);
-  cv.drawText('Contracted Length L = L0 / gamma', 840, 320, 2, 192, 132, 252);
+  cv.drawText('Contracted L = L0 / gamma', 840, 320, 2, 192, 132, 252);
 
-  cv.drawText('L = L0 / gamma = L0 * sqrt(1 - beta^2)', 820, 370, 2, 255, 255, 255);
+  cv.drawText('L = L0 * sqrt(1 - beta^2)', 820, 370, 2, 255, 255, 255);
   cv.drawText('Contraction occurs ONLY along axis of motion.', 820, 405, 1, 216, 180, 254);
 
   // Bottom Section: Mass-Energy Equivalence E = mc^2

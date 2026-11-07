@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
@@ -98,9 +99,9 @@ function RangeControl({
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
+    <div className="telemetry-row">
+      <span className="telemetry-label">{label}</span>
+      <span className="telemetry-value">{value}</span>
     </div>
   );
 }
@@ -674,19 +675,28 @@ export default function Room3Experience() {
   };
 
   return (
-    <div className="lab-shell" data-station={stationId}>
+    <main
+      className="lab-shell"
+      data-room="room-3"
+      data-station={stationId}
+      style={{ '--station-accent': station.accent, position: 'fixed', inset: 0, overflow: 'hidden', background: '#050812' } as CSSProperties}
+    >
       {/* 1. Header Topbar */}
       <header className="topbar">
-        <div className="topbar-left">
-          <Link href="/" className="exit-button" aria-label="Return to corridor">
-            <span aria-hidden="true">🚪</span> Hallway
-          </Link>
-          <div className="breadcrumbs">
-            <span className="course-code">PHYSICS 300</span>
-            <span className="crumb-divider">/</span>
-            <span className="room-crumb">Room 03 · Electricity, Optics & Relativity</span>
+        <Link
+          className="brand-lockup"
+          href="/"
+          aria-label="Return to Physics University campus"
+        >
+          <span className="brand-mark">⚡</span>
+          <div>
+            <strong>Electricity, Optics & Relativity</strong>
+            <span>Physics University · Room 03</span>
           </div>
-        </div>
+        </Link>
+        <Link className="room-link" href="/">
+          <span>LABORATORY HALL</span>Room directory
+        </Link>
 
         <nav className="station-nav" aria-label="Room 3 Workstations">
           {(['circuits', 'optics', 'relativity'] as Room3StationId[]).map((id, index) => {
@@ -697,26 +707,28 @@ export default function Room3Experience() {
               <button
                 key={id}
                 type="button"
-                className={`station-chip ${isActive ? 'active' : ''} ${isFinished ? 'completed' : ''}`}
+                className={`station-chip ${isActive ? 'active' : ''} ${isFinished ? 'complete' : ''}`}
                 onClick={() => {
                   setStationId(id);
                   playTone(400 + index * 50, 'sine', 0.08, 0.2);
                 }}
               >
-                <span className="station-chip-num">{st.number}</span>
-                <span className="station-chip-name">{st.shortName}</span>
-                <span className="station-chip-score">{stationScore(progress[id])} pts</span>
-                {isFinished && <span className="completed-check">✓</span>}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className="station-chip-image" src={st.placardSrc} alt="" aria-hidden="true" />
+                <span className="station-chip-number">{isFinished ? '✓' : st.number}</span>
+                <div>
+                  {st.shortName}
+                  <small>{stationScore(progress[id])}/100</small>
+                </div>
               </button>
             );
           })}
         </nav>
 
         <div className="topbar-right">
-          <div className="total-score-pill">
-            <span className="score-label">Score</span>
-            <span className="score-value">{totalScore} / 300 pts</span>
-          </div>
+          <span className="score-pill" style={{ padding: '6px 12px', fontSize: '11px', whiteSpace: 'nowrap' }}>
+            Score: {totalScore} / 300 pts
+          </span>
 
           <button
             type="button"
@@ -757,81 +769,126 @@ export default function Room3Experience() {
         </div>
       </header>
 
-      {/* 2. Main 3D Canvas Area */}
-      <main className="lab-stage" aria-label="3D Laboratory Canvas">
-        <div ref={sceneContainer} className="scene-container" />
+      {/* 2. 3D WebGL Canvas */}
+      <div
+        ref={sceneContainer}
+        className="scene"
+        style={{ position: 'fixed', inset: 0, zIndex: 0, width: '100vw', height: '100vh', overflow: 'hidden' }}
+        aria-label={`Interactive 3D ${station.shortName} laboratory`}
+      />
+      <div className="vignette" aria-hidden="true" />
 
-        {/* Loading overlay if WebGL hydrating */}
-        {!sceneReady && !sceneError && (
-          <div className="scene-loading-overlay">
-            <div className="spinner" />
-            <p>Initializing Room 03 Laboratory Physics Engine...</p>
-          </div>
-        )}
+      {/* Loading overlay if WebGL hydrating */}
+      {!sceneReady && !sceneError && (
+        <div className="scene-loading-overlay">
+          <div className="spinner" />
+          <p>Initializing Room 03 Laboratory Physics Engine...</p>
+        </div>
+      )}
 
-        {/* 3. Left Objective Panel */}
-        <section className={`objective-panel ${mobilePanel === 'objective' ? 'mobile-visible' : ''}`}>
-          <div className="panel-header">
-            <span className="station-badge" style={{ backgroundColor: `${station.accent}25`, borderColor: station.accent, color: station.accent }}>
-              STATION {station.number}
-            </span>
-            <h2 className="station-title">{station.title}</h2>
-            <p className="station-subtitle">{station.subtitle}</p>
-          </div>
+      {/* 3. Left Objective Panel */}
+      <section
+        className={`objective-panel ${mobilePanel === 'objective' ? 'mobile-visible' : ''}`}
+        style={{
+          width: '360px',
+          maxWidth: '90vw',
+          maxHeight: 'calc(100vh - 120px)',
+          overflowY: 'auto',
+          zIndex: 10,
+        }}
+      >
+        <div className="panel-header">
+          <span className="station-badge" style={{ backgroundColor: `${station.accent}25`, borderColor: station.accent, color: station.accent }}>
+            STATION {station.number}
+          </span>
+          <h2 className="station-title">{station.title}</h2>
+          <p className="station-subtitle">{station.subtitle}</p>
+        </div>
 
-          <div className="placard-preview-card">
-            {/* Lazy Image with immediate Station 1 and dynamic prefetch for 2 & 3 */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={station.placardSrc}
-              alt={station.placardAlt}
-              className="placard-img"
-              loading={stationId === 'circuits' ? 'eager' : 'lazy'}
-            />
-            <div className="placard-caption">{station.placardAlt}</div>
-          </div>
-
-          <div className="objective-text-box">
-            <b>Learning Outcome:</b>
-            <p>{station.objective}</p>
-          </div>
-
-          <div className="step-timeline-bar">
-            <div className="timeline-header">
-              <span>GUIDED NOTEBOOK</span>
-              <b>STEP {stationProgress.currentStep + 1} / 8: {STEP_NAMES[stationProgress.currentStep]}</b>
-            </div>
-            <div className="timeline-dots">
-              {STEP_NAMES.map((name, i) => (
-                <div
-                  key={name}
-                  className={`timeline-dot ${stationProgress.completed[i] ? 'done' : stationProgress.currentStep === i ? 'current' : ''}`}
-                  title={`${i + 1}. ${name} (${STEP_POINTS[i]} pts)`}
-                />
-              ))}
-            </div>
-          </div>
-
-          <button
-            type="button"
-            className="action-btn primary w-full"
-            onClick={() => {
-              setNotebookStep(stationProgress.currentStep);
-              setNotebookOpen(true);
+        <figure
+          className="station-asset"
+          style={{
+            position: 'relative',
+            width: '100%',
+            maxWidth: '100%',
+            height: 'auto',
+            margin: '10px 0',
+            overflow: 'hidden',
+            borderRadius: '8px',
+            display: 'block',
+          }}
+        >
+          {/* Lazy Image with immediate Station 1 and dynamic prefetch for 2 & 3 */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={station.placardSrc}
+            alt={station.placardAlt}
+            className="placard-img"
+            style={{
+              width: '100%',
+              maxWidth: '100%',
+              height: 'auto',
+              borderRadius: '8px',
+              display: 'block',
+              objectFit: 'contain',
             }}
-          >
-            📖 Open 8-Step Notebook ({currentScore}/100 pts)
-          </button>
-        </section>
+            loading={stationId === 'circuits' ? 'eager' : 'lazy'}
+          />
+          <figcaption className="placard-caption" style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
+            {station.placardAlt}
+          </figcaption>
+        </figure>
 
-        {/* 4. Right Aside: Live Controls & Explicit Derived Telemetry */}
-        <aside className={`control-panel ${mobilePanel === 'controls' ? 'mobile-visible' : ''}`}>
-          <div className="panel-header">
-            <span className="panel-tag">LIVE CONTROLS & TELEMETRY</span>
-            <h3 className="panel-title">{station.shortName} Live Bench</h3>
+        <div className="objective-text-box">
+          <b>Learning Outcome:</b>
+          <p>{station.objective}</p>
+        </div>
+
+        <div className="step-timeline-bar">
+          <div className="timeline-header">
+            <span>GUIDED NOTEBOOK</span>
+            <b>STEP {stationProgress.currentStep + 1} / 8: {STEP_NAMES[stationProgress.currentStep]}</b>
           </div>
+          <div className="timeline-dots">
+            {STEP_NAMES.map((name, i) => (
+              <div
+                key={name}
+                className={`timeline-dot ${stationProgress.completed[i] ? 'done' : stationProgress.currentStep === i ? 'current' : ''}`}
+                title={`${i + 1}. ${name} (${STEP_POINTS[i]} pts)`}
+              />
+            ))}
+          </div>
+        </div>
 
-          {/* STATION 01: CIRCUITS CONTROLS */}
+        <button
+          type="button"
+          className="action-btn primary w-full"
+          onClick={() => {
+            setNotebookStep(stationProgress.currentStep);
+            setNotebookOpen(true);
+          }}
+        >
+          📖 Open 8-Step Notebook ({currentScore}/100 pts)
+        </button>
+      </section>
+
+      {/* 4. Right Aside: Live Controls & Explicit Derived Telemetry */}
+      <aside
+        className={`control-panel ${mobilePanel === 'controls' ? 'mobile-visible' : ''}`}
+        style={{
+          width: '380px',
+          maxWidth: '92vw',
+          maxHeight: 'calc(100vh - 120px)',
+          overflowY: 'auto',
+          zIndex: 10,
+        }}
+      >
+        <div className="panel-header">
+          <span className="panel-tag">LIVE CONTROLS & TELEMETRY</span>
+          <h3 className="panel-title">{station.shortName} Live Bench</h3>
+        </div>
+
+        {/* STATION 01: CIRCUITS CONTROLS */}
           {stationId === 'circuits' && (
             <>
               <div className="control-section-group">
@@ -962,7 +1019,7 @@ export default function Room3Experience() {
                   <code>{circuits.mode === 'ac' ? 'V = I · Z  |  Z = √(Req² + (XL − XC)²)' : 'V = I · Req  (Ohm\'s Law)'}</code>
                 </div>
 
-                <div className="metrics-grid">
+                <div className="telemetry-list">
                   <Metric label="Equivalent Req" value={`${circuitResult.req.toFixed(1)} Ω`} />
                   <Metric label="Total Impedance Z" value={`${circuitResult.impedance.toFixed(1)} Ω`} />
                   {circuits.mode === 'ac' && (
@@ -1142,7 +1199,7 @@ export default function Room3Experience() {
                   </code>
                 </div>
 
-                <div className="metrics-grid">
+                <div className="telemetry-list">
                   {optics.subMode === 'refraction' && (
                     <>
                       <Metric
@@ -1258,7 +1315,7 @@ export default function Room3Experience() {
                   <code>γ = 1 / √(1 − v²/c²)  |  Δt = γ · Δt₀  |  L = L₀ / γ  |  E = γ m₀ c²</code>
                 </div>
 
-                <div className="metrics-grid">
+                <div className="telemetry-list">
                   <Metric label="Lorentz Factor γ" value={relativityResult.gamma.toFixed(3)} />
                   <Metric label="Velocity v" value={`${(relativityResult.speedMps / 1e6).toFixed(2)} × 10⁶ m/s`} />
                   <Metric label="Dilated Time Δt" value={`${relativityResult.dilatedTime.toFixed(2)} s`} />
@@ -1353,7 +1410,6 @@ export default function Room3Experience() {
             </button>
           </div>
         </div>
-      </main>
 
       {/* 6. Guided 8-Step Notebook Modal */}
       {notebookOpen && (
@@ -1879,6 +1935,6 @@ export default function Room3Experience() {
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }

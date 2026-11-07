@@ -4896,3 +4896,126 @@ button { color: inherit; }
 
 
 
+
+/* =============================================================
+   ROOM 03: ELECTRICITY, OPTICS & SPECIAL RELATIVITY ENHANCEMENTS
+   ============================================================= */
+
+/* HUD Icon Buttons & Toggle Buttons */
+.hud-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.hud-icon-btn:hover {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #ffffff;
+}
+
+.button-toggle-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.toggle-opt {
+  flex: 1;
+  min-width: 80px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.toggle-opt:hover {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #ffffff;
+}
+
+.toggle-opt.active {
+  background: #0284c7 !important;
+  border-color: #38bdf8 !important;
+  color: #ffffff !important;
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(2, 132, 199, 0.45);
+}
+
+/* Two-column Telemetry Readout Grid */
+.telemetry-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.telemetry-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 6px 10px !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15) !important;
+}
+
+.telemetry-row:last-child {
+  border-bottom: none !important;
+}
+
+.telemetry-label {
+  color: #94a3b8 !important;
+  font-size: 11px !important;
+}
+
+.telemetry-value {
+  color: #38bdf8 !important;
+  font-family: ui-monospace, monospace !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+}
+
+/* Constrained Station Asset / Placard inside Left Panel */
+.objective-panel .station-asset {
+  position: relative !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin: 10px 0 !important;
+  overflow: hidden !important;
+  border-radius: 8px !important;
+  display: block !important;
+}
+
+.objective-panel .station-asset img,
+.objective-panel .placard-img {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  border-radius: 8px !important;
+  display: block !important;
+  object-fit: contain !important;
+}
