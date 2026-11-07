@@ -38,9 +38,10 @@ const DOORS: DoorInfo[] = [
   {
     id: 'room-3',
     number: '03',
-    title: 'Future Laboratory',
-    subtitle: 'Reserved for next course',
-    color: 0xa78bfa,
+    title: 'Electricity, Optics & Relativity Lab',
+    subtitle: 'Physics University · Room 03',
+    href: '/room-3',
+    color: 0x38bdf8,
     position: { x: 4.4, y: 0, z: -11.85, rotationY: 0 },
   },
   {
