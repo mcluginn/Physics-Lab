@@ -374,6 +374,10 @@ button { color: inherit; }
 .formula-readout dl div { min-width: 0; }
 .formula-readout dt { color: #71879e; font-size: 10px; }
 .formula-readout dd { margin: 4px 0 0; color: #eefcff; font: 700 12px/1 ui-monospace, monospace; }
+.telemetry-details { margin-top: 10px; border-top: 1px dashed rgba(34, 211, 238, 0.22); padding-top: 6px; }
+.telemetry-details summary { color: #8da4be; font: 700 10px/1.2 ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; padding: 4px 0; user-select: none; outline: none; }
+.telemetry-details summary:hover, .telemetry-details[open] summary { color: var(--station-accent, #38bdf8); }
+.telemetry-details dl { margin-top: 8px !important; padding-top: 6px !important; border-top: none !important; }
 .primary-button { width: 100%; margin-top: 13px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--station-accent) 66%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--station-accent) 22%, #0c1728); color: #f3fdff; font-size: 12px; font-weight: 750; cursor: pointer; }
 .primary-button:hover, .icon-button:hover, .secondary-button:hover, .record-button:hover { filter: brightness(1.18); }
 .segment-control { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 14px; padding: 4px; border: 1px solid var(--line); border-radius: 9px; background: rgba(4, 10, 20, 0.56); }

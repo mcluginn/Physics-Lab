@@ -99,10 +99,10 @@ export function createRoom3Scene(
 ): Room3SceneApi {
   // 1. Scene, Camera, Renderer Setup
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0f1d);
-  scene.fog = new THREE.FogExp2(0x0a0f1d, 0.025);
+  scene.background = new THREE.Color(0x0c1524);
+  scene.fog = new THREE.Fog(0x0c1524, 25, 75);
 
-  const camera = new THREE.PerspectiveCamera(65, container.clientWidth / container.clientHeight, 0.1, 100);
+  const camera = new THREE.PerspectiveCamera(52, container.clientWidth / container.clientHeight, 0.1, 70);
   camera.position.set(0, 1.65, 4.5);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -183,11 +183,11 @@ export function createRoom3Scene(
   // -------------------------------------------------------------
   // 2. Lighting & Environmental Casework
   // -------------------------------------------------------------
-  const hemiLight = new THREE.HemisphereLight(0xbddcff, 0x111827, 1.2);
+  const hemiLight = new THREE.HemisphereLight(0x9dd8ff, 0x121827, 1.55);
   scene.add(hemiLight);
 
-  const mainLight = new THREE.DirectionalLight(0xffffff, 1.8);
-  mainLight.position.set(3, 8, 5);
+  const mainLight = new THREE.DirectionalLight(0xffffff, 2.05);
+  mainLight.position.set(5, 10, 8);
   mainLight.castShadow = true;
   mainLight.shadow.mapSize.width = 2048;
   mainLight.shadow.mapSize.height = 2048;

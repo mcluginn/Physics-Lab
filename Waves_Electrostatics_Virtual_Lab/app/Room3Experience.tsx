@@ -184,6 +184,7 @@ export default function Room3Experience() {
   const [isThirdPerson, setIsThirdPerson] = useState(true);
   const [activeCharacter, setActiveCharacter] = useState<CharacterType>('female');
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState<Room3Progress>(createDefaultRoom3Progress);
   const [hydrated, setHydrated] = useState(false);
 
@@ -871,49 +872,6 @@ export default function Room3Experience() {
             );
           })}
         </nav>
-
-        <div className="topbar-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span className="score-pill">{totalScore} / 300 pts</span>
-
-          <button
-            type="button"
-            className="icon-button"
-            style={{ width: 'auto', padding: '0 10px', fontSize: '11px', fontWeight: 600 }}
-            title="Toggle 1st / 3rd Person View (Key V)"
-            onClick={() => {
-              const res = sceneApi.current?.toggleView();
-              if (res !== undefined) setIsThirdPerson(res);
-            }}
-          >
-            {isThirdPerson ? '🎥 3rd' : '👁️ 1st'}
-          </button>
-
-          <button
-            type="button"
-            className="icon-button"
-            style={{ width: 'auto', padding: '0 10px', fontSize: '11px', fontWeight: 600 }}
-            title="Switch Avatar (Carla / Eric)"
-            onClick={() => {
-              const char = sceneApi.current?.switchCharacter();
-              if (char) setActiveCharacter(char);
-            }}
-          >
-            👤 {activeCharacter === 'female' ? 'Carla' : 'Eric'}
-          </button>
-
-          <button
-            type="button"
-            className="icon-button"
-            title="Toggle Sound"
-            onClick={() => {
-              const next = !soundEnabled;
-              setSoundEnabled(next);
-              soundEnabledRef.current = next;
-            }}
-          >
-            {soundEnabled ? '🔊' : '🔇'}
-          </button>
-        </div>
       </header>
 
       {/* Mobile Navigation Toolbar */}
@@ -1145,30 +1103,41 @@ export default function Room3Experience() {
               <span>{circuits.mode === 'ac' ? 'I = Vs / Z | Z = √(Req² + (XL − XC)²)' : "I = Vs / Req (Ohm's Law)"}</span>
               <strong>{circuits.mode === 'ac' ? `${circuitResult.current.toFixed(3)} A (rms)` : `${circuitResult.current.toFixed(3)} A`}</strong>
               <dl>
-                <Metric label="Equivalent Req" value={`${circuitResult.req.toFixed(1)} Ω`} />
-                <Metric label="Total Impedance Z" value={`${circuitResult.impedance.toFixed(1)} Ω`} />
-                {circuits.mode === 'ac' && (
+                {circuits.mode === 'dc' ? (
                   <>
-                    <Metric label="Inductive XL" value={`${circuitResult.xl.toFixed(1)} Ω`} />
-                    <Metric label="Capacitive XC" value={`${circuitResult.xc.toFixed(1)} Ω`} />
-                    <Metric label="Phase Angle φ" value={`${circuitResult.phaseAngleDeg.toFixed(1)}°`} />
+                    <Metric label="Equivalent Req" value={`${circuitResult.req.toFixed(1)} Ω`} />
+                    <Metric label="Total Current I" value={`${circuitResult.current.toFixed(3)} A`} />
+                    <Metric label="DC Real Power P" value={`${circuitResult.realPower.toFixed(2)} W`} />
+                  </>
+                ) : (
+                  <>
+                    <Metric label="Total Impedance Z" value={`${circuitResult.impedance.toFixed(1)} Ω`} />
+                    <Metric label="Total Current Irms" value={`${circuitResult.current.toFixed(3)} A`} />
                     <Metric label="Power Factor cos φ" value={`${circuitResult.powerFactor.toFixed(3)}`} />
                     <Metric label="Real Power P" value={`${circuitResult.realPower.toFixed(2)} W`} />
-                    <Metric label="Reactive Power Q" value={`${circuitResult.reactivePower.toFixed(2)} VAR`} />
-                    <Metric label="Resonant Freq f₀" value={`${circuitResult.resonantFreq.toFixed(1)} Hz`} />
                   </>
                 )}
-                <Metric label="Total Current I" value={`${circuitResult.current.toFixed(3)} A`} />
-                <Metric label="Branch Current I1" value={`${circuitResult.i1.toFixed(3)} A`} />
-                <Metric label="Branch Current I2" value={`${circuitResult.i2.toFixed(3)} A`} />
-                <Metric label="Branch Current I3" value={`${circuitResult.i3.toFixed(3)} A`} />
-                <Metric label="Voltage Drop V1" value={`${circuitResult.v1.toFixed(1)} V`} />
-                <Metric label="Voltage Drop V2" value={`${circuitResult.v2.toFixed(1)} V`} />
-                <Metric label="Voltage Drop V3" value={`${circuitResult.v3.toFixed(1)} V`} />
-                {circuits.mode === 'dc' && (
-                  <Metric label="DC Power P" value={`${circuitResult.realPower.toFixed(2)} W`} />
-                )}
               </dl>
+              <details className="telemetry-details">
+                <summary>Branch Currents & Detailed Telemetry</summary>
+                <dl>
+                  <Metric label="Branch Current I1" value={`${circuitResult.i1.toFixed(3)} A`} />
+                  <Metric label="Branch Current I2" value={`${circuitResult.i2.toFixed(3)} A`} />
+                  <Metric label="Branch Current I3" value={`${circuitResult.i3.toFixed(3)} A`} />
+                  <Metric label="Voltage Drop V1" value={`${circuitResult.v1.toFixed(1)} V`} />
+                  <Metric label="Voltage Drop V2" value={`${circuitResult.v2.toFixed(1)} V`} />
+                  <Metric label="Voltage Drop V3" value={`${circuitResult.v3.toFixed(1)} V`} />
+                  {circuits.mode === 'ac' && (
+                    <>
+                      <Metric label="Inductive XL" value={`${circuitResult.xl.toFixed(1)} Ω`} />
+                      <Metric label="Capacitive XC" value={`${circuitResult.xc.toFixed(1)} Ω`} />
+                      <Metric label="Phase Angle φ" value={`${circuitResult.phaseAngleDeg.toFixed(1)}°`} />
+                      <Metric label="Reactive Power Q" value={`${circuitResult.reactivePower.toFixed(2)} VAR`} />
+                      <Metric label="Resonant Freq f₀" value={`${circuitResult.resonantFreq.toFixed(1)} Hz`} />
+                    </>
+                  )}
+                </dl>
+              </details>
             </div>
           </>
         )}
@@ -1419,25 +1388,41 @@ export default function Room3Experience() {
 
             <div className="formula-readout">
               <span>γ = 1 / √(1 − v²/c²) | E = γ m₀ c²</span>
-              <strong>γ = {relativityResult.gamma.toFixed(3)}</strong>
+              <strong>γ = {relativityResult.gamma.toFixed(4)}</strong>
               <dl>
-                <Metric label="Lorentz Factor γ" value={relativityResult.gamma.toFixed(3)} />
                 <Metric label="Velocity v" value={`${(relativityResult.speedMps / 1e6).toFixed(2)} × 10⁶ m/s`} />
                 <Metric label="Dilated Time Δt" value={`${relativityResult.dilatedTime.toFixed(2)} s`} />
-                <Metric label="Proper Time Δt₀" value={`${relativity.properTime.toFixed(1)} s`} />
                 <Metric label="Contracted Length L" value={`${relativityResult.contractedLength.toFixed(2)} m`} />
-                <Metric label="Length Contraction" value={`−${relativityResult.lengthContractionPercent.toFixed(1)}%`} />
-                <Metric label="Rest Energy E₀" value={`${formatValue(relativityResult.restEnergyMeV)} MeV`} />
                 <Metric label="Total Energy E" value={`${formatValue(relativityResult.totalEnergyMeV)} MeV`} />
-                <Metric label="Relativistic KE (K)" value={`${formatValue(relativityResult.kineticEnergyMeV)} MeV`} />
-                <Metric label="Total Energy (J)" value={`${formatValue(relativityResult.totalEnergyJ)} J`} />
-                <Metric label="Relativistic Momentum" value={`${formatValue(relativityResult.momentumMeV_c)} MeV/c`} />
               </dl>
+              <details className="telemetry-details">
+                <summary>Rest Mass & Relativistic Momentum</summary>
+                <dl>
+                  <Metric label="Proper Time Δt₀" value={`${relativity.properTime.toFixed(1)} s`} />
+                  <Metric label="Proper Length L₀" value={`${relativity.properLength.toFixed(1)} m`} />
+                  <Metric label="Length Contraction" value={`−${relativityResult.lengthContractionPercent.toFixed(1)}%`} />
+                  <Metric label="Rest Energy E₀" value={`${formatValue(relativityResult.restEnergyMeV)} MeV`} />
+                  <Metric label="Relativistic KE (K)" value={`${formatValue(relativityResult.kineticEnergyMeV)} MeV`} />
+                  <Metric label="Total Energy (J)" value={`${formatValue(relativityResult.totalEnergyJ)} J`} />
+                  <Metric label="Relativistic Momentum" value={`${formatValue(relativityResult.momentumMeV_c)} MeV/c`} />
+                </dl>
+              </details>
             </div>
           </>
         )}
 
         <div className="control-actions">
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => {
+              const next = !paused;
+              setPaused(next);
+              sceneApi.current?.setPaused(next);
+            }}
+          >
+            {paused ? '▶ Resume animation' : 'Ⅱ Freeze animation'}
+          </button>
           <button
             type="button"
             className="record-button"

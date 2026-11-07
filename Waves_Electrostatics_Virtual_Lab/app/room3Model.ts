@@ -493,8 +493,8 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
     accent: '#38bdf8',
     objective: 'Analyze direct current (DC) and alternating current (AC) electrical circuits to determine voltage, current, resistance, and power using fundamental laws of electricity.',
     sourceLesson: 'Lesson 8 — DC & AC Electrical Systems',
-    placardSrc: '/assets/placards/placard_electricity.png',
-    placardAlt: 'VISUAL REFERENCE: Voltage · Current · Resistance · AC/DC Power',
+    placardSrc: '/assets/placards/apparatus_electricity.png',
+    placardAlt: 'Cinematic laboratory test bench for DC and AC electrical circuits with oscilloscope and power supply',
     steps: [
       { title: 'Inspect the electronic test bench', prompt: 'Locate the DC power supply, AC function generator, resistor network board, digital multimeter, and oscilloscope.', target: 'Identify instruments for measuring voltage in parallel and current in series.' },
       { title: 'Predict AC series RLC resonance', prompt: 'Select the condition that yields minimum impedance and unity power factor.', target: 'Apply phasor impedance relationships to predict resonance behavior.' },
@@ -532,8 +532,8 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
     accent: '#10b981',
     objective: 'Apply the principles of geometric and physical optics to analyze light behavior involving reflection, refraction, lenses, mirrors, and diffraction patterns.',
     sourceLesson: 'Lesson 9 — Geometric & Physical Optics',
-    placardSrc: '/assets/placards/placard_optics.png',
-    placardAlt: 'VISUAL REFERENCE: Reflection · Refraction · Lenses & Mirrors · Diffraction',
+    placardSrc: '/assets/placards/apparatus_optics.png',
+    placardAlt: 'Cinematic precision optical bench with diode laser, refraction prism, lenses, and interference fringes',
     steps: [
       { title: 'Inspect the optical rail & components', prompt: 'Examine the 2-meter optical track, tunable laser source, semicircular prism tank, lens mounts, slit apertures, and observation screen.', target: 'Familiarize yourself with optical rail alignment and vernier cursors.' },
       { title: 'Predict Total Internal Reflection (TIR)', prompt: 'Determine the condition required for 100% optical reflection at a dielectric boundary.', target: 'Relate Snell\'s law indices n1 and n2 to the critical angle θc.' },
@@ -571,8 +571,8 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
     accent: '#a855f7',
     objective: 'Apply the postulates of special relativity to calculate relativistic effects, including time dilation, length contraction, and mass-energy equivalence.',
     sourceLesson: 'Lesson 10 — Special Theory of Relativity',
-    placardSrc: '/assets/placards/placard_relativity.png',
-    placardAlt: 'VISUAL REFERENCE: Time Dilation · Length Contraction · Mass-Energy Equivalence',
+    placardSrc: '/assets/placards/apparatus_relativity.png',
+    placardAlt: 'Cinematic relativistic photon light-clock apparatus and linear accelerator beam pipe',
     steps: [
       { title: 'Inspect the dual-frame observation deck', prompt: 'Compare Stationary Frame S (lab clock, calorimeter) with Moving Frame S\' (relativistic spacecraft, photon light clock, contracting meter rod).', target: 'Observe how inertial reference frames compare according to Einstein\'s postulates.' },
       { title: 'Predict relativistic clock rates', prompt: 'Choose how moving clock ticks compare to stationary laboratory clocks as velocity approaches c.', target: 'Apply the invariance of the speed of light to the geometric photon clock.' },
