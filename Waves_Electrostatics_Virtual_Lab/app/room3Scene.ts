@@ -160,8 +160,7 @@ export function createRoom3Scene(
   };
 
   let activeStation: Room3StationId = 'circuits';
-  let _guidedTargetId: string | null = null;
-  void _guidedTargetId;
+  let activeGuidanceId: string | null = null;
   let isPaused = false;
 
   // Collision boxes for room boundaries and lab benches
@@ -1053,23 +1052,158 @@ export function createRoom3Scene(
   });
 
   // -------------------------------------------------------------
-  // 9. Pulsing 3D Waypoint Beacon Markers
+  // 9. Pulsing In-World 3D Guidance Marker & Navigation System
   // -------------------------------------------------------------
-  const waypointMesh = new THREE.Mesh(
-    new THREE.ConeGeometry(0.18, 0.45, 16),
-    new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true })
-  );
-  waypointMesh.rotation.x = Math.PI;
-  waypointMesh.position.set(-4.5, 2.1, -1.5);
-  scene.add(waypointMesh);
+  const guidanceMarker = new THREE.Group();
+  guidanceMarker.name = 'GuidanceMarker';
+  guidanceMarker.renderOrder = 9999;
 
-  const updateWaypoint = (time: number) => {
-    const targetPos = STATION_POSITIONS[activeStation];
-    waypointMesh.position.x = targetPos.x;
-    waypointMesh.position.z = targetPos.z;
-    waypointMesh.position.y = 2.1 + Math.sin(time * 3) * 0.12;
-    waypointMesh.rotation.y = time * 2;
-    (waypointMesh.material as THREE.MeshBasicMaterial).color.setHex(STATION_ACCENT_HEX[activeStation]);
+  const guidanceMaterial = new THREE.MeshBasicMaterial({
+    color: 0x38bdf8,
+    transparent: true,
+    opacity: 0.92,
+    depthTest: false,
+  });
+  const guidanceRingMaterial = new THREE.MeshBasicMaterial({
+    color: 0x38bdf8,
+    transparent: true,
+    opacity: 0.65,
+    wireframe: true,
+    depthTest: false,
+  });
+  const guidanceBeamMaterial = new THREE.LineBasicMaterial({
+    color: 0x38bdf8,
+    transparent: true,
+    opacity: 0.85,
+    depthTest: false,
+  });
+
+  // 1. Tapered Downward Pointer Arrow
+  const guidanceArrow = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.26, 20), guidanceMaterial);
+  guidanceArrow.rotation.z = Math.PI; // Cone pointing down
+  guidanceArrow.position.y = 0.13;
+  guidanceArrow.renderOrder = 9999;
+
+  // 2. Upper Arrow Shaft
+  const guidanceShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.18, 16), guidanceMaterial);
+  guidanceShaft.position.y = 0.35;
+  guidanceShaft.renderOrder = 9999;
+
+  // 3. Concentric Pulsing Target Rings
+  const guidanceRing = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.018, 12, 36), guidanceRingMaterial);
+  guidanceRing.rotation.x = Math.PI / 2;
+  guidanceRing.position.y = 0;
+  guidanceRing.renderOrder = 9999;
+
+  const guidanceInnerRing = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.012, 12, 28), guidanceRingMaterial);
+  guidanceInnerRing.rotation.x = Math.PI / 2;
+  guidanceInnerRing.position.y = 0;
+  guidanceInnerRing.renderOrder = 9999;
+
+  // 4. Vertical Guidance Laser Guide-Line pointing directly down to target
+  const guidanceLineGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, -0.32, 0),
+  ]);
+  const guidanceBeam = new THREE.Line(guidanceLineGeom, guidanceBeamMaterial);
+  guidanceBeam.renderOrder = 9999;
+
+  guidanceMarker.add(guidanceArrow, guidanceShaft, guidanceRing, guidanceInnerRing, guidanceBeam);
+  guidanceMarker.visible = false;
+  scene.add(guidanceMarker);
+
+  const guidancePosition = new THREE.Vector3();
+
+  const getGuidanceTargetPosition = (id: string, out: THREE.Vector3): boolean => {
+    switch (id) {
+      // --- Station 01: Circuits ---
+      case 'circuits-placard':
+        out.set(-4.5, 2.70, -6.85);
+        return true;
+      case 'circuits-power-switch':
+        out.set(-5.46, 1.35, -1.49);
+        return true;
+      case 'circuits-voltage-knob':
+        out.set(-5.14, 1.35, -1.49);
+        return true;
+      case 'circuits-oscilloscope':
+        out.set(-4.55, 1.55, -1.75);
+        return true;
+      case 'circuits-topology-selector':
+        out.set(-4.45, 1.35, -1.25);
+        return true;
+      case 'circuits-clipboard':
+        out.set(-3.70, 1.35, -1.80);
+        return true;
+
+      // --- Station 02: Optics ---
+      case 'optics-placard':
+        out.set(0.0, 2.70, -6.85);
+        return true;
+      case 'optics-laser':
+        out.set(-0.75, 1.45, -1.50);
+        return true;
+      case 'optics-angle-dial':
+        out.set(0.0, 1.45, -1.50);
+        return true;
+      case 'optics-screen':
+        out.set(0.75, 1.45, -1.50);
+        return true;
+      case 'optics-clipboard':
+        out.set(0.90, 1.35, -1.80);
+        return true;
+
+      // --- Station 03: Special Relativity ---
+      case 'relativity-placard':
+        out.set(4.5, 2.70, -6.85);
+        return true;
+      case 'relativity-velocity-dial':
+        out.set(4.50, 1.45, -1.40);
+        return true;
+      case 'relativity-contracting-rod':
+        out.set(4.50, 1.55, -1.40);
+        return true;
+      case 'relativity-light-clock':
+        out.set(5.20, 1.55, -1.50);
+        return true;
+      case 'relativity-clipboard':
+        out.set(5.30, 1.35, -1.80);
+        return true;
+
+      // --- Laboratory Exit Doors ---
+      case 'campus-door':
+        out.set(0.0, 2.20, 6.20);
+        return true;
+
+      default: {
+        if (id.startsWith('circuits-')) {
+          out.set(-4.5, 1.40, -1.50);
+          return true;
+        }
+        if (id.startsWith('optics-')) {
+          out.set(0.0, 1.40, -1.50);
+          return true;
+        }
+        if (id.startsWith('relativity-')) {
+          out.set(4.5, 1.40, -1.50);
+          return true;
+        }
+        return false;
+      }
+    }
+  };
+
+  const updateGuidanceMarker = (elapsedTime: number) => {
+    if (activeGuidanceId && guidanceMarker.visible) {
+      if (getGuidanceTargetPosition(activeGuidanceId, guidancePosition)) {
+        const bobbing = Math.sin(elapsedTime * 3.5) * 0.035;
+        guidanceMarker.position.set(guidancePosition.x, guidancePosition.y + bobbing, guidancePosition.z);
+        const pulse = 0.85 + Math.sin(elapsedTime * 4.5) * 0.15;
+        guidanceRing.scale.setScalar(pulse);
+        guidanceInnerRing.scale.setScalar(1.4 - pulse * 0.4);
+        guidanceMarker.rotation.y = elapsedTime * 0.75;
+      }
+    }
   };
 
   // -------------------------------------------------------------
@@ -1232,7 +1366,7 @@ export function createRoom3Scene(
       character.update(delta, playerPosition, direction, yaw, pitch, camera, false);
       updateOscilloscope(delta);
       updateRelativityApparatus(delta);
-      updateWaypoint(elapsedTime);
+      updateGuidanceMarker(elapsedTime);
       checkInteractions();
     }
 
@@ -1327,7 +1461,18 @@ export function createRoom3Scene(
       pitch = 0;
     },
     setGuidance: (interactionId: string | null) => {
-      _guidedTargetId = interactionId;
+      activeGuidanceId = interactionId;
+      guidanceMarker.visible = Boolean(activeGuidanceId);
+      if (activeGuidanceId) {
+        let stId: Room3StationId = activeStation;
+        if (activeGuidanceId.startsWith('circuits-')) stId = 'circuits';
+        else if (activeGuidanceId.startsWith('optics-')) stId = 'optics';
+        else if (activeGuidanceId.startsWith('relativity-')) stId = 'relativity';
+        const color = STATION_ACCENT_HEX[stId] ?? 0x38bdf8;
+        guidanceMaterial.color.setHex(color);
+        guidanceRingMaterial.color.setHex(color);
+        guidanceBeamMaterial.color.setHex(color);
+      }
     },
     setPaused: (paused: boolean) => {
       isPaused = paused;

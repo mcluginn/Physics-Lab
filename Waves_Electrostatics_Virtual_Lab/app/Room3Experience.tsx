@@ -50,6 +50,38 @@ const INSPECTION_TARGETS: Record<Room3StationId, string[]> = {
   relativity: ['relativity-velocity-dial', 'relativity-light-clock', 'relativity-contracting-rod'],
 };
 
+const GUIDANCE_LABELS: Record<string, string> = {
+  'circuits-placard': 'circuits reference board',
+  'circuits-power-switch': 'power supply switch',
+  'circuits-voltage-knob': 'voltage regulator dial',
+  'circuits-oscilloscope': 'oscilloscope display',
+  'circuits-topology-selector': 'RLC breadboard matrix',
+  'circuits-clipboard': 'circuit trials clipboard',
+  'optics-placard': 'optics reference board',
+  'optics-laser': 'tunable laser source',
+  'optics-angle-dial': 'goniometer prism dial',
+  'optics-screen': 'interference observation screen',
+  'optics-clipboard': 'optics trials clipboard',
+  'relativity-placard': 'relativity reference board',
+  'relativity-velocity-dial': 'relativistic velocity dial',
+  'relativity-contracting-rod': 'contracting meter-rod',
+  'relativity-light-clock': 'atomic light-clock',
+  'relativity-clipboard': 'relativity trials clipboard',
+  'campus-door': 'corridor exit doors',
+};
+
+const INSPECTION_TARGET: Record<Room3StationId, string> = {
+  circuits: 'circuits-oscilloscope',
+  optics: 'optics-laser',
+  relativity: 'relativity-light-clock',
+};
+
+const RUN_TARGET: Record<Room3StationId, string> = {
+  circuits: 'circuits-power-switch',
+  optics: 'optics-laser',
+  relativity: 'relativity-velocity-dial',
+};
+
 function formatValue(value: number | string | undefined | null) {
   if (value === undefined || value === null) return '—';
   if (typeof value === 'string') return value;
@@ -186,6 +218,30 @@ export default function Room3Experience() {
     (total, id) => total + stationScore(progress[id]),
     0
   );
+
+  const missingInspection = INSPECTION_TARGETS[stationId]?.find((id) => !stationProgress.inspected.includes(id));
+  const guidanceTarget = stationProgress.currentStep === 0
+    ? (missingInspection ?? INSPECTION_TARGET[stationId])
+    : stationProgress.currentStep === 1
+      ? `${stationId}-placard`
+      : stationProgress.currentStep === 2
+        ? RUN_TARGET[stationId]
+        : stationProgress.currentStep === 3
+          ? RUN_TARGET[stationId]
+          : stationProgress.currentStep === 4
+            ? `${stationId}-clipboard`
+            : `${stationId}-clipboard`;
+
+  useEffect(() => {
+    sceneApi.current?.setGuidance(guidanceTarget);
+  }, [guidanceTarget, sceneReady]);
+
+  const returnToApparatus = (message: string) => {
+    setNotebookOpen(false);
+    setMobilePanel('none');
+    setEquipmentMessage(message);
+    sceneApi.current?.requestPointerLock();
+  };
 
   // Sound Synthesizer via Web Audio API
   const playTone = (freq: number, type: OscillatorType = 'sine', duration = 0.15, vol = 0.25) => {
@@ -915,8 +971,8 @@ export default function Room3Experience() {
             ✕ Back to 3D
           </button>
         </div>
-        <h1 id="objective-title">{station.title}</h1>
-        <p>{station.objective}</p>
+        <h1 id="objective-title">{station.steps[stationProgress.currentStep]?.title || station.title}</h1>
+        <p>{station.steps[stationProgress.currentStep]?.prompt || station.objective}</p>
         <figure className="station-asset">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -936,8 +992,17 @@ export default function Room3Experience() {
             setNotebookOpen(true);
           }}
         >
-          <span>↳</span><b>Open notebook:</b> Step {stationProgress.currentStep + 1}: {STEP_NAMES[stationProgress.currentStep]} ({currentScore}/100 pts)
+          <span>↳</span><b>Open notebook:</b> {station.steps[stationProgress.currentStep]?.target || `Step ${stationProgress.currentStep + 1}: ${STEP_NAMES[stationProgress.currentStep]}`}
         </button>
+        {guidanceTarget && (
+          <div className="guidance-line">
+            <span>↓</span>
+            <div>
+              <b>IN-WORLD GUIDE ACTIVE</b>
+              <small>Follow the pulsing marker to the {GUIDANCE_LABELS[guidanceTarget] || 'apparatus'}.</small>
+            </div>
+          </div>
+        )}
         <div className="progress-track"><span style={{ width: `${(stationProgress.completed.filter(Boolean).length / 8) * 100}%` }} /></div>
       </section>
 
@@ -1077,8 +1142,8 @@ export default function Room3Experience() {
             )}
 
             <div className="formula-readout">
-              <span>{circuits.mode === 'ac' ? 'V = I · Z | Z = √(Req² + (XL − XC)²)' : "V = I · Req (Ohm's Law)"}</span>
-              <strong>{circuits.mode === 'ac' ? `${circuitResult.current.toFixed(2)} A (rms)` : `${circuitResult.current.toFixed(2)} A`}</strong>
+              <span>{circuits.mode === 'ac' ? 'I = Vs / Z | Z = √(Req² + (XL − XC)²)' : "I = Vs / Req (Ohm's Law)"}</span>
+              <strong>{circuits.mode === 'ac' ? `${circuitResult.current.toFixed(3)} A (rms)` : `${circuitResult.current.toFixed(3)} A`}</strong>
               <dl>
                 <Metric label="Equivalent Req" value={`${circuitResult.req.toFixed(1)} Ω`} />
                 <Metric label="Total Impedance Z" value={`${circuitResult.impedance.toFixed(1)} Ω`} />
@@ -1381,6 +1446,16 @@ export default function Room3Experience() {
           >
             📝 Record Current State (Trial {stationProgress.trials.length + 1} / 5)
           </button>
+          {stationProgress.currentStep === 4 && (
+            <button
+              type="button"
+              className="record-button"
+              onClick={() => returnToApparatus(`Use the highlighted ${GUIDANCE_LABELS[`${stationId}-clipboard`]} to record trial ${Math.min(TOTAL_TRIALS, stationProgress.trials.length + 1)}.`)}
+              disabled={stationProgress.trials.length >= TOTAL_TRIALS}
+            >
+              ◎ Guide me to trial {Math.min(TOTAL_TRIALS, stationProgress.trials.length + 1)}/{TOTAL_TRIALS}
+            </button>
+          )}
         </div>
       </aside>
 
@@ -1528,28 +1603,38 @@ export default function Room3Experience() {
               </button>
             </header>
 
-            {/* Step Tabs 1–8 */}
-            <nav className="step-tabs-bar" aria-label="8 Laboratory Steps">
-              {STEP_NAMES.map((name, index) => {
-                const isDone = stationProgress.completed[index];
-                const isCur = notebookStep === index;
-                return (
-                  <button
-                    key={name}
-                    type="button"
-                    className={`step-tab-btn ${isCur ? 'active' : ''} ${isDone ? 'completed' : ''}`}
-                    onClick={() => setNotebookStep(index)}
-                  >
-                    <span className="tab-num">0{index + 1}</span>
-                    <span className="tab-name">{name}</span>
-                    {isDone && <span className="tab-badge">✓</span>}
-                  </button>
-                );
-              })}
-            </nav>
+            {/* Student & Session Info Strip */}
+            <div className="student-strip">
+              <span><b>Student:</b> {studentName.trim() || 'Physics Student'} · <b>Section:</b> {studentSection.trim() || 'PHY-300'}</span>
+              <span><b>Student ID:</b> {studentId} · <b>Calibration:</b> {studentId.slice(-4)}</span>
+              <span><b>Station:</b> {station.number} · {station.shortName}</span>
+            </div>
 
-            {/* Modal Body */}
-            <div className="modal-step-body">
+            <div className="notebook-body">
+              <aside className="step-rail" aria-label="Experiment steps">
+                {STEP_NAMES.map((name, index) => {
+                  const isDone = stationProgress.completed[index];
+                  const isCur = notebookStep === index;
+                  const isSkipped = stationProgress.skipped?.[index];
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      className={`${isCur ? 'active' : ''} ${isDone ? 'complete' : ''} ${isSkipped ? 'skipped' : ''}`}
+                      onClick={() => setNotebookStep(index)}
+                    >
+                      <span>{isDone ? '✓' : isSkipped ? '↷' : index + 1}</span>
+                      <div>
+                        <b>{name}</b>
+                        <small>{STEP_POINTS[index]} pts</small>
+                      </div>
+                    </button>
+                  );
+                })}
+              </aside>
+
+              <div className="notebook-content">
+                <div className={`notebook-section ${[4, 6, 7].includes(notebookStep) ? 'wide-section' : ''}`}>
               {/* STEP 1: EXPLORE (10 pts) */}
               {notebookStep === 0 && (
                 <div className="step-content">
@@ -1573,10 +1658,17 @@ export default function Room3Experience() {
                     </ul>
                   </div>
 
-                  <div className="step-footer-actions">
+                  <div className="button-row" style={{ marginTop: '16px' }}>
                     <button
                       type="button"
-                      className="action-btn primary"
+                      className="notebook-action"
+                      onClick={() => returnToApparatus(`Inspect the highlighted ${GUIDANCE_LABELS[INSPECTION_TARGET[stationId]]} in the 3D room.`)}
+                    >
+                      Return to highlighted apparatus
+                    </button>
+                    <button
+                      type="button"
+                      className="notebook-action"
                       disabled={stationProgress.completed[0]}
                       onClick={() => completeStep(0)}
                     >
@@ -1597,20 +1689,21 @@ export default function Room3Experience() {
 
                   <div className="prediction-options">
                     {station.prediction.options.map((opt, i) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        className={`prediction-option-btn ${predictionSelection === i ? (predictionStatus === 'correct' ? 'correct' : 'incorrect') : ''}`}
-                        onClick={() => verifyPrediction(i)}
-                      >
-                        <span className="opt-letter">{String.fromCharCode(65 + i)}</span>
-                        <span className="opt-text">{opt}</span>
-                      </button>
+                      <label key={opt} className={predictionSelection === i ? 'selected' : ''}>
+                        <input
+                          type="radio"
+                          name="prediction"
+                          checked={predictionSelection === i}
+                          onChange={() => verifyPrediction(i)}
+                        />
+                        <span>{String.fromCharCode(65 + i)}</span>
+                        <div>{opt}</div>
+                      </label>
                     ))}
                   </div>
 
                   {predictionFeedback && (
-                    <div className={`feedback-alert ${predictionStatus}`}>
+                    <div className={`feedback-alert ${predictionStatus}`} style={{ marginTop: '14px' }}>
                       {predictionFeedback}
                     </div>
                   )}
@@ -1639,10 +1732,10 @@ export default function Room3Experience() {
                     )}
                   </div>
 
-                  <div className="step-footer-actions">
+                  <div className="button-row" style={{ marginTop: '16px' }}>
                     <button
                       type="button"
-                      className="action-btn secondary"
+                      className="notebook-action"
                       onClick={() => {
                         if (stationId === 'circuits') setCircuits(INITIAL_CIRCUITS);
                         else if (stationId === 'optics') setOptics(INITIAL_OPTICS);
@@ -1654,7 +1747,7 @@ export default function Room3Experience() {
                     </button>
                     <button
                       type="button"
-                      className="action-btn primary"
+                      className="notebook-action"
                       disabled={stationProgress.completed[2]}
                       onClick={() => completeStep(2)}
                     >
@@ -1682,20 +1775,29 @@ export default function Room3Experience() {
                     ) : (
                       <div className="ready-state">
                         <p>Apparatus is energized. Observe the real-time oscilloscope phase, refracted beam, or contracting photon clock in the 3D viewport.</p>
-                        <button
-                          type="button"
-                          className="action-btn primary"
-                          onClick={() => {
-                            setRunSettling(true);
-                            playTone(400, 'square', 0.1, 0.2);
-                            setTimeout(() => {
-                              setRunSettling(false);
-                              completeStep(3);
-                            }, 1200);
-                          }}
-                        >
-                          {stationProgress.completed[3] ? '✓ Run Verified (+15 pts)' : 'Energize & Lock In Steady State (+15 pts)'}
-                        </button>
+                        <div className="button-row" style={{ marginTop: '14px' }}>
+                          <button
+                            type="button"
+                            className="notebook-action"
+                            onClick={() => returnToApparatus(`Operate the highlighted ${GUIDANCE_LABELS[RUN_TARGET[stationId]]} to run the experiment and observe live readings.`)}
+                          >
+                            Return to highlighted run control
+                          </button>
+                          <button
+                            type="button"
+                            className="notebook-action"
+                            onClick={() => {
+                              setRunSettling(true);
+                              playTone(400, 'square', 0.1, 0.2);
+                              setTimeout(() => {
+                                setRunSettling(false);
+                                completeStep(3);
+                              }, 1200);
+                            }}
+                          >
+                            {stationProgress.completed[3] ? '✓ Run Verified (+15 pts)' : 'Energize & Lock In Steady State (+15 pts)'}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1711,8 +1813,8 @@ export default function Room3Experience() {
                   </div>
                   <p className="step-prompt">{station.steps[4].prompt}</p>
 
-                  <div className="trials-table-container">
-                    <table className="lab-table">
+                  <div className="table-scroll">
+                    <table className="trial-table">
                       <thead>
                         <tr>
                           {stationId === 'circuits' && (
@@ -1764,19 +1866,28 @@ export default function Room3Experience() {
                     </table>
                   </div>
 
-                  <div className="step-footer-actions">
+                  <div className="button-row" style={{ marginTop: '16px' }}>
                     <button
                       type="button"
-                      className="action-btn secondary"
+                      className="notebook-action"
+                      style={{ background: '#059669', borderColor: '#10b981' }}
                       disabled={stationProgress.trials.length >= TOTAL_TRIALS}
                       onClick={recordCurrentTrial}
                     >
                       ➕ Record Current State as Trial #{stationProgress.trials.length + 1}
                     </button>
+                    <button
+                      type="button"
+                      className="notebook-action"
+                      onClick={() => returnToApparatus(`Use the highlighted ${GUIDANCE_LABELS[`${stationId}-clipboard`]} to record trial ${Math.min(TOTAL_TRIALS, stationProgress.trials.length + 1)}.`)}
+                      disabled={stationProgress.trials.length >= TOTAL_TRIALS}
+                    >
+                      Return to apparatus to record
+                    </button>
                     {stationProgress.trials.length >= TOTAL_TRIALS && (
                       <button
                         type="button"
-                        className="action-btn primary"
+                        className="notebook-action"
                         disabled={stationProgress.completed[4]}
                         onClick={() => completeStep(4)}
                       >
@@ -1798,12 +1909,13 @@ export default function Room3Experience() {
 
                   <div className="calc-inputs-table">
                     {stationProgress.trials.map((t, i) => (
-                      <div key={i} className="calc-row">
+                      <div key={i} className="calc-row calculation-entry" style={{ display: 'grid', gridTemplateColumns: '1fr 140px', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
                         <span><b>Trial #{i + 1}:</b> ({stationId === 'circuits' ? `Vs=${t.vs}V, I=${formatValue(t.current)}A` : stationId === 'optics' ? `Input=${t.paramA}` : `β=${t.beta}c`})</span>
                         <div className="calc-input-wrapper">
                           <input
                             type="number"
                             step="any"
+                            style={{ padding: '8px 12px' }}
                             placeholder={stationId === 'circuits' ? 'Calc Z (Ω)' : stationId === 'optics' ? 'Calc Theory' : 'Calc γ'}
                             value={stationProgress.calculations[i] || ''}
                             onChange={(e) => {
@@ -1827,17 +1939,17 @@ export default function Room3Experience() {
                     </div>
                   )}
 
-                  <div className="step-footer-actions">
+                  <div className="button-row" style={{ marginTop: '16px' }}>
                     <button
                       type="button"
-                      className="action-btn secondary"
+                      className="notebook-action"
                       onClick={autoFillCalculations}
                     >
                       Calculate for Me (Check Work)
                     </button>
                     <button
                       type="button"
-                      className="action-btn primary"
+                      className="notebook-action"
                       disabled={stationProgress.completed[5]}
                       onClick={verifyCalculations}
                     >
@@ -1920,10 +2032,10 @@ export default function Room3Experience() {
                     </label>
                   </div>
 
-                  <div className="step-footer-actions">
+                  <div className="button-row" style={{ marginTop: '16px' }}>
                     <button
                       type="button"
-                      className="action-btn primary"
+                      className="notebook-action"
                       disabled={stationProgress.completed[6]}
                       onClick={() => completeStep(6)}
                     >
@@ -1947,11 +2059,12 @@ export default function Room3Experience() {
                       <h5>Physics 300 Certified Experimental Record</h5>
                     </div>
 
-                    <div className="student-metadata-fields">
+                    <div className="student-metadata-fields student-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', margin: '14px 0' }}>
                       <label>
                         <span>Student Name:</span>
                         <input
                           type="text"
+                          style={{ padding: '8px 12px', marginTop: '4px' }}
                           value={studentName}
                           onChange={(e) => setStudentName(e.target.value)}
                         />
@@ -1960,6 +2073,7 @@ export default function Room3Experience() {
                         <span>Student ID:</span>
                         <input
                           type="text"
+                          style={{ padding: '8px 12px', marginTop: '4px' }}
                           value={studentId}
                           onChange={(e) => setStudentId(e.target.value)}
                         />
@@ -1968,6 +2082,7 @@ export default function Room3Experience() {
                         <span>Course Section:</span>
                         <input
                           type="text"
+                          style={{ padding: '8px 12px', marginTop: '4px' }}
                           value={studentSection}
                           onChange={(e) => setStudentSection(e.target.value)}
                         />
@@ -1986,17 +2101,17 @@ export default function Room3Experience() {
                     </div>
                   </div>
 
-                  <div className="step-footer-actions">
+                  <div className="button-row" style={{ marginTop: '16px' }}>
                     <button
                       type="button"
-                      className="action-btn secondary"
+                      className="notebook-action"
                       onClick={downloadCSVData}
                     >
                       📊 Export Experimental Data (CSV)
                     </button>
                     <button
                       type="button"
-                      className="action-btn primary"
+                      className="notebook-action"
                       onClick={downloadReportPdf}
                     >
                       📄 Download Certified PDF Report (+10 pts)
@@ -2004,30 +2119,38 @@ export default function Room3Experience() {
                   </div>
                 </div>
               )}
+                </div>
+              </div>
             </div>
 
             {/* Modal Navigation Footer */}
-            <div className="modal-footer">
+            <footer className="notebook-footer">
               <button
                 type="button"
-                className="action-btn secondary"
-                disabled={notebookStep <= 0}
-                onClick={() => setNotebookStep((s) => Math.max(0, s - 1))}
+                className="secondary-button"
+                onClick={() => setNotebookOpen(false)}
               >
-                ← Previous Step
+                Close notebook
               </button>
-              <span className="step-indicator">
-                Step {notebookStep + 1} of 8
-              </span>
-              <button
-                type="button"
-                className="action-btn secondary"
-                disabled={notebookStep >= 7}
-                onClick={() => setNotebookStep((s) => Math.min(7, s + 1))}
-              >
-                Next Step →
-              </button>
-            </div>
+              <div className="button-group">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={notebookStep <= 0}
+                  onClick={() => setNotebookStep((s) => Math.max(0, s - 1))}
+                >
+                  ← Previous step
+                </button>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={notebookStep >= 7}
+                  onClick={() => setNotebookStep((s) => Math.min(7, s + 1))}
+                >
+                  Next step →
+                </button>
+              </div>
+            </footer>
           </section>
         </div>
       )}
