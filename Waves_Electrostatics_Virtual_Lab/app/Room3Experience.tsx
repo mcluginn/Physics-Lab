@@ -99,9 +99,9 @@ function RangeControl({
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="telemetry-row">
-      <span className="telemetry-label">{label}</span>
-      <span className="telemetry-value">{value}</span>
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
     </div>
   );
 }
@@ -169,6 +169,9 @@ export default function Room3Experience() {
   const [joystickKnob, setJoystickKnob] = useState({ x: 0, y: 0 });
   const [mobilePanel, setMobilePanel] = useState<'none' | 'objective' | 'controls'>('none');
   const [runSettling, setRunSettling] = useState(false);
+  const [equipmentMessage, setEquipmentMessage] = useState('');
+  const [soundVolume, setSoundVolume] = useState(0.5);
+  const [pointerLocked, setPointerLocked] = useState(false);
 
   // Station Definitions & Telemetry Derived States
   const station = ROOM3_STATIONS[stationId];
@@ -199,7 +202,7 @@ export default function Room3Experience() {
       const gain = ctx.createGain();
       osc.type = type;
       osc.frequency.setValueAtTime(freq, ctx.currentTime);
-      gain.gain.setValueAtTime(vol, ctx.currentTime);
+      gain.gain.setValueAtTime(vol * soundVolume, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
       osc.connect(gain);
       gain.connect(ctx.destination);
@@ -216,15 +219,26 @@ export default function Room3Experience() {
     setTimeout(() => playTone(783.99, 'triangle', 0.25, 0.25), 220); // G5
   };
 
-  // 1. Lazy Placard Asset Preloading: Load Station 1 immediately, prefetch Stations 2 & 3 dynamically
+  // Pointer lock listener
   useEffect(() => {
-    const prefetchTimer = window.setTimeout(() => {
-      ['/assets/placards/placard_optics.png', '/assets/placards/placard_relativity.png'].forEach((src) => {
-        const img = new Image();
-        img.src = src;
-      });
-    }, 800);
-    return () => clearTimeout(prefetchTimer);
+    const handlePointerLockChange = () => {
+      setPointerLocked(document.pointerLockElement === sceneContainer.current?.querySelector('canvas'));
+    };
+    document.addEventListener('pointerlockchange', handlePointerLockChange);
+    return () => document.removeEventListener('pointerlockchange', handlePointerLockChange);
+  }, []);
+
+  // Equipment toast auto-dismiss
+  useEffect(() => {
+    if (!equipmentMessage) return;
+    const t = window.setTimeout(() => setEquipmentMessage(''), 3200);
+    return () => window.clearTimeout(t);
+  }, [equipmentMessage]);
+
+  // 1. Placard Asset Preloading: Preload only Station 1 on initial mount
+  useEffect(() => {
+    const img = new Image();
+    img.src = '/assets/placards/placard_electricity.png';
   }, []);
 
   // 2. Local Storage Persistence
@@ -277,6 +291,7 @@ export default function Room3Experience() {
       }
       audioContext.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Propagate physical changes to 3D scene
@@ -679,8 +694,84 @@ export default function Room3Experience() {
       className="lab-shell"
       data-room="room-3"
       data-station={stationId}
-      style={{ '--station-accent': station.accent, position: 'fixed', inset: 0, overflow: 'hidden', background: '#050812' } as CSSProperties}
+      style={{ '--station-accent': station.accent } as CSSProperties}
     >
+      {/* 3D WebGL Canvas */}
+      <div
+        ref={sceneContainer}
+        className="scene"
+        aria-label={`Interactive 3D ${station.shortName} laboratory`}
+      />
+      <div className="vignette" aria-hidden="true" />
+
+      {/* Loading overlay */}
+      {!sceneReady && !sceneError && (
+        <div className="lab-loading-gate" role="status" aria-live="polite">
+          <div>
+            <b>PREPARING ROOM 03</b>
+            <p>Loading laboratory surfaces and precision instruments…</p>
+            <span><i style={{ width: '100%' }} /></span>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Portrait Warning */}
+      <div className="portrait-warning" role="status">
+        <b>ROTATE DEVICE FOR THE FULL LAB</b>
+        <span>Landscape view keeps the apparatus, notebook, and controls visible.</span>
+      </div>
+
+      {!notebookOpen && (
+        <div className={`walk-reticle ${interaction ? 'active-target' : ''}`} aria-hidden="true">
+          <span />
+          <span />
+          {interaction && (
+            <div className="reticle-prompt">
+              <kbd>E</kbd>
+              <span>{interaction.action}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!pointerLocked && !notebookOpen && (
+        <button className="enter-walk-mode" onClick={() => sceneApi.current?.requestPointerLock()}>
+          <b>ENTER WALK MODE</b><span>Click to capture the mouse · ESC releases it</span>
+        </button>
+      )}
+
+      {interaction && !notebookOpen && (
+        <aside className="equipment-inspector" aria-live="polite">
+          <div className="inspector-badge-row">
+            <span className="inspector-cat">{interaction.category}</span>
+            <span className="inspector-station">{station.shortName.toUpperCase()}</span>
+          </div>
+          <h3 className="inspector-title">{interaction.name}</h3>
+          <p className="inspector-desc">{interaction.description}</p>
+          {interaction.readout && (
+            <div className="inspector-readout">
+              <small>LIVE INSTRUMENT READOUT</small>
+              <span>{interaction.readout}</span>
+            </div>
+          )}
+          <div className="inspector-action-bar">
+            <kbd>E</kbd>
+            <span>{interaction.action}</span>
+          </div>
+        </aside>
+      )}
+
+      {interaction && !notebookOpen && (
+        <aside className="mobile-target-card" aria-live="polite">
+          <b>{interaction.name}</b>
+          <p>{interaction.description}</p>
+          <span>{interaction.readout}</span>
+          <small><kbd>E</kbd> {interaction.action}</small>
+        </aside>
+      )}
+
+      {equipmentMessage && <div className="equipment-toast" role="status">{equipmentMessage}</div>}
+
       {/* 1. Header Topbar */}
       <header className="topbar">
         <Link
@@ -725,14 +816,13 @@ export default function Room3Experience() {
           })}
         </nav>
 
-        <div className="topbar-right">
-          <span className="score-pill" style={{ padding: '6px 12px', fontSize: '11px', whiteSpace: 'nowrap' }}>
-            Score: {totalScore} / 300 pts
-          </span>
+        <div className="topbar-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="score-pill">{totalScore} / 300 pts</span>
 
           <button
             type="button"
-            className="hud-icon-btn"
+            className="icon-button"
+            style={{ width: 'auto', padding: '0 10px', fontSize: '11px', fontWeight: 600 }}
             title="Toggle 1st / 3rd Person View (Key V)"
             onClick={() => {
               const res = sceneApi.current?.toggleView();
@@ -744,7 +834,8 @@ export default function Room3Experience() {
 
           <button
             type="button"
-            className="hud-icon-btn"
+            className="icon-button"
+            style={{ width: 'auto', padding: '0 10px', fontSize: '11px', fontWeight: 600 }}
             title="Switch Avatar (Carla / Eric)"
             onClick={() => {
               const char = sceneApi.current?.switchCharacter();
@@ -756,7 +847,7 @@ export default function Room3Experience() {
 
           <button
             type="button"
-            className="hud-icon-btn"
+            className="icon-button"
             title="Toggle Sound"
             onClick={() => {
               const next = !soundEnabled;
@@ -769,668 +860,673 @@ export default function Room3Experience() {
         </div>
       </header>
 
-      {/* 2. 3D WebGL Canvas */}
-      <div
-        ref={sceneContainer}
-        className="scene"
-        style={{ position: 'fixed', inset: 0, zIndex: 0, width: '100vw', height: '100vh', overflow: 'hidden' }}
-        aria-label={`Interactive 3D ${station.shortName} laboratory`}
-      />
-      <div className="vignette" aria-hidden="true" />
-
-      {/* Loading overlay if WebGL hydrating */}
-      {!sceneReady && !sceneError && (
-        <div className="scene-loading-overlay">
-          <div className="spinner" />
-          <p>Initializing Room 03 Laboratory Physics Engine...</p>
-        </div>
-      )}
-
-      {/* 3. Left Objective Panel */}
-      <section
-        className={`objective-panel ${mobilePanel === 'objective' ? 'mobile-visible' : ''}`}
-        style={{
-          width: '360px',
-          maxWidth: '90vw',
-          maxHeight: 'calc(100vh - 120px)',
-          overflowY: 'auto',
-          zIndex: 10,
-        }}
-      >
-        <div className="panel-header">
-          <span className="station-badge" style={{ backgroundColor: `${station.accent}25`, borderColor: station.accent, color: station.accent }}>
-            STATION {station.number}
-          </span>
-          <h2 className="station-title">{station.title}</h2>
-          <p className="station-subtitle">{station.subtitle}</p>
-        </div>
-
-        <figure
-          className="station-asset"
-          style={{
-            position: 'relative',
-            width: '100%',
-            maxWidth: '100%',
-            height: 'auto',
-            margin: '10px 0',
-            overflow: 'hidden',
-            borderRadius: '8px',
-            display: 'block',
-          }}
+      {/* Mobile Navigation Toolbar */}
+      <div className="mobile-view-tabs" role="toolbar" aria-label="Mobile lab panel selector">
+        <button
+          type="button"
+          className={`mobile-tab-btn ${mobilePanel === 'none' ? 'active' : ''}`}
+          onClick={() => setMobilePanel('none')}
+          title="Return to full 3D interactive view"
         >
-          {/* Lazy Image with immediate Station 1 and dynamic prefetch for 2 & 3 */}
+          👁️ 3D View
+        </button>
+        <button
+          type="button"
+          className={`mobile-tab-btn ${mobilePanel === 'objective' ? 'active' : ''}`}
+          onClick={() => setMobilePanel((v) => (v === 'objective' ? 'none' : 'objective'))}
+          title="Open Current Objective and Step Guide"
+        >
+          📋 Objective (Step {stationProgress.currentStep + 1})
+        </button>
+        <button
+          type="button"
+          className={`mobile-tab-btn ${mobilePanel === 'controls' ? 'active' : ''}`}
+          onClick={() => setMobilePanel((v) => (v === 'controls' ? 'none' : 'controls'))}
+          title="Open Live Apparatus Sliders and Controls"
+        >
+          🎛️ Controls
+        </button>
+        <button
+          type="button"
+          className="mobile-tab-btn notebook"
+          onClick={() => {
+            setNotebookStep(stationProgress.currentStep);
+            setNotebookOpen(true);
+          }}
+          title="Open Laboratory Notebook"
+        >
+          ▣ Notebook
+        </button>
+      </div>
+
+      {/* Left Objective Panel */}
+      <section
+        className={`objective-panel ${mobilePanel === 'objective' ? 'mobile-visible' : 'mobile-hidden'}`}
+        aria-labelledby="objective-title"
+      >
+        <div className="objective-panel-header-row">
+          <div className="eyebrow"><span className="live-dot" /> STATION {station.number} · STEP {stationProgress.currentStep + 1}/8 · {STEP_NAMES[stationProgress.currentStep].toUpperCase()}</div>
+          <button
+            type="button"
+            className="mobile-panel-close-btn"
+            onClick={() => setMobilePanel('none')}
+            title="Close panel to view 3D apparatus"
+          >
+            ✕ Back to 3D
+          </button>
+        </div>
+        <h1 id="objective-title">{station.title}</h1>
+        <p>{station.objective}</p>
+        <figure className="station-asset">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={station.placardSrc}
             alt={station.placardAlt}
-            className="placard-img"
-            style={{
-              width: '100%',
-              maxWidth: '100%',
-              height: 'auto',
-              borderRadius: '8px',
-              display: 'block',
-              objectFit: 'contain',
-            }}
             loading={stationId === 'circuits' ? 'eager' : 'lazy'}
           />
-          <figcaption className="placard-caption" style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
-            {station.placardAlt}
+          <figcaption>
+            <span>VISUAL REFERENCE</span>
+            <b>{station.subtitle}</b>
           </figcaption>
         </figure>
-
-        <div className="objective-text-box">
-          <b>Learning Outcome:</b>
-          <p>{station.objective}</p>
-        </div>
-
-        <div className="step-timeline-bar">
-          <div className="timeline-header">
-            <span>GUIDED NOTEBOOK</span>
-            <b>STEP {stationProgress.currentStep + 1} / 8: {STEP_NAMES[stationProgress.currentStep]}</b>
-          </div>
-          <div className="timeline-dots">
-            {STEP_NAMES.map((name, i) => (
-              <div
-                key={name}
-                className={`timeline-dot ${stationProgress.completed[i] ? 'done' : stationProgress.currentStep === i ? 'current' : ''}`}
-                title={`${i + 1}. ${name} (${STEP_POINTS[i]} pts)`}
-              />
-            ))}
-          </div>
-        </div>
-
         <button
-          type="button"
-          className="action-btn primary w-full"
+          className="prompt-line"
           onClick={() => {
             setNotebookStep(stationProgress.currentStep);
             setNotebookOpen(true);
           }}
         >
-          📖 Open 8-Step Notebook ({currentScore}/100 pts)
+          <span>↳</span><b>Open notebook:</b> Step {stationProgress.currentStep + 1}: {STEP_NAMES[stationProgress.currentStep]} ({currentScore}/100 pts)
         </button>
+        <div className="progress-track"><span style={{ width: `${(stationProgress.completed.filter(Boolean).length / 8) * 100}%` }} /></div>
       </section>
 
-      {/* 4. Right Aside: Live Controls & Explicit Derived Telemetry */}
+      {/* Right Aside: Live Controls & Explicit Derived Telemetry */}
       <aside
-        className={`control-panel ${mobilePanel === 'controls' ? 'mobile-visible' : ''}`}
-        style={{
-          width: '380px',
-          maxWidth: '92vw',
-          maxHeight: 'calc(100vh - 120px)',
-          overflowY: 'auto',
-          zIndex: 10,
-        }}
+        className={`control-panel ${mobilePanel === 'controls' ? 'mobile-visible' : 'mobile-hidden'}`}
+        aria-label={`${station.shortName} live controls`}
       >
-        <div className="panel-header">
-          <span className="panel-tag">LIVE CONTROLS & TELEMETRY</span>
-          <h3 className="panel-title">{station.shortName} Live Bench</h3>
+        <div className="panel-heading">
+          <div><span>{station.subtitle.toUpperCase()}</span><h2>Live controls</h2></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button className="icon-button" onClick={() => sceneApi.current?.resetView()} aria-label="Reset camera view">⌖</button>
+            <button
+              type="button"
+              className="mobile-panel-close-btn"
+              onClick={() => setMobilePanel('none')}
+              title="Close panel to view 3D apparatus"
+            >
+              ✕ Back to 3D
+            </button>
+          </div>
         </div>
 
         {/* STATION 01: CIRCUITS CONTROLS */}
-          {stationId === 'circuits' && (
-            <>
-              <div className="control-section-group">
-                <span className="section-label">⚙️ MANIPULATED INPUTS</span>
+        {stationId === 'circuits' && (
+          <>
+            <div className="segment-control" role="group" aria-label="Circuit Regime">
+              <button
+                type="button"
+                className={circuits.mode === 'dc' ? 'active' : ''}
+                onClick={() => setCircuits((c) => ({ ...c, mode: 'dc' }))}
+              >
+                DC Steady-State
+              </button>
+              <button
+                type="button"
+                className={circuits.mode === 'ac' ? 'active' : ''}
+                onClick={() => setCircuits((c) => ({ ...c, mode: 'ac' }))}
+              >
+                AC Sinusoidal (RLC)
+              </button>
+            </div>
 
-                <div className="control-row">
-                  <span><b>Regime Mode</b></span>
-                  <div className="button-toggle-group">
-                    <button
-                      type="button"
-                      className={`toggle-opt ${circuits.mode === 'dc' ? 'active' : ''}`}
-                      onClick={() => setCircuits((c) => ({ ...c, mode: 'dc' }))}
-                    >
-                      DC Steady-State
-                    </button>
-                    <button
-                      type="button"
-                      className={`toggle-opt ${circuits.mode === 'ac' ? 'active' : ''}`}
-                      onClick={() => setCircuits((c) => ({ ...c, mode: 'ac' }))}
-                    >
-                      AC Sinusoidal (RLC)
-                    </button>
-                  </div>
-                </div>
+            <div className="segment-control" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }} role="group" aria-label="Circuit Topology">
+              {(['series', 'parallel', 'combo'] as const).map((top) => (
+                <button
+                  key={top}
+                  type="button"
+                  className={circuits.topology === top ? 'active' : ''}
+                  onClick={() => setCircuits((c) => ({ ...c, topology: top }))}
+                >
+                  {top.charAt(0).toUpperCase() + top.slice(1)}
+                </button>
+              ))}
+            </div>
 
-                <div className="control-row">
-                  <span><b>Circuit Topology</b></span>
-                  <div className="button-toggle-group">
-                    {(['series', 'parallel', 'combo'] as const).map((top) => (
-                      <button
-                        key={top}
-                        type="button"
-                        className={`toggle-opt ${circuits.topology === top ? 'active' : ''}`}
-                        onClick={() => setCircuits((c) => ({ ...c, topology: top }))}
-                      >
-                        {top.charAt(0).toUpperCase() + top.slice(1)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            <RangeControl
+              label="Source Voltage Vs"
+              value={circuits.vs}
+              unit="V"
+              min={1.0}
+              max={240.0}
+              step={1.0}
+              onChange={(v) => setCircuits((c) => ({ ...c, vs: v }))}
+              digits={1}
+            />
 
+            {circuits.mode === 'ac' && (
+              <RangeControl
+                label="Driving Frequency f"
+                value={circuits.freq}
+                unit="Hz"
+                min={10}
+                max={1000}
+                step={5}
+                onChange={(v) => setCircuits((c) => ({ ...c, freq: v }))}
+                digits={0}
+              />
+            )}
+
+            <RangeControl
+              label="Resistance R1"
+              value={circuits.r1}
+              unit="Ω"
+              min={1.0}
+              max={1000.0}
+              step={5.0}
+              onChange={(v) => setCircuits((c) => ({ ...c, r1: v }))}
+              digits={0}
+            />
+
+            <RangeControl
+              label="Resistance R2"
+              value={circuits.r2}
+              unit="Ω"
+              min={1.0}
+              max={1000.0}
+              step={5.0}
+              onChange={(v) => setCircuits((c) => ({ ...c, r2: v }))}
+              digits={0}
+            />
+
+            <RangeControl
+              label="Resistance R3"
+              value={circuits.r3}
+              unit="Ω"
+              min={1.0}
+              max={1000.0}
+              step={5.0}
+              onChange={(v) => setCircuits((c) => ({ ...c, r3: v }))}
+              digits={0}
+            />
+
+            {circuits.mode === 'ac' && (
+              <>
                 <RangeControl
-                  label="Source Voltage Vs"
-                  value={circuits.vs}
-                  unit="V"
+                  label="Inductance L"
+                  value={circuits.inductance}
+                  unit="mH"
                   min={1.0}
-                  max={240.0}
-                  step={1.0}
-                  onChange={(v) => setCircuits((c) => ({ ...c, vs: v }))}
+                  max={500.0}
+                  step={5.0}
+                  onChange={(v) => setCircuits((c) => ({ ...c, inductance: v }))}
                   digits={1}
                 />
-
-                {circuits.mode === 'ac' && (
-                  <RangeControl
-                    label="Driving Frequency f"
-                    value={circuits.freq}
-                    unit="Hz"
-                    min={10}
-                    max={1000}
-                    step={5}
-                    onChange={(v) => setCircuits((c) => ({ ...c, freq: v }))}
-                    digits={0}
-                  />
-                )}
-
                 <RangeControl
-                  label="Resistance R1"
-                  value={circuits.r1}
-                  unit="Ω"
+                  label="Capacitance C"
+                  value={circuits.capacitance}
+                  unit="μF"
                   min={1.0}
-                  max={1000.0}
+                  max={500.0}
                   step={5.0}
-                  onChange={(v) => setCircuits((c) => ({ ...c, r1: v }))}
-                  digits={0}
+                  onChange={(v) => setCircuits((c) => ({ ...c, capacitance: v }))}
+                  digits={1}
                 />
+              </>
+            )}
 
-                <RangeControl
-                  label="Resistance R2"
-                  value={circuits.r2}
-                  unit="Ω"
-                  min={1.0}
-                  max={1000.0}
-                  step={5.0}
-                  onChange={(v) => setCircuits((c) => ({ ...c, r2: v }))}
-                  digits={0}
-                />
-
-                <RangeControl
-                  label="Resistance R3"
-                  value={circuits.r3}
-                  unit="Ω"
-                  min={1.0}
-                  max={1000.0}
-                  step={5.0}
-                  onChange={(v) => setCircuits((c) => ({ ...c, r3: v }))}
-                  digits={0}
-                />
-
+            <div className="formula-readout">
+              <span>{circuits.mode === 'ac' ? 'V = I · Z | Z = √(Req² + (XL − XC)²)' : "V = I · Req (Ohm's Law)"}</span>
+              <strong>{circuits.mode === 'ac' ? `${circuitResult.current.toFixed(2)} A (rms)` : `${circuitResult.current.toFixed(2)} A`}</strong>
+              <dl>
+                <Metric label="Equivalent Req" value={`${circuitResult.req.toFixed(1)} Ω`} />
+                <Metric label="Total Impedance Z" value={`${circuitResult.impedance.toFixed(1)} Ω`} />
                 {circuits.mode === 'ac' && (
                   <>
-                    <RangeControl
-                      label="Inductance L"
-                      value={circuits.inductance}
-                      unit="mH"
-                      min={1.0}
-                      max={500.0}
-                      step={5.0}
-                      onChange={(v) => setCircuits((c) => ({ ...c, inductance: v }))}
-                      digits={1}
-                    />
-                    <RangeControl
-                      label="Capacitance C"
-                      value={circuits.capacitance}
-                      unit="μF"
-                      min={1.0}
-                      max={500.0}
-                      step={5.0}
-                      onChange={(v) => setCircuits((c) => ({ ...c, capacitance: v }))}
-                      digits={1}
-                    />
+                    <Metric label="Inductive XL" value={`${circuitResult.xl.toFixed(1)} Ω`} />
+                    <Metric label="Capacitive XC" value={`${circuitResult.xc.toFixed(1)} Ω`} />
+                    <Metric label="Phase Angle φ" value={`${circuitResult.phaseAngleDeg.toFixed(1)}°`} />
+                    <Metric label="Power Factor cos φ" value={`${circuitResult.powerFactor.toFixed(3)}`} />
+                    <Metric label="Real Power P" value={`${circuitResult.realPower.toFixed(2)} W`} />
+                    <Metric label="Reactive Power Q" value={`${circuitResult.reactivePower.toFixed(2)} VAR`} />
+                    <Metric label="Resonant Freq f₀" value={`${circuitResult.resonantFreq.toFixed(1)} Hz`} />
                   </>
                 )}
-              </div>
+                <Metric label="Total Current I" value={`${circuitResult.current.toFixed(3)} A`} />
+                <Metric label="Branch Current I1" value={`${circuitResult.i1.toFixed(3)} A`} />
+                <Metric label="Branch Current I2" value={`${circuitResult.i2.toFixed(3)} A`} />
+                <Metric label="Branch Current I3" value={`${circuitResult.i3.toFixed(3)} A`} />
+                <Metric label="Voltage Drop V1" value={`${circuitResult.v1.toFixed(1)} V`} />
+                <Metric label="Voltage Drop V2" value={`${circuitResult.v2.toFixed(1)} V`} />
+                <Metric label="Voltage Drop V3" value={`${circuitResult.v3.toFixed(1)} V`} />
+                {circuits.mode === 'dc' && (
+                  <Metric label="DC Power P" value={`${circuitResult.realPower.toFixed(2)} W`} />
+                )}
+              </dl>
+            </div>
+          </>
+        )}
 
-              <div className="control-section-group telemetry">
-                <span className="section-label">📊 DERIVED TELEMETRY READOUTS</span>
-                <div className="formula-badge">
-                  <code>{circuits.mode === 'ac' ? 'V = I · Z  |  Z = √(Req² + (XL − XC)²)' : 'V = I · Req  (Ohm\'s Law)'}</code>
-                </div>
+        {/* STATION 02: OPTICS CONTROLS */}
+        {stationId === 'optics' && (
+          <>
+            <div className="segment-control" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }} role="group" aria-label="Bench Sub-Mode">
+              {(['refraction', 'imaging', 'diffraction'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={optics.subMode === m ? 'active' : ''}
+                  onClick={() => setOptics((o) => ({ ...o, subMode: m }))}
+                >
+                  {m === 'refraction' ? 'Refraction & TIR' : m === 'imaging' ? 'Lenses/Mirrors' : 'Diffraction'}
+                </button>
+              ))}
+            </div>
 
-                <div className="telemetry-list">
-                  <Metric label="Equivalent Req" value={`${circuitResult.req.toFixed(1)} Ω`} />
-                  <Metric label="Total Impedance Z" value={`${circuitResult.impedance.toFixed(1)} Ω`} />
-                  {circuits.mode === 'ac' && (
-                    <>
-                      <Metric label="Inductive XL" value={`${circuitResult.xl.toFixed(1)} Ω`} />
-                      <Metric label="Capacitive XC" value={`${circuitResult.xc.toFixed(1)} Ω`} />
-                    </>
-                  )}
-                  <Metric label="Total Current I" value={`${circuitResult.current.toFixed(3)} A`} />
-                  <Metric label="Branch Current I1" value={`${circuitResult.i1.toFixed(3)} A`} />
-                  <Metric label="Branch Current I2" value={`${circuitResult.i2.toFixed(3)} A`} />
-                  <Metric label="Branch Current I3" value={`${circuitResult.i3.toFixed(3)} A`} />
-                  <Metric label="Voltage Drop V1" value={`${circuitResult.v1.toFixed(1)} V`} />
-                  <Metric label="Voltage Drop V2" value={`${circuitResult.v2.toFixed(1)} V`} />
-                  <Metric label="Voltage Drop V3" value={`${circuitResult.v3.toFixed(1)} V`} />
-                  {circuits.mode === 'ac' && (
-                    <>
-                      <Metric label="Phase Angle φ" value={`${circuitResult.phaseAngleDeg.toFixed(1)}°`} />
-                      <Metric label="Power Factor cos φ" value={`${circuitResult.powerFactor.toFixed(3)}`} />
-                      <Metric label="Real Power P" value={`${circuitResult.realPower.toFixed(2)} W`} />
-                      <Metric label="Reactive Power Q" value={`${circuitResult.reactivePower.toFixed(2)} VAR`} />
-                      <Metric label="Resonant Freq f₀" value={`${circuitResult.resonantFreq.toFixed(1)} Hz`} />
-                    </>
-                  )}
-                  {circuits.mode === 'dc' && (
-                    <Metric label="DC Power P" value={`${circuitResult.realPower.toFixed(2)} W`} />
-                  )}
-                </div>
-              </div>
-            </>
-          )}
+            <label className="control-row">
+              <span>
+                <b>Laser Wavelength λ</b>
+                <output style={{ color: opticsResult.laserHex, fontWeight: 700 }}>
+                  {optics.wavelength} nm
+                </output>
+              </span>
+              <input
+                type="range"
+                min={400}
+                max={700}
+                step={1}
+                value={optics.wavelength}
+                onChange={(e) => setOptics((o) => ({ ...o, wavelength: Number(e.target.value) }))}
+              />
+            </label>
 
-          {/* STATION 02: OPTICS CONTROLS */}
-          {stationId === 'optics' && (
-            <>
-              <div className="control-section-group">
-                <span className="section-label">⚙️ MANIPULATED INPUTS</span>
+            {optics.subMode === 'refraction' && (
+              <>
+                <RangeControl
+                  label="Medium 1 Index n1"
+                  value={optics.n1}
+                  unit=""
+                  min={1.00}
+                  max={2.42}
+                  step={0.01}
+                  onChange={(v) => setOptics((o) => ({ ...o, n1: v }))}
+                  digits={2}
+                />
+                <RangeControl
+                  label="Medium 2 Index n2"
+                  value={optics.n2}
+                  unit=""
+                  min={1.00}
+                  max={2.42}
+                  step={0.01}
+                  onChange={(v) => setOptics((o) => ({ ...o, n2: v }))}
+                  digits={2}
+                />
+                <RangeControl
+                  label="Incident Angle θ1"
+                  value={optics.theta1}
+                  unit="°"
+                  min={0.0}
+                  max={89.0}
+                  step={0.5}
+                  onChange={(v) => setOptics((o) => ({ ...o, theta1: v }))}
+                  digits={1}
+                />
+              </>
+            )}
 
-                <div className="control-row">
-                  <span><b>Bench Sub-Mode</b></span>
-                  <div className="button-toggle-group">
-                    {(['refraction', 'imaging', 'diffraction'] as const).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        className={`toggle-opt ${optics.subMode === m ? 'active' : ''}`}
-                        onClick={() => setOptics((o) => ({ ...o, subMode: m }))}
-                      >
-                        {m === 'refraction' ? 'Refraction & TIR' : m === 'imaging' ? 'Lenses/Mirrors' : 'Diffraction'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            {optics.subMode === 'imaging' && (
+              <>
+                <RangeControl
+                  label="Focal Length f"
+                  value={optics.focalLength}
+                  unit="cm"
+                  min={-50.0}
+                  max={50.0}
+                  step={1.0}
+                  onChange={(v) => setOptics((o) => ({ ...o, focalLength: v }))}
+                  digits={1}
+                />
+                <RangeControl
+                  label="Object Distance do"
+                  value={optics.objectDistance}
+                  unit="cm"
+                  min={5.0}
+                  max={200.0}
+                  step={1.0}
+                  onChange={(v) => setOptics((o) => ({ ...o, objectDistance: v }))}
+                  digits={1}
+                />
+              </>
+            )}
 
-                <div className="control-row">
-                  <span>
-                    <b>Laser Wavelength λ</b>
-                    <output style={{ color: opticsResult.laserHex, fontWeight: 700 }}>
-                      {optics.wavelength} nm
-                    </output>
-                  </span>
-                  <input
-                    type="range"
-                    min={400}
-                    max={700}
-                    step={1}
-                    value={optics.wavelength}
-                    onChange={(e) => setOptics((o) => ({ ...o, wavelength: Number(e.target.value) }))}
-                  />
-                </div>
+            {optics.subMode === 'diffraction' && (
+              <>
+                <RangeControl
+                  label="Slit Width a"
+                  value={optics.slitWidth}
+                  unit="mm"
+                  min={0.01}
+                  max={0.50}
+                  step={0.01}
+                  onChange={(v) => setOptics((o) => ({ ...o, slitWidth: v }))}
+                  digits={2}
+                />
+                <RangeControl
+                  label="Slit Separation d"
+                  value={optics.slitSeparation}
+                  unit="mm"
+                  min={0.05}
+                  max={2.00}
+                  step={0.01}
+                  onChange={(v) => setOptics((o) => ({ ...o, slitSeparation: v }))}
+                  digits={2}
+                />
+                <RangeControl
+                  label="Screen Distance L"
+                  value={optics.screenDistance}
+                  unit="m"
+                  min={0.50}
+                  max={5.00}
+                  step={0.05}
+                  onChange={(v) => setOptics((o) => ({ ...o, screenDistance: v }))}
+                  digits={2}
+                />
+              </>
+            )}
 
+            <div className="formula-readout">
+              <span>
+                {optics.subMode === 'refraction'
+                  ? 'n1 · sin θ1 = n2 · sin θ2'
+                  : optics.subMode === 'imaging'
+                    ? '1/f = 1/do + 1/di'
+                    : 'Δy = (λ · L) / d'}
+              </span>
+              <strong>
+                {optics.subMode === 'refraction'
+                  ? (opticsResult.isTIR ? 'TIR Active' : `${opticsResult.theta2Deg?.toFixed(1)}°`)
+                  : optics.subMode === 'imaging'
+                    ? (opticsResult.imageDistanceCm ? `${opticsResult.imageDistanceCm.toFixed(1)} cm` : 'Infinity')
+                    : `${opticsResult.fringeSpacingMm.toFixed(2)} mm`}
+              </strong>
+              <dl>
                 {optics.subMode === 'refraction' && (
                   <>
-                    <RangeControl
-                      label="Medium 1 Index n1"
-                      value={optics.n1}
-                      unit=""
-                      min={1.00}
-                      max={2.42}
-                      step={0.01}
-                      onChange={(v) => setOptics((o) => ({ ...o, n1: v }))}
-                      digits={2}
+                    <Metric
+                      label="Refracted Angle θ2"
+                      value={opticsResult.isTIR ? 'TIR (Reflected)' : `${opticsResult.theta2Deg?.toFixed(1)}°`}
                     />
-                    <RangeControl
-                      label="Medium 2 Index n2"
-                      value={optics.n2}
-                      unit=""
-                      min={1.00}
-                      max={2.42}
-                      step={0.01}
-                      onChange={(v) => setOptics((o) => ({ ...o, n2: v }))}
-                      digits={2}
+                    <Metric
+                      label="Critical Angle θc"
+                      value={opticsResult.criticalAngleDeg ? `${opticsResult.criticalAngleDeg.toFixed(1)}°` : 'None (n1 <= n2)'}
                     />
-                    <RangeControl
-                      label="Incident Angle θ1"
-                      value={optics.theta1}
-                      unit="°"
-                      min={0.0}
-                      max={89.0}
-                      step={0.5}
-                      onChange={(v) => setOptics((o) => ({ ...o, theta1: v }))}
-                      digits={1}
+                    <Metric label="Reflected Angle" value={`${opticsResult.reflectAngleDeg.toFixed(1)}°`} />
+                    <Metric
+                      label="TIR Status"
+                      value={opticsResult.isTIR ? 'TOTAL REFLECTION' : 'Normal Refraction'}
                     />
                   </>
                 )}
-
                 {optics.subMode === 'imaging' && (
                   <>
-                    <RangeControl
-                      label="Focal Length f"
-                      value={optics.focalLength}
-                      unit="cm"
-                      min={-50.0}
-                      max={50.0}
-                      step={1.0}
-                      onChange={(v) => setOptics((o) => ({ ...o, focalLength: v }))}
-                      digits={1}
+                    <Metric
+                      label="Image Distance di"
+                      value={opticsResult.imageDistanceCm ? `${opticsResult.imageDistanceCm.toFixed(1)} cm` : 'Infinity'}
                     />
-                    <RangeControl
-                      label="Object Distance do"
-                      value={optics.objectDistance}
-                      unit="cm"
-                      min={5.0}
-                      max={200.0}
-                      step={1.0}
-                      onChange={(v) => setOptics((o) => ({ ...o, objectDistance: v }))}
-                      digits={1}
+                    <Metric
+                      label="Magnification M"
+                      value={opticsResult.magnification ? `${opticsResult.magnification.toFixed(2)}×` : 'Infinite'}
                     />
+                    <Metric label="Image Type" value={opticsResult.imageType} />
+                    <Metric label="Orientation" value={opticsResult.imageOrientation} />
+                    <Metric label="Scale" value={opticsResult.imageScale} />
                   </>
                 )}
-
                 {optics.subMode === 'diffraction' && (
                   <>
-                    <RangeControl
-                      label="Slit Width a"
-                      value={optics.slitWidth}
-                      unit="mm"
-                      min={0.01}
-                      max={0.50}
-                      step={0.01}
-                      onChange={(v) => setOptics((o) => ({ ...o, slitWidth: v }))}
-                      digits={2}
-                    />
-                    <RangeControl
-                      label="Slit Separation d"
-                      value={optics.slitSeparation}
-                      unit="mm"
-                      min={0.05}
-                      max={2.00}
-                      step={0.01}
-                      onChange={(v) => setOptics((o) => ({ ...o, slitSeparation: v }))}
-                      digits={2}
-                    />
-                    <RangeControl
-                      label="Screen Distance L"
-                      value={optics.screenDistance}
-                      unit="m"
-                      min={0.50}
-                      max={5.00}
-                      step={0.05}
-                      onChange={(v) => setOptics((o) => ({ ...o, screenDistance: v }))}
-                      digits={2}
-                    />
+                    <Metric label="Fringe Spacing Δy" value={`${opticsResult.fringeSpacingMm.toFixed(2)} mm`} />
+                    <Metric label="1st-Order Maxima y1" value={`${opticsResult.firstMaxPosMm.toFixed(2)} mm`} />
+                    <Metric label="Central Max Width w0" value={`${opticsResult.centralMaxMm.toFixed(2)} mm`} />
+                    <Metric label="Angular Spread θ" value={`${opticsResult.thetaDiffractionDeg.toFixed(3)}°`} />
                   </>
                 )}
-              </div>
+              </dl>
+            </div>
+          </>
+        )}
 
-              <div className="control-section-group telemetry">
-                <span className="section-label">📊 DERIVED TELEMETRY READOUTS</span>
-                <div className="formula-badge">
-                  <code>
-                    {optics.subMode === 'refraction'
-                      ? 'n1 · sin θ1 = n2 · sin θ2  (Snell\'s Law)'
-                      : optics.subMode === 'imaging'
-                      ? '1/f = 1/do + 1/di  |  M = −di/do'
-                      : 'Δy = (λ · L) / d  |  w0 = (2 · λ · L) / a'}
-                  </code>
-                </div>
+        {/* STATION 03: SPECIAL RELATIVITY CONTROLS */}
+        {stationId === 'relativity' && (
+          <>
+            <RangeControl
+              label="Velocity Ratio β = v/c"
+              value={relativity.beta}
+              unit="c"
+              min={0.000}
+              max={0.999}
+              step={0.005}
+              onChange={(v) => setRelativity((r) => ({ ...r, beta: v }))}
+              digits={3}
+            />
 
-                <div className="telemetry-list">
-                  {optics.subMode === 'refraction' && (
-                    <>
-                      <Metric
-                        label="Refracted Angle θ2"
-                        value={opticsResult.isTIR ? 'TIR (No ray)' : `${opticsResult.theta2Deg?.toFixed(1)}°`}
-                      />
-                      <Metric
-                        label="Critical Angle θc"
-                        value={opticsResult.criticalAngleDeg ? `${opticsResult.criticalAngleDeg.toFixed(1)}°` : 'N/A (n1 ≤ n2)'}
-                      />
-                      <Metric label="Reflected Angle" value={`${opticsResult.reflectAngleDeg.toFixed(1)}°`} />
-                      <Metric
-                        label="Optical Boundary"
-                        value={opticsResult.isTIR ? '⚡ TOTAL INTERNAL REFLECTION' : 'Transmission & Refraction'}
-                      />
-                    </>
-                  )}
+            <RangeControl
+              label="Proper Time Interval Δt₀"
+              value={relativity.properTime}
+              unit="s"
+              min={1.0}
+              max={100.0}
+              step={0.5}
+              onChange={(v) => setRelativity((r) => ({ ...r, properTime: v }))}
+              digits={1}
+            />
 
-                  {optics.subMode === 'imaging' && (
-                    <>
-                      <Metric
-                        label="Image Distance di"
-                        value={opticsResult.imageDistanceCm ? `${opticsResult.imageDistanceCm.toFixed(1)} cm` : 'Infinity'}
-                      />
-                      <Metric
-                        label="Magnification M"
-                        value={opticsResult.magnification ? `${opticsResult.magnification.toFixed(2)}×` : 'Infinite'}
-                      />
-                      <Metric label="Image Type" value={opticsResult.imageType} />
-                      <Metric label="Orientation" value={opticsResult.imageOrientation} />
-                      <Metric label="Scale" value={opticsResult.imageScale} />
-                    </>
-                  )}
+            <RangeControl
+              label="Proper Length L₀"
+              value={relativity.properLength}
+              unit="m"
+              min={1.0}
+              max={100.0}
+              step={1.0}
+              onChange={(v) => setRelativity((r) => ({ ...r, properLength: v }))}
+              digits={1}
+            />
 
-                  {optics.subMode === 'diffraction' && (
-                    <>
-                      <Metric label="Fringe Spacing Δy" value={`${opticsResult.fringeSpacingMm.toFixed(2)} mm`} />
-                      <Metric label="1st-Order Maxima y1" value={`${opticsResult.firstMaxPosMm.toFixed(2)} mm`} />
-                      <Metric label="Central Max Width w0" value={`${opticsResult.centralMaxMm.toFixed(2)} mm`} />
-                      <Metric label="Angular Spread θ" value={`${opticsResult.thetaDiffractionDeg.toFixed(3)}°`} />
-                    </>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
+            <div className="segment-control" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }} role="group" aria-label="Rest Mass Preset">
+              {(['electron', 'proton', 'muon', 'probe'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={relativity.massPreset === m ? 'active' : ''}
+                  onClick={() =>
+                    setRelativity((r) => ({
+                      ...r,
+                      massPreset: m,
+                      restMass: MASS_PRESETS[m].massKg,
+                    }))
+                  }
+                >
+                  {m.charAt(0).toUpperCase() + m.slice(1)}
+                </button>
+              ))}
+            </div>
 
-          {/* STATION 03: SPECIAL RELATIVITY CONTROLS */}
-          {stationId === 'relativity' && (
-            <>
-              <div className="control-section-group">
-                <span className="section-label">⚙️ MANIPULATED INPUTS</span>
+            <div className="formula-readout">
+              <span>γ = 1 / √(1 − v²/c²) | E = γ m₀ c²</span>
+              <strong>γ = {relativityResult.gamma.toFixed(3)}</strong>
+              <dl>
+                <Metric label="Lorentz Factor γ" value={relativityResult.gamma.toFixed(3)} />
+                <Metric label="Velocity v" value={`${(relativityResult.speedMps / 1e6).toFixed(2)} × 10⁶ m/s`} />
+                <Metric label="Dilated Time Δt" value={`${relativityResult.dilatedTime.toFixed(2)} s`} />
+                <Metric label="Proper Time Δt₀" value={`${relativity.properTime.toFixed(1)} s`} />
+                <Metric label="Contracted Length L" value={`${relativityResult.contractedLength.toFixed(2)} m`} />
+                <Metric label="Length Contraction" value={`−${relativityResult.lengthContractionPercent.toFixed(1)}%`} />
+                <Metric label="Rest Energy E₀" value={`${formatValue(relativityResult.restEnergyMeV)} MeV`} />
+                <Metric label="Total Energy E" value={`${formatValue(relativityResult.totalEnergyMeV)} MeV`} />
+                <Metric label="Relativistic KE (K)" value={`${formatValue(relativityResult.kineticEnergyMeV)} MeV`} />
+                <Metric label="Total Energy (J)" value={`${formatValue(relativityResult.totalEnergyJ)} J`} />
+                <Metric label="Relativistic Momentum" value={`${formatValue(relativityResult.momentumMeV_c)} MeV/c`} />
+              </dl>
+            </div>
+          </>
+        )}
 
-                <RangeControl
-                  label="Velocity Ratio β = v/c"
-                  value={relativity.beta}
-                  unit="c"
-                  min={0.000}
-                  max={0.999}
-                  step={0.005}
-                  onChange={(v) => setRelativity((r) => ({ ...r, beta: v }))}
-                  digits={3}
-                />
+        <div className="control-actions">
+          <button
+            type="button"
+            className="record-button"
+            disabled={stationProgress.trials.length >= TOTAL_TRIALS}
+            onClick={recordCurrentTrial}
+          >
+            📝 Record Current State (Trial {stationProgress.trials.length + 1} / 5)
+          </button>
+        </div>
+      </aside>
 
-                <RangeControl
-                  label="Proper Time Interval Δt₀"
-                  value={relativity.properTime}
-                  unit="s"
-                  min={1.0}
-                  max={100.0}
-                  step={0.5}
-                  onChange={(v) => setRelativity((r) => ({ ...r, properTime: v }))}
-                  digits={1}
-                />
+      {/* Bottom Status Dock */}
+      <div className="status-dock">
+        <span className={sceneReady && !sceneError ? 'status-ready' : 'status-waiting'}>
+          {sceneError ? '× 3D UNAVAILABLE' : sceneReady ? '● 3D LAB ONLINE' : '○ PREPARING 3D LAB'}
+        </span>
+        <span>
+          {pointerLocked
+            ? 'WASD walk · Mouse look · E interact · ESC release'
+            : 'Click the 3D view to enter · Keys 1–3 teleport · E interact'}
+        </span>
+        <span className="score-pill">{totalScore} / 300 pts</span>
+        <div className="audio-control">
+          <button
+            type="button"
+            onClick={() => {
+              const next = !soundEnabled;
+              setSoundEnabled(next);
+              soundEnabledRef.current = next;
+            }}
+            aria-label={soundEnabled ? 'Mute laboratory sounds' : 'Enable laboratory sounds'}
+          >
+            {soundEnabled ? '♫' : '×'} Sound
+          </button>
+          <input
+            aria-label="Sound volume"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={soundVolume}
+            onChange={(event) => setSoundVolume(Number(event.target.value))}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setNotebookStep(stationProgress.currentStep);
+            setNotebookOpen(true);
+          }}
+        >
+          ▣ Notebook
+        </button>
+      </div>
 
-                <RangeControl
-                  label="Proper Length L₀"
-                  value={relativity.properLength}
-                  unit="m"
-                  min={1.0}
-                  max={100.0}
-                  step={1.0}
-                  onChange={(v) => setRelativity((r) => ({ ...r, properLength: v }))}
-                  digits={1}
-                />
-
-                <div className="control-row">
-                  <span><b>Rest Mass Preset</b></span>
-                  <div className="button-toggle-group">
-                    {(['electron', 'proton', 'muon', 'probe'] as const).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        className={`toggle-opt ${relativity.massPreset === m ? 'active' : ''}`}
-                        onClick={() =>
-                          setRelativity((r) => ({
-                            ...r,
-                            massPreset: m,
-                            restMass: MASS_PRESETS[m].massKg,
-                          }))
-                        }
-                      >
-                        {m.charAt(0).toUpperCase() + m.slice(1)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="control-section-group telemetry">
-                <span className="section-label">📊 DERIVED TELEMETRY READOUTS</span>
-                <div className="formula-badge">
-                  <code>γ = 1 / √(1 − v²/c²)  |  Δt = γ · Δt₀  |  L = L₀ / γ  |  E = γ m₀ c²</code>
-                </div>
-
-                <div className="telemetry-list">
-                  <Metric label="Lorentz Factor γ" value={relativityResult.gamma.toFixed(3)} />
-                  <Metric label="Velocity v" value={`${(relativityResult.speedMps / 1e6).toFixed(2)} × 10⁶ m/s`} />
-                  <Metric label="Dilated Time Δt" value={`${relativityResult.dilatedTime.toFixed(2)} s`} />
-                  <Metric label="Proper Time Δt₀" value={`${relativity.properTime.toFixed(1)} s`} />
-                  <Metric label="Contracted Length L" value={`${relativityResult.contractedLength.toFixed(2)} m`} />
-                  <Metric label="Length Contraction" value={`−${relativityResult.lengthContractionPercent.toFixed(1)}%`} />
-                  <Metric label="Rest Energy E₀" value={`${formatValue(relativityResult.restEnergyMeV)} MeV`} />
-                  <Metric label="Total Energy E" value={`${formatValue(relativityResult.totalEnergyMeV)} MeV`} />
-                  <Metric label="Relativistic KE (K)" value={`${formatValue(relativityResult.kineticEnergyMeV)} MeV`} />
-                  <Metric label="Total Energy (J)" value={`${formatValue(relativityResult.totalEnergyJ)} J`} />
-                  <Metric label="Relativistic Momentum" value={`${formatValue(relativityResult.momentumMeV_c)} MeV/c`} />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Quick Record Trial Button */}
-          <div className="control-footer-actions">
-            <button
-              type="button"
-              className="action-btn secondary w-full"
-              disabled={stationProgress.trials.length >= TOTAL_TRIALS}
-              onClick={recordCurrentTrial}
-            >
-              📝 Record Current State (Trial {stationProgress.trials.length + 1} / 5)
-            </button>
-          </div>
-        </aside>
-
-        {/* 5. Bottom Proximity Status Dock */}
-        <footer className="status-dock" aria-live="polite">
-          <div className="status-left">
-            {interaction ? (
-              <div className="interaction-prompt">
-                <span className="key-badge">E</span>
-                <span className="interaction-text">
-                  <b>{interaction.action}:</b> {interaction.name} ({interaction.readout})
-                </span>
-              </div>
-            ) : (
-              <div className="idle-prompt">
-                <span>Walk with [W, A, S, D] · Teleport stations with [Keys 1–3] · Press [E] near apparatus to interact</span>
-              </div>
-            )}
-          </div>
-
-          <div className="status-right">
-            <button
-              type="button"
-              className="quick-notebook-btn"
-              onClick={() => {
-                setNotebookStep(stationProgress.currentStep);
-                setNotebookOpen(true);
-              }}
-            >
-              📖 Notebook (Step {stationProgress.currentStep + 1}/8)
-            </button>
-          </div>
-        </footer>
-
-        {/* Mobile View Toggles & Analog Joystick */}
-        <div className="mobile-lab-controls">
+      {/* Mobile Touch Controls */}
+      {!notebookOpen && (
+        <div className="mobile-lab-controls" aria-label="Touch laboratory controls">
           <div
-            className="virtual-joystick-base"
+            className="mobile-joystick"
+            role="group"
+            aria-label="Analog walking joystick"
             onPointerDown={handleJoystickPointerDown}
             onPointerMove={handleJoystickMove}
             onPointerUp={handleJoystickPointerUp}
             onPointerCancel={handleJoystickPointerUp}
           >
             <div
-              className="virtual-joystick-knob"
+              className="mobile-joystick-knob"
               style={{
-                transform: `translate(${joystickKnob.x}px, ${joystickKnob.y}px)`,
+                transform: `translate3d(${joystickKnob.x}px, ${joystickKnob.y}px, 0)`,
               }}
             />
+            <small aria-hidden="true">WALK</small>
           </div>
 
-          <div className="mobile-nav-pills">
+          <div className="mobile-lab-action-cluster">
             <button
               type="button"
-              className={`pill-btn ${mobilePanel === 'objective' ? 'active' : ''}`}
-              onClick={() => setMobilePanel((m) => (m === 'objective' ? 'none' : 'objective'))}
+              className={`mobile-equipment-action ${interaction ? 'ready' : ''}`}
+              onClick={() => {
+                if (interaction) equipmentActionRef.current(interaction.id);
+              }}
+              disabled={!interaction}
             >
-              Objectives
+              <span className="mobile-btn-icon">⚡</span>
+              <span className="mobile-btn-text">{interaction ? interaction.action : 'LOOK AT APPARATUS'}</span>
             </button>
-            <button
-              type="button"
-              className={`pill-btn ${mobilePanel === 'controls' ? 'active' : ''}`}
-              onClick={() => setMobilePanel((m) => (m === 'controls' ? 'none' : 'controls'))}
-            >
-              Controls
-            </button>
+
+            <div className="mobile-lab-subactions">
+              <button
+                type="button"
+                className="mobile-subaction-btn"
+                onClick={() => {
+                  const next = sceneApi.current?.toggleView();
+                  if (typeof next === 'boolean') setIsThirdPerson(next);
+                }}
+                title="Toggle 1st / 3rd Person View (Key V)"
+              >
+                <span>{isThirdPerson ? '📷 3RD' : '👁️ 1ST'}</span>
+              </button>
+              <button
+                type="button"
+                className="mobile-subaction-btn"
+                onClick={() => {
+                  const next = sceneApi.current?.switchCharacter();
+                  if (next) setActiveCharacter(next);
+                }}
+                title="Switch Character (Key C)"
+              >
+                <span>{activeCharacter === 'female' ? '👩 CARLA' : '👨 ERIC'}</span>
+              </button>
+              <button
+                type="button"
+                className="mobile-subaction-btn"
+                onClick={() => sceneApi.current?.resetView()}
+                title="Reset Camera View"
+              >
+                <span>🎯 RESET</span>
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
       {/* 6. Guided 8-Step Notebook Modal */}
       {notebookOpen && (
-        <div className="notebook-modal-overlay" role="dialog" aria-modal="true">
-          <div className="notebook-modal">
+        <div
+          className="notebook-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setNotebookOpen(false);
+          }}
+        >
+          <section className="notebook-modal" role="dialog" aria-modal="true" aria-labelledby="notebook-title">
             {/* Modal Header */}
-            <div className="modal-header">
-              <div className="modal-title-group">
-                <span className="station-badge-small">STATION {station.number}</span>
-                <h3>{station.title}</h3>
-                <span className="modal-score">Earned: {currentScore} / 100 pts</span>
+            <header className="notebook-header">
+              <div>
+                <span>STATION {station.number} · LABORATORY NOTEBOOK</span>
+                <h2 id="notebook-title">{station.title}</h2>
+              </div>
+              <div className="notebook-score">
+                <span>Station score</span>
+                <b>{currentScore} / 100</b>
               </div>
               <button
                 type="button"
-                className="close-modal-btn"
+                className="close-button"
                 aria-label="Close Notebook"
                 onClick={() => setNotebookOpen(false)}
               >
-                ✕
+                ×
               </button>
-            </div>
+            </header>
 
             {/* Step Tabs 1–8 */}
             <nav className="step-tabs-bar" aria-label="8 Laboratory Steps">
@@ -1932,7 +2028,7 @@ export default function Room3Experience() {
                 Next Step →
               </button>
             </div>
-          </div>
+          </section>
         </div>
       )}
     </main>
