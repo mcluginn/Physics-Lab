@@ -5650,6 +5650,395 @@ select:focus, option:focus, option:checked {
   white-space: nowrap;
 }
 
+/* ==========================================================================
+   ROOM 03 STUDENT-CENTERED EXPERIMENT UX (GUIDED, PRACTICE & ADVANCED MODES)
+   ========================================================================== */
+
+.experience-mode-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 6px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.mode-tab-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  gap: 3px;
+}
+
+.mode-tab-btn:hover {
+  background: rgba(51, 65, 85, 0.8);
+  color: #f1f5f9;
+}
+
+.mode-tab-btn.active {
+  background: rgba(14, 116, 144, 0.35);
+  border-color: #22d3ee;
+  color: #e0f2fe;
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.25);
+}
+
+.mode-tab-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.mode-tab-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.mode-tab-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.mode-tab-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  background: #0284c7;
+  color: #ffffff;
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+/* Guided Curriculum Panel */
+.guided-curriculum-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.guided-curriculum-header {
+  padding: 10px 12px;
+  background: linear-gradient(135deg, rgba(8, 51, 68, 0.6), rgba(15, 23, 42, 0.85));
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  border-radius: 8px;
+}
+
+.guided-curriculum-header h3 {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #38bdf8;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+}
+
+.guided-curriculum-header p {
+  margin: 0;
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.guided-stepper-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.guided-step-dot {
+  flex: 1;
+  min-width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.guided-step-dot:hover {
+  background: rgba(51, 65, 85, 0.9);
+  color: #f8fafc;
+}
+
+.guided-step-dot.active {
+  background: #0284c7;
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
+.guided-step-dot.completed {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+  color: #34d399;
+}
+
+.guided-instruction-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 8px;
+}
+
+.guided-step-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.guided-step-title-row h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: -0.01em;
+}
+
+.guided-action-box {
+  padding: 8px 10px;
+  background: rgba(8, 51, 68, 0.45);
+  border-left: 3px solid #06b6d4;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #e2e8f0;
+}
+
+.guided-action-box b {
+  color: #22d3ee;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.guided-why-box {
+  padding: 8px 10px;
+  background: rgba(30, 41, 59, 0.55);
+  border-left: 3px solid #818cf8;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #cbd5e1;
+}
+
+.guided-why-box b {
+  color: #a5b4fc;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.guided-expected-box {
+  padding: 6px 10px;
+  background: rgba(15, 23, 42, 0.65);
+  border-left: 3px solid #34d399;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #cbd5e1;
+}
+
+.guided-expected-box b {
+  color: #34d399;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.guided-hint-box {
+  padding: 8px 10px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px dashed rgba(245, 158, 11, 0.4);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #fef3c7;
+}
+
+.guided-validation-badge {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.guided-validation-badge.passed {
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid #10b981;
+  color: #34d399;
+}
+
+.guided-validation-badge.in-progress {
+  background: rgba(14, 116, 144, 0.25);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  color: #38bdf8;
+}
+
+.guided-validation-badge.hazard {
+  background: rgba(239, 68, 68, 0.22);
+  border: 1px solid #ef4444;
+  color: #fca5a5;
+  animation: hazard-pulse 2s infinite ease-in-out;
+}
+
+@keyframes hazard-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(239, 68, 68, 0); }
+  50% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.5); }
+}
+
+.guided-nav-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.guided-continue-btn {
+  flex: 2;
+  padding: 8px 12px;
+  background: #0284c7;
+  color: #ffffff;
+  border: 1px solid #38bdf8;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.guided-continue-btn:hover:not(:disabled) {
+  background: #0369a1;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+}
+
+.guided-continue-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: rgba(148, 163, 184, 0.3);
+  background: rgba(30, 41, 59, 0.6);
+  color: #94a3b8;
+}
+
+.auto-assist-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(245, 158, 11, 0.22);
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  color: #fbbf24;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 6px;
+  transition: all 0.15s ease;
+}
+
+.auto-assist-btn:hover {
+  background: rgba(245, 158, 11, 0.38);
+  color: #ffffff;
+}
+
+.quick-probe-chips {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.probe-chip-btn {
+  padding: 6px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.probe-chip-btn:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.probe-chip-btn.active {
+  background: rgba(56, 189, 248, 0.3);
+  border-color: #38bdf8;
+  color: #38bdf8;
+  font-weight: 700;
+}
+
+/* Practice Mode Safety Banner */
+.practice-safety-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.practice-safety-banner h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.practice-safety-banner p {
+  margin: 0;
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
 
 
 

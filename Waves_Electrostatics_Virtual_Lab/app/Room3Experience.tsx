@@ -48,6 +48,12 @@ import {
   type TerminalId,
   type MultimeterReading,
 } from './circuitSolver';
+import {
+  type ExperienceMode,
+  type GuidedExperimentState,
+  type StepValidationResult,
+  STATION_CURRICULUM,
+} from './room3GuidedCurriculum';
 
 const STORAGE_KEY = 'physics_lab_room_3_progress';
 
@@ -255,12 +261,52 @@ export default function Room3Experience() {
   const [blackTerminal, setBlackTerminalState] = useState<TerminalId | null>('SRC_NEG');
   const [jumperClosed, setJumperClosed] = useState(true);
 
+  // Student-Centered Experience Modes ('guided' | 'practice' | 'advanced')
+  const [experienceMode, setExperienceMode] = useState<ExperienceMode>(() => {
+    if (typeof window !== 'undefined') {
+      const m = new URLSearchParams(window.location.search).get('mode') as ExperienceMode;
+      if (m && ['guided', 'practice', 'advanced'].includes(m)) return m;
+    }
+    return 'guided';
+  });
+  const [guidedStepIndex, setGuidedStepIndex] = useState(0);
+  const [showGuidedHint, setShowGuidedHint] = useState(false);
+
+  // Reset guided step on station change
+  useEffect(() => {
+    setGuidedStepIndex(0);
+    setShowGuidedHint(false);
+  }, [stationId]);
+
   // Station Definitions & Telemetry Derived States
   const station = ROOM3_STATIONS[stationId];
   const stationProgress = progress[stationId];
   const circuitResult = useMemo(() => calculateCircuit(circuits), [circuits]);
   const opticsResult = useMemo(() => calculateOptics(optics), [optics]);
   const relativityResult = useMemo(() => calculateRelativity(relativity), [relativity]);
+
+  // Derived Curriculum & Guided Validation
+  const currentCurriculum = STATION_CURRICULUM[stationId];
+  const currentGuidedStep = currentCurriculum?.steps[guidedStepIndex] ?? currentCurriculum?.steps[0];
+
+  const guidedState: GuidedExperimentState = useMemo(() => ({
+    stationId,
+    circuits,
+    optics,
+    relativity,
+    dmmMode,
+    dmmJack,
+    redTerminal,
+    blackTerminal,
+    jumperClosed,
+    dmmReading,
+    inspectedEquipment: stationProgress.inspected,
+  }), [stationId, circuits, optics, relativity, dmmMode, dmmJack, redTerminal, blackTerminal, jumperClosed, dmmReading, stationProgress.inspected]);
+
+  const stepValidation: StepValidationResult = useMemo(() => {
+    if (!currentGuidedStep) return { isPassed: true, feedback: '' };
+    return currentGuidedStep.validate(guidedState);
+  }, [currentGuidedStep, guidedState]);
 
   // Derived Prediction State per Station (Eliminates Cross-Station State Leaks & Caps)
   const currentPredictionAnswer = stationProgress.predictionAnswer ?? null;
@@ -848,7 +894,132 @@ export default function Room3Experience() {
     });
   };
 
-  // Prediction verification (Step 2 - Predict)
+  // Quick Probe Terminal Jumper Connection Helper
+  const handleQuickProbe = (preset: 'psu' | 'r1' | 'r2' | 'r3' | 'series' | 'park') => {
+    if (preset === 'psu') {
+      handleSetProbe('red', 'SRC_POS');
+      handleSetProbe('black', 'SRC_NEG');
+    } else if (preset === 'r1') {
+      handleSetProbe('red', 'R1_A');
+      handleSetProbe('black', 'R1_B');
+    } else if (preset === 'r2') {
+      handleSetProbe('red', 'R2_A');
+      handleSetProbe('black', 'R2_B');
+    } else if (preset === 'r3') {
+      handleSetProbe('red', 'R3_A');
+      handleSetProbe('black', 'R3_B');
+    } else if (preset === 'series') {
+      handleSetProbe('red', 'SERIES_JACK_A');
+      handleSetProbe('black', 'SERIES_JACK_B');
+    } else if (preset === 'park') {
+      handleSetProbe('red', null);
+      handleSetProbe('black', null);
+    }
+  };
+
+  // Guided Curriculum: Apply Target Demonstration Setting
+  const handleApplyAutoAssist = () => {
+    if (!currentGuidedStep?.autoAssist) return;
+    playTone(440, 'sine', 0.1, 0.15);
+    const patch = currentGuidedStep.autoAssist.apply();
+    if ('dmmMode' in patch && patch.dmmMode) handleSetDmmMode(patch.dmmMode);
+    if ('dmmJack' in patch && patch.dmmJack) handleSetDmmJack(patch.dmmJack);
+    if ('redTerminal' in patch && patch.redTerminal !== undefined) handleSetProbe('red', patch.redTerminal);
+    if ('blackTerminal' in patch && patch.blackTerminal !== undefined) handleSetProbe('black', patch.blackTerminal);
+    if ('jumperClosed' in patch && patch.jumperClosed !== undefined) {
+      if (jumperClosed !== patch.jumperClosed) {
+        handleToggleJumper();
+      }
+    }
+    if ('circuits' in patch && patch.circuits) {
+      setCircuits((c) => ({ ...c, ...patch.circuits }));
+    }
+    if ('optics' in patch && patch.optics) {
+      setOptics((o) => ({ ...o, ...patch.optics }));
+    }
+    if ('relativity' in patch && patch.relativity) {
+      setRelativity((r) => ({ ...r, ...patch.relativity }));
+    }
+  };
+
+  // Guided Curriculum: Advance Step and Sync with Laboratory Notebook & Trials
+  const handleContinueGuidedStep = () => {
+    if (!stepValidation.isPassed) return;
+    playTone(523, 'sine', 0.15, 0.25);
+
+    // Auto-complete corresponding notebook steps based on guided step
+    setProgress((prev) => {
+      const sp = { ...prev[stationId] };
+      const completed = [...sp.completed];
+      if (stationId === 'circuits') {
+        if (guidedStepIndex === 0) {
+          completed[0] = true;
+          sp.inspected = Array.from(new Set([...sp.inspected, 'circuits-power-switch', 'circuits-multimeter', 'circuits-topology-selector']));
+        } else if (guidedStepIndex === 1) {
+          completed[1] = true;
+          sp.predictionAnswer = station.prediction.answer;
+        } else if (guidedStepIndex === 2 || guidedStepIndex === 3) {
+          completed[2] = true;
+          sp.setupActions = Array.from(new Set([...sp.setupActions, 'dmm-mode-set', 'leads-connected']));
+        } else if (guidedStepIndex === 4 || guidedStepIndex === 5 || guidedStepIndex === 6) {
+          completed[3] = true;
+          completed[4] = true;
+        } else if (guidedStepIndex === 7) {
+          completed[5] = true;
+          completed[6] = true;
+        }
+      } else if (stationId === 'optics') {
+        if (guidedStepIndex === 0) {
+          completed[0] = true;
+          sp.inspected = Array.from(new Set([...sp.inspected, 'optics-laser', 'optics-angle-dial', 'optics-screen']));
+        } else if (guidedStepIndex === 1) {
+          completed[1] = true;
+          sp.predictionAnswer = station.prediction.answer;
+          completed[2] = true;
+        } else if (guidedStepIndex === 2 || guidedStepIndex === 3) {
+          completed[3] = true;
+          completed[4] = true;
+        } else if (guidedStepIndex === 4) {
+          completed[5] = true;
+          completed[6] = true;
+        }
+      } else {
+        if (guidedStepIndex === 0) {
+          completed[0] = true;
+          sp.inspected = Array.from(new Set([...sp.inspected, 'relativity-velocity-dial', 'relativity-light-clock', 'relativity-contracting-rod']));
+        } else if (guidedStepIndex === 1) {
+          completed[1] = true;
+          sp.predictionAnswer = station.prediction.answer;
+        } else if (guidedStepIndex === 2 || guidedStepIndex === 3) {
+          completed[2] = true;
+          completed[3] = true;
+          completed[4] = true;
+        } else if (guidedStepIndex === 4) {
+          completed[5] = true;
+          completed[6] = true;
+        }
+      }
+      return { ...prev, [stationId]: { ...sp, completed } };
+    });
+
+    // Auto-record trial measurements for empirical steps
+    if (stationId === 'circuits' && (guidedStepIndex === 4 || guidedStepIndex === 5 || guidedStepIndex === 6)) {
+      recordCurrentTrial();
+    } else if (stationId === 'optics' && (guidedStepIndex === 2 || guidedStepIndex === 3 || guidedStepIndex === 4)) {
+      recordCurrentTrial();
+    } else if (stationId === 'relativity' && (guidedStepIndex === 1 || guidedStepIndex === 2 || guidedStepIndex === 3 || guidedStepIndex === 4)) {
+      recordCurrentTrial();
+    }
+
+    const totalSteps = currentCurriculum?.steps.length ?? 1;
+    if (guidedStepIndex < totalSteps - 1) {
+      setGuidedStepIndex((prev) => prev + 1);
+      setShowGuidedHint(false);
+    } else {
+      setNotebookOpen(true);
+      setNotebookStep(6);
+    }
+  };
   const verifyPrediction = (choice: number) => {
     const isCorrect = choice === station.prediction.answer;
     setProgress((prev) => {
@@ -1300,6 +1471,206 @@ export default function Room3Experience() {
           </div>
         </div>
 
+        {/* Experience Mode Selector (Guided Experiment vs Practice vs Advanced Lab) */}
+        <div className="experience-mode-selector" role="tablist" aria-label="Experiment Experience Mode">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={experienceMode === 'guided'}
+            className={`mode-tab-btn ${experienceMode === 'guided' ? 'active' : ''}`}
+            onClick={() => setExperienceMode('guided')}
+          >
+            <span className="mode-tab-icon">🎓</span>
+            <div className="mode-tab-text">
+              <span className="mode-tab-label">Guided Experiment</span>
+              <span className="mode-tab-badge">Recommended</span>
+            </div>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={experienceMode === 'practice'}
+            className={`mode-tab-btn ${experienceMode === 'practice' ? 'active' : ''}`}
+            onClick={() => setExperienceMode('practice')}
+          >
+            <span className="mode-tab-icon">🛠️</span>
+            <div className="mode-tab-text">
+              <span className="mode-tab-label">Practice</span>
+            </div>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={experienceMode === 'advanced'}
+            className={`mode-tab-btn ${experienceMode === 'advanced' ? 'active' : ''}`}
+            onClick={() => setExperienceMode('advanced')}
+          >
+            <span className="mode-tab-icon">🔬</span>
+            <div className="mode-tab-text">
+              <span className="mode-tab-label">Advanced Lab</span>
+            </div>
+          </button>
+        </div>
+
+        {/* MODE 1: GUIDED EXPERIMENT PANEL */}
+        {experienceMode === 'guided' && currentCurriculum && (
+          <div className="guided-curriculum-panel">
+            <div className="guided-curriculum-header">
+              <h3>{currentCurriculum.experimentTitle}</h3>
+              <p>{currentCurriculum.learningGoal}</p>
+            </div>
+
+            {/* Stepper Progress Dots */}
+            <div className="guided-stepper-row" role="tablist" aria-label="Experiment Steps">
+              {currentCurriculum.steps.map((st, idx) => {
+                const isCur = idx === guidedStepIndex;
+                const isPassed = idx < guidedStepIndex;
+                return (
+                  <button
+                    key={st.id}
+                    type="button"
+                    className={`guided-step-dot ${isCur ? 'active' : ''} ${isPassed ? 'completed' : ''}`}
+                    onClick={() => {
+                      setGuidedStepIndex(idx);
+                      setShowGuidedHint(false);
+                    }}
+                    title={st.title}
+                  >
+                    {isPassed ? '✓' : idx + 1}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Structured Step Instruction Card */}
+            <div className="guided-instruction-card">
+              <div className="guided-step-title-row">
+                <h4>{currentGuidedStep.title}</h4>
+                <span className="step-points-pill">Step {guidedStepIndex + 1}/{currentCurriculum.steps.length}</span>
+              </div>
+
+              <div className="guided-action-box">
+                <b>🎯 ACTION:</b>
+                <span>{currentGuidedStep.action}</span>
+              </div>
+
+              <div className="guided-why-box">
+                <b>💡 PHYSICAL PRINCIPLE (WHY):</b>
+                <span>{currentGuidedStep.why}</span>
+              </div>
+
+              <div className="guided-expected-box">
+                <b>👁️ EXPECTED RESULT:</b>
+                <span>{currentGuidedStep.expectedResult}</span>
+              </div>
+
+              {showGuidedHint && (
+                <div className="guided-hint-box">
+                  <b>🔍 HINT / TIP:</b>
+                  <p style={{ margin: '4px 0 0 0' }}>{currentGuidedStep.hint}</p>
+                  {currentGuidedStep.autoAssist && (
+                    <button
+                      type="button"
+                      className="auto-assist-btn"
+                      onClick={handleApplyAutoAssist}
+                    >
+                      ⚡ {currentGuidedStep.autoAssist.label}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Dynamic Physical Validation Status Badge */}
+              {stepValidation.hazardWarning ? (
+                <div className="guided-validation-badge hazard">
+                  <span>⚠️ HAZARD ALERT: {stepValidation.hazardWarning}</span>
+                  <small>{stepValidation.feedback}</small>
+                  {dmmReading.tripFuse && (
+                    <button
+                      type="button"
+                      className="dmm-btn"
+                      style={{ marginTop: '4px', background: '#b91c1c', color: '#fff' }}
+                      onClick={handleResetFuse}
+                    >
+                      ↺ Reset Blown Fuse Now
+                    </button>
+                  )}
+                </div>
+              ) : stepValidation.isPassed ? (
+                <div className="guided-validation-badge passed">
+                  <span>{stepValidation.feedback}</span>
+                </div>
+              ) : (
+                <div className="guided-validation-badge in-progress">
+                  <span>⏳ STATUS: {stepValidation.feedback}</span>
+                </div>
+              )}
+
+              {/* Navigation Action Buttons */}
+              <div className="guided-nav-footer">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ padding: '6px 10px', fontSize: '11px' }}
+                  disabled={guidedStepIndex === 0}
+                  onClick={() => {
+                    setGuidedStepIndex((prev) => Math.max(0, prev - 1));
+                    setShowGuidedHint(false);
+                  }}
+                >
+                  ← Back
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ padding: '6px 10px', fontSize: '11px' }}
+                  onClick={() => setShowGuidedHint((prev) => !prev)}
+                >
+                  {showGuidedHint ? 'Hide Hint' : '💡 Hint'}
+                </button>
+                <button
+                  type="button"
+                  className="guided-continue-btn"
+                  disabled={!stepValidation.isPassed}
+                  onClick={handleContinueGuidedStep}
+                >
+                  {guidedStepIndex === currentCurriculum.steps.length - 1
+                    ? 'Complete & Open Notebook →'
+                    : `Continue Step ${guidedStepIndex + 2} →`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODE 2: PRACTICE SAFETY & DIAGNOSTICS BANNER */}
+        {experienceMode === 'practice' && (
+          <div className="practice-safety-banner">
+            <h4>🛠️ Independent Practice Workbench</h4>
+            <p>Freely manipulate instruments and test physical hypotheses. Active safety monitors will notify you of circuit errors or instrument damage.</p>
+            {dmmReading.tripFuse ? (
+              <div className="guided-validation-badge hazard">
+                <span>⚠️ BLOWN FUSE: Current shunt was connected in parallel across the voltage source!</span>
+                <button type="button" className="dmm-btn" style={{ background: '#b91c1c', color: '#fff', marginTop: '4px' }} onClick={handleResetFuse}>
+                  ↺ Reset Blown Fuse
+                </button>
+              </div>
+            ) : dmmJack === 'ma_10a' && (dmmMode === 'v_dc' || dmmMode === 'v_ac') ? (
+              <div className="guided-validation-badge hazard">
+                <span>⚠️ LEAD MISMATCH: Red lead in mA/10A current jack while dial is set to Voltage!</span>
+              </div>
+            ) : dmmMode === 'ohm' && circuits.powerOn && stationId === 'circuits' ? (
+              <div className="guided-validation-badge hazard">
+                <span>⚠️ LIVE CIRCUIT: Turn OFF power supply before measuring resistance.</span>
+              </div>
+            ) : (
+              <div className="guided-validation-badge passed">
+                <span>✓ Instrument Status Normal. Readout: {dmmReading.displayString} ({dmmReading.unit})</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* STATION 01: CIRCUITS CONTROLS */}
         {stationId === 'circuits' && (
           <>
@@ -1469,6 +1840,57 @@ export default function Room3Experience() {
                 </div>
               </div>
 
+              {/* Quick Probe Placement Chips */}
+              <div style={{ marginTop: '2px' }}>
+                <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '3px', fontWeight: 700 }}>
+                  ⚡ QUICK PROBE CONNECTION:
+                </label>
+                <div className="quick-probe-chips">
+                  <button
+                    type="button"
+                    className={`probe-chip-btn ${redTerminal === 'SRC_POS' && blackTerminal === 'SRC_NEG' ? 'active' : ''}`}
+                    onClick={() => handleQuickProbe('psu')}
+                  >
+                    Across PSU (24V)
+                  </button>
+                  <button
+                    type="button"
+                    className={`probe-chip-btn ${redTerminal === 'R1_A' && blackTerminal === 'R1_B' ? 'active' : ''}`}
+                    onClick={() => handleQuickProbe('r1')}
+                  >
+                    Across R1 (3.7V)
+                  </button>
+                  <button
+                    type="button"
+                    className={`probe-chip-btn ${redTerminal === 'R2_A' && blackTerminal === 'R2_B' ? 'active' : ''}`}
+                    onClick={() => handleQuickProbe('r2')}
+                  >
+                    Across R2 (8.1V)
+                  </button>
+                  <button
+                    type="button"
+                    className={`probe-chip-btn ${redTerminal === 'R3_A' && blackTerminal === 'R3_B' ? 'active' : ''}`}
+                    onClick={() => handleQuickProbe('r3')}
+                  >
+                    Across R3 (12.2V)
+                  </button>
+                  <button
+                    type="button"
+                    className={`probe-chip-btn ${redTerminal === 'SERIES_JACK_A' && blackTerminal === 'SERIES_JACK_B' ? 'active' : ''}`}
+                    onClick={() => handleQuickProbe('series')}
+                  >
+                    Series Break (Ammeter)
+                  </button>
+                  <button
+                    type="button"
+                    className={`probe-chip-btn ${redTerminal === null && blackTerminal === null ? 'active' : ''}`}
+                    onClick={() => handleQuickProbe('park')}
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              </div>
+
               {/* Series Jumper & Fuse Reset */}
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button
@@ -1489,52 +1911,57 @@ export default function Room3Experience() {
                 </button>
               </div>
 
-              {/* Guided Procedure Presets */}
-              <div className="dmm-preset-row">
-                <label style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
-                  EXPERIMENTAL PROCEDURE PRESETS:
-                </label>
-                <button
-                  type="button"
-                  className="dmm-preset-btn"
-                  onClick={() => applyPreset('source_v')}
-                >
-                  ▶ 1. Measure Source Voltage (24.00 V in parallel)
-                </button>
-                <button
-                  type="button"
-                  className="dmm-preset-btn"
-                  onClick={() => applyPreset('r1_v')}
-                >
-                  ▶ 2. Measure R1 Voltage Drop (3.69 V across R1)
-                </button>
-                <button
-                  type="button"
-                  className="dmm-preset-btn"
-                  onClick={() => applyPreset('series_i')}
-                >
-                  ▶ 3. Insert Ammeter in Series (36.92 mA series loop)
-                </button>
-                <button
-                  type="button"
-                  className="dmm-preset-btn"
-                  onClick={() => applyPreset('r1_ohm')}
-                >
-                  ▶ 4. Measure R1 Resistance (100.0 Ω unpowered)
-                </button>
-                <button
-                  type="button"
-                  className="dmm-preset-btn"
-                  onClick={() => applyPreset('continuity')}
-                >
-                  ▶ 5. Verify Circuit Continuity (Audible tone)
-                </button>
-              </div>
+              {/* Guided Procedure Presets (Available in Practice & Advanced Modes) */}
+              {experienceMode !== 'guided' && (
+                <div className="dmm-preset-row">
+                  <label style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
+                    EXPERIMENTAL PROCEDURE PRESETS:
+                  </label>
+                  <button
+                    type="button"
+                    className="dmm-preset-btn"
+                    onClick={() => applyPreset('source_v')}
+                  >
+                    ▶ 1. Measure Source Voltage (24.00 V in parallel)
+                  </button>
+                  <button
+                    type="button"
+                    className="dmm-preset-btn"
+                    onClick={() => applyPreset('r1_v')}
+                  >
+                    ▶ 2. Measure R1 Voltage Drop (3.69 V across R1)
+                  </button>
+                  <button
+                    type="button"
+                    className="dmm-preset-btn"
+                    onClick={() => applyPreset('series_i')}
+                  >
+                    ▶ 3. Insert Ammeter in Series (36.92 mA series loop)
+                  </button>
+                  <button
+                    type="button"
+                    className="dmm-preset-btn"
+                    onClick={() => applyPreset('r1_ohm')}
+                  >
+                    ▶ 4. Measure R1 Resistance (100.0 Ω unpowered)
+                  </button>
+                  <button
+                    type="button"
+                    className="dmm-preset-btn"
+                    onClick={() => applyPreset('continuity')}
+                  >
+                    ▶ 5. Verify Circuit Continuity (Audible tone)
+                  </button>
+                </div>
+              )}
             </div>
 
-            <div style={{ margin: '12px 0 6px', fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.08em' }}>
-              ADVANCED CIRCUIT PARAMETERS:
-            </div>
+            {/* Advanced Circuit Engineering Parameters (Only in Advanced Lab Mode) */}
+            {experienceMode === 'advanced' && (
+              <>
+                <div style={{ margin: '12px 0 6px', fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.08em' }}>
+                  ADVANCED CIRCUIT PARAMETERS:
+                </div>
             <div className="segment-control" role="group" aria-label="Circuit Regime">
               <button
                 type="button"
@@ -1689,6 +2116,8 @@ export default function Room3Experience() {
             </div>
           </>
         )}
+      </>
+    )}
 
         {/* STATION 02: OPTICS CONTROLS */}
         {stationId === 'optics' && (
