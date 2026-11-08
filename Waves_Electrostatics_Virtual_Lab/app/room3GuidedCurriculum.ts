@@ -11,7 +11,7 @@ import {
   type MultimeterReading,
 } from './circuitSolver';
 
-export type ExperienceMode = 'guided' | 'practice' | 'advanced';
+export type ExperienceMode = 'guided';
 
 export type GuidedExperimentState = {
   stationId: Room3StationId;

@@ -34,8 +34,8 @@ export interface Room3CircuitWorkspaceProps {
   onToggleJumper: () => void;
   onResetFuse: () => void;
   onBackTo3D: () => void;
-  experienceMode: ExperienceMode;
-  onSetExperienceMode: (mode: ExperienceMode) => void;
+  experienceMode?: ExperienceMode;
+  onSetExperienceMode?: (mode: ExperienceMode) => void;
   guidedStep?: GuidedStepDefinition;
   stepValidation?: StepValidationResult;
   onContinueGuidedStep?: () => void;
@@ -367,7 +367,7 @@ export function Room3CircuitWorkspace({
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '11px', color: '#94a3b8' }}>Mode:</span>
-              <span style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 600 }}>{experienceMode.toUpperCase()}</span>
+              <span style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 600 }}>GUIDED EXPERIMENT</span>
             </div>
           </div>
 

@@ -272,14 +272,8 @@ export default function Room3Experience() {
     sceneApi.current?.setCloseupFocus?.(focus);
   };
 
-  // Student-Centered Experience Modes ('guided' | 'practice' | 'advanced')
-  const [experienceMode, setExperienceMode] = useState<ExperienceMode>(() => {
-    if (typeof window !== 'undefined') {
-      const m = new URLSearchParams(window.location.search).get('mode') as ExperienceMode;
-      if (m && ['guided', 'practice', 'advanced'].includes(m)) return m;
-    }
-    return 'guided';
-  });
+  // Student-Centered Experience: Exclusively Guided Experiment
+  const experienceMode: ExperienceMode = 'guided';
   const [guidedStepIndex, setGuidedStepIndex] = useState(0);
   const [showGuidedHint, setShowGuidedHint] = useState(false);
 
@@ -591,40 +585,6 @@ export default function Room3Experience() {
     setCameraMode(mode);
     sceneApi.current?.setCameraMode(mode, stationId);
     playTone(mode === 'closeup' ? 660 : 440, 'triangle', 0.08, 0.15);
-  };
-
-  const applyPreset = (preset: 'source_v' | 'r1_v' | 'series_i' | 'r1_ohm' | 'continuity') => {
-    if (preset === 'source_v') {
-      handleSetDmmMode('v_dc');
-      handleSetDmmJack('v_ohm');
-      handleSetProbe('red', 'SRC_POS');
-      handleSetProbe('black', 'SRC_NEG');
-      setCircuits((c) => ({ ...c, powerOn: true, vs: 24.0 }));
-    } else if (preset === 'r1_v') {
-      handleSetDmmMode('v_dc');
-      handleSetDmmJack('v_ohm');
-      handleSetProbe('red', 'R1_A');
-      handleSetProbe('black', 'R1_B');
-      setCircuits((c) => ({ ...c, powerOn: true, vs: 24.0 }));
-    } else if (preset === 'series_i') {
-      if (jumperClosed) handleToggleJumper();
-      handleSetDmmJack('ma_10a');
-      handleSetDmmMode('a_dc');
-      handleSetProbe('red', 'SERIES_JACK_A');
-      handleSetProbe('black', 'SERIES_JACK_B');
-      setCircuits((c) => ({ ...c, powerOn: true, vs: 24.0 }));
-    } else if (preset === 'r1_ohm') {
-      setCircuits((c) => ({ ...c, powerOn: false }));
-      handleSetDmmMode('ohm');
-      handleSetDmmJack('v_ohm');
-      handleSetProbe('red', 'R1_A');
-      handleSetProbe('black', 'R1_B');
-    } else if (preset === 'continuity') {
-      handleSetDmmMode('cont');
-      handleSetDmmJack('v_ohm');
-      handleSetProbe('red', 'R1_A');
-      handleSetProbe('black', 'R1_A');
-    }
   };
 
   // Step Completion Helpers
@@ -1161,7 +1121,7 @@ export default function Room3Experience() {
       'UNIVERSITY OF PERPETUAL HELP SYSTEM DALTA',
       'DEPARTMENT OF PHYSICS & APPLIED PHYSICAL SCIENCES',
       '========================================================================',
-      'CERTIFIED ADVANCED LABORATORY EXPERIMENTAL RECORD',
+      'CERTIFIED UNIVERSITY LABORATORY EXPERIMENTAL RECORD',
       `Student Investigator: ${studentName}`,
       `Student ID: ${studentId}`,
       `Academic Section: ${studentSection}`,
@@ -1296,7 +1256,6 @@ export default function Room3Experience() {
             onResetFuse={handleResetFuse}
             onBackTo3D={() => setActiveWorkspaceView('3d')}
             experienceMode={experienceMode}
-            onSetExperienceMode={setExperienceMode}
             guidedStep={currentGuidedStep}
             stepValidation={stepValidation}
             onContinueGuidedStep={handleContinueGuidedStep}
@@ -1390,56 +1349,6 @@ export default function Room3Experience() {
               ← Exit Close-Up [ESC / E]
             </button>
           </div>
-
-          {stationId === 'circuits' && experienceMode === 'advanced' && (
-            <div className="closeup-circuits-quickbar">
-              <div className="closeup-quick-buttons">
-                <span className="quick-title">⚡ Quick Probes (Advanced Override):</span>
-                <button
-                  type="button"
-                  className={`quick-chip ${redTerminal === 'R1_A' && blackTerminal === 'R1_B' ? 'active' : ''}`}
-                  onClick={() => handleQuickProbe('r1')}
-                >
-                  Across R1 (3.7V)
-                </button>
-                <button
-                  type="button"
-                  className={`quick-chip ${redTerminal === 'R2_A' && blackTerminal === 'R2_B' ? 'active' : ''}`}
-                  onClick={() => handleQuickProbe('r2')}
-                >
-                  Across R2 (8.1V)
-                </button>
-                <button
-                  type="button"
-                  className={`quick-chip ${redTerminal === 'R3_A' && blackTerminal === 'R3_B' ? 'active' : ''}`}
-                  onClick={() => handleQuickProbe('r3')}
-                >
-                  Across R3 (12.2V)
-                </button>
-                <button
-                  type="button"
-                  className={`quick-chip ${redTerminal === 'SRC_POS' && blackTerminal === 'SRC_NEG' ? 'active' : ''}`}
-                  onClick={() => handleQuickProbe('psu')}
-                >
-                  Across PSU (24V)
-                </button>
-                <button
-                  type="button"
-                  className={`quick-chip ${redTerminal === 'SERIES_JACK_A' && blackTerminal === 'SERIES_JACK_B' ? 'active' : ''}`}
-                  onClick={() => handleQuickProbe('series')}
-                >
-                  Series Ammeter (36.9 mA)
-                </button>
-                <button
-                  type="button"
-                  className="quick-chip outline"
-                  onClick={() => handleQuickProbe('park')}
-                >
-                  Disconnect Probes
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -1645,49 +1554,8 @@ export default function Room3Experience() {
           </div>
         </div>
 
-        {/* Experience Mode Selector (Guided Experiment vs Practice vs Advanced Lab) */}
-        <div className="experience-mode-selector" role="tablist" aria-label="Experiment Experience Mode">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={experienceMode === 'guided'}
-            className={`mode-tab-btn ${experienceMode === 'guided' ? 'active' : ''}`}
-            onClick={() => setExperienceMode('guided')}
-          >
-            <span className="mode-tab-icon">🎓</span>
-            <div className="mode-tab-text">
-              <span className="mode-tab-label">Guided Experiment</span>
-              <span className="mode-tab-badge">Recommended</span>
-            </div>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={experienceMode === 'practice'}
-            className={`mode-tab-btn ${experienceMode === 'practice' ? 'active' : ''}`}
-            onClick={() => setExperienceMode('practice')}
-          >
-            <span className="mode-tab-icon">🛠️</span>
-            <div className="mode-tab-text">
-              <span className="mode-tab-label">Practice</span>
-            </div>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={experienceMode === 'advanced'}
-            className={`mode-tab-btn ${experienceMode === 'advanced' ? 'active' : ''}`}
-            onClick={() => setExperienceMode('advanced')}
-          >
-            <span className="mode-tab-icon">🔬</span>
-            <div className="mode-tab-text">
-              <span className="mode-tab-label">Advanced Lab</span>
-            </div>
-          </button>
-        </div>
-
-        {/* MODE 1: GUIDED EXPERIMENT PANEL */}
-        {experienceMode === 'guided' && currentCurriculum && (
+        {/* GUIDED EXPERIMENT PANEL */}
+        {currentCurriculum && (
           <div className="guided-curriculum-panel">
             <div className="guided-curriculum-header">
               <h3>{currentCurriculum.experimentTitle}</h3>
@@ -1814,34 +1682,6 @@ export default function Room3Experience() {
                 </button>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* MODE 2: PRACTICE SAFETY & DIAGNOSTICS BANNER */}
-        {experienceMode === 'practice' && (
-          <div className="practice-safety-banner">
-            <h4>🛠️ Independent Practice Workbench</h4>
-            <p>Freely manipulate instruments and test physical hypotheses. Active safety monitors will notify you of circuit errors or instrument damage.</p>
-            {dmmReading.tripFuse ? (
-              <div className="guided-validation-badge hazard">
-                <span>⚠️ BLOWN FUSE: Current shunt was connected in parallel across the voltage source!</span>
-                <button type="button" className="dmm-btn" style={{ background: '#b91c1c', color: '#fff', marginTop: '4px' }} onClick={handleResetFuse}>
-                  ↺ Reset Blown Fuse
-                </button>
-              </div>
-            ) : dmmJack === 'ma_10a' && (dmmMode === 'v_dc' || dmmMode === 'v_ac') ? (
-              <div className="guided-validation-badge hazard">
-                <span>⚠️ LEAD MISMATCH: Red lead in mA/10A current jack while dial is set to Voltage!</span>
-              </div>
-            ) : dmmMode === 'ohm' && circuits.powerOn && stationId === 'circuits' ? (
-              <div className="guided-validation-badge hazard">
-                <span>⚠️ LIVE CIRCUIT: Turn OFF power supply before measuring resistance.</span>
-              </div>
-            ) : (
-              <div className="guided-validation-badge passed">
-                <span>✓ Instrument Status Normal. Readout: {dmmReading.displayString} ({dmmReading.unit})</span>
-              </div>
-            )}
           </div>
         )}
 
@@ -2104,214 +1944,9 @@ export default function Room3Experience() {
                   ↺ Reset Fuse
                 </button>
               </div>
-
-              {/* Guided Procedure Presets (Available in Practice & Advanced Modes) */}
-              {experienceMode !== 'guided' && (
-                <div className="dmm-preset-row">
-                  <label style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
-                    EXPERIMENTAL PROCEDURE PRESETS:
-                  </label>
-                  <button
-                    type="button"
-                    className="dmm-preset-btn"
-                    onClick={() => applyPreset('source_v')}
-                  >
-                    ▶ 1. Measure Source Voltage (24.00 V in parallel)
-                  </button>
-                  <button
-                    type="button"
-                    className="dmm-preset-btn"
-                    onClick={() => applyPreset('r1_v')}
-                  >
-                    ▶ 2. Measure R1 Voltage Drop (3.69 V across R1)
-                  </button>
-                  <button
-                    type="button"
-                    className="dmm-preset-btn"
-                    onClick={() => applyPreset('series_i')}
-                  >
-                    ▶ 3. Insert Ammeter in Series (36.92 mA series loop)
-                  </button>
-                  <button
-                    type="button"
-                    className="dmm-preset-btn"
-                    onClick={() => applyPreset('r1_ohm')}
-                  >
-                    ▶ 4. Measure R1 Resistance (100.0 Ω unpowered)
-                  </button>
-                  <button
-                    type="button"
-                    className="dmm-preset-btn"
-                    onClick={() => applyPreset('continuity')}
-                  >
-                    ▶ 5. Verify Circuit Continuity (Audible tone)
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Advanced Circuit Engineering Parameters (Only in Advanced Lab Mode) */}
-            {experienceMode === 'advanced' && (
-              <>
-                <div style={{ margin: '12px 0 6px', fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.08em' }}>
-                  ADVANCED CIRCUIT PARAMETERS:
-                </div>
-            <div className="segment-control" role="group" aria-label="Circuit Regime">
-              <button
-                type="button"
-                className={circuits.mode === 'dc' ? 'active' : ''}
-                onClick={() => setCircuits((c) => ({ ...c, mode: 'dc' }))}
-              >
-                DC Steady-State
-              </button>
-              <button
-                type="button"
-                className={circuits.mode === 'ac' ? 'active' : ''}
-                onClick={() => setCircuits((c) => ({ ...c, mode: 'ac' }))}
-              >
-                AC Sinusoidal (RLC)
-              </button>
-            </div>
-
-            <div className="segment-control" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }} role="group" aria-label="Circuit Topology">
-              {(['series', 'parallel', 'combo'] as const).map((top) => (
-                <button
-                  key={top}
-                  type="button"
-                  className={circuits.topology === top ? 'active' : ''}
-                  onClick={() => setCircuits((c) => ({ ...c, topology: top }))}
-                >
-                  {top.charAt(0).toUpperCase() + top.slice(1)}
-                </button>
-              ))}
-            </div>
-
-            <RangeControl
-              label="Source Voltage Vs"
-              value={circuits.vs}
-              unit="V"
-              min={1.0}
-              max={240.0}
-              step={1.0}
-              onChange={(v) => setCircuits((c) => ({ ...c, vs: v }))}
-              digits={1}
-            />
-
-            {circuits.mode === 'ac' && (
-              <RangeControl
-                label="Driving Frequency f"
-                value={circuits.freq}
-                unit="Hz"
-                min={10}
-                max={1000}
-                step={5}
-                onChange={(v) => setCircuits((c) => ({ ...c, freq: v }))}
-                digits={0}
-              />
-            )}
-
-            <RangeControl
-              label="Resistance R1"
-              value={circuits.r1}
-              unit="Ω"
-              min={1.0}
-              max={1000.0}
-              step={5.0}
-              onChange={(v) => setCircuits((c) => ({ ...c, r1: v }))}
-              digits={0}
-            />
-
-            <RangeControl
-              label="Resistance R2"
-              value={circuits.r2}
-              unit="Ω"
-              min={1.0}
-              max={1000.0}
-              step={5.0}
-              onChange={(v) => setCircuits((c) => ({ ...c, r2: v }))}
-              digits={0}
-            />
-
-            <RangeControl
-              label="Resistance R3"
-              value={circuits.r3}
-              unit="Ω"
-              min={1.0}
-              max={1000.0}
-              step={5.0}
-              onChange={(v) => setCircuits((c) => ({ ...c, r3: v }))}
-              digits={0}
-            />
-
-            {circuits.mode === 'ac' && (
-              <>
-                <RangeControl
-                  label="Inductance L"
-                  value={circuits.inductance}
-                  unit="mH"
-                  min={1.0}
-                  max={500.0}
-                  step={5.0}
-                  onChange={(v) => setCircuits((c) => ({ ...c, inductance: v }))}
-                  digits={1}
-                />
-                <RangeControl
-                  label="Capacitance C"
-                  value={circuits.capacitance}
-                  unit="μF"
-                  min={1.0}
-                  max={500.0}
-                  step={5.0}
-                  onChange={(v) => setCircuits((c) => ({ ...c, capacitance: v }))}
-                  digits={1}
-                />
-              </>
-            )}
-
-            <div className="formula-readout">
-              <span>{circuits.mode === 'ac' ? 'I = Vs / Z | Z = √(Req² + (XL − XC)²)' : "I = Vs / Req (Ohm's Law)"}</span>
-              <strong>{circuits.mode === 'ac' ? `${circuitResult.current.toFixed(3)} A (rms)` : `${circuitResult.current.toFixed(3)} A`}</strong>
-              <dl>
-                {circuits.mode === 'dc' ? (
-                  <>
-                    <Metric label="Equivalent Req" value={`${circuitResult.req.toFixed(1)} Ω`} />
-                    <Metric label="Total Current I" value={`${circuitResult.current.toFixed(3)} A`} />
-                    <Metric label="DC Real Power P" value={`${circuitResult.realPower.toFixed(2)} W`} />
-                  </>
-                ) : (
-                  <>
-                    <Metric label="Total Impedance Z" value={`${circuitResult.impedance.toFixed(1)} Ω`} />
-                    <Metric label="Total Current Irms" value={`${circuitResult.current.toFixed(3)} A`} />
-                    <Metric label="Power Factor cos φ" value={`${circuitResult.powerFactor.toFixed(3)}`} />
-                    <Metric label="Real Power P" value={`${circuitResult.realPower.toFixed(2)} W`} />
-                  </>
-                )}
-              </dl>
-              <details className="telemetry-details">
-                <summary>Branch Currents & Detailed Telemetry</summary>
-                <dl>
-                  <Metric label="Branch Current I1" value={`${circuitResult.i1.toFixed(3)} A`} />
-                  <Metric label="Branch Current I2" value={`${circuitResult.i2.toFixed(3)} A`} />
-                  <Metric label="Branch Current I3" value={`${circuitResult.i3.toFixed(3)} A`} />
-                  <Metric label="Voltage Drop V1" value={`${circuitResult.v1.toFixed(1)} V`} />
-                  <Metric label="Voltage Drop V2" value={`${circuitResult.v2.toFixed(1)} V`} />
-                  <Metric label="Voltage Drop V3" value={`${circuitResult.v3.toFixed(1)} V`} />
-                  {circuits.mode === 'ac' && (
-                    <>
-                      <Metric label="Inductive XL" value={`${circuitResult.xl.toFixed(1)} Ω`} />
-                      <Metric label="Capacitive XC" value={`${circuitResult.xc.toFixed(1)} Ω`} />
-                      <Metric label="Phase Angle φ" value={`${circuitResult.phaseAngleDeg.toFixed(1)}°`} />
-                      <Metric label="Reactive Power Q" value={`${circuitResult.reactivePower.toFixed(2)} VAR`} />
-                      <Metric label="Resonant Freq f₀" value={`${circuitResult.resonantFreq.toFixed(1)} Hz`} />
-                    </>
-                  )}
-                </dl>
-              </details>
             </div>
           </>
         )}
-      </>
-    )}
 
         {/* STATION 02: OPTICS CONTROLS */}
         {stationId === 'optics' && (
