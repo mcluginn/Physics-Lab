@@ -260,6 +260,13 @@ export default function Room3Experience() {
   const [redTerminal, setRedTerminalState] = useState<TerminalId | null>('SRC_POS');
   const [blackTerminal, setBlackTerminalState] = useState<TerminalId | null>('SRC_NEG');
   const [jumperClosed, setJumperClosed] = useState(true);
+  const [closeupHoverText, setCloseupHoverText] = useState<string | null>(null);
+  const [closeupFocus, setCloseupFocus] = useState<'station' | 'board' | 'multimeter' | 'psu'>('station');
+
+  const handleSetCloseupFocus = (focus: 'station' | 'board' | 'multimeter' | 'psu') => {
+    setCloseupFocus(focus);
+    sceneApi.current?.setCloseupFocus?.(focus);
+  };
 
   // Student-Centered Experience Modes ('guided' | 'practice' | 'advanced')
   const [experienceMode, setExperienceMode] = useState<ExperienceMode>(() => {
@@ -500,6 +507,7 @@ export default function Room3Experience() {
         onFootstep: () => playTone(80, 'sine', 0.05, 0.1),
         onCameraModeChange: (mode) => setCameraMode(mode),
         onDmmReadingChange: (reading) => setDmmReading(reading),
+        onCloseupHover: (text) => setCloseupHoverText(text),
       });
       sceneApi.current = api;
       if (typeof window !== 'undefined') {
@@ -896,19 +904,35 @@ export default function Room3Experience() {
 
   // Quick Probe Terminal Jumper Connection Helper
   const handleQuickProbe = (preset: 'psu' | 'r1' | 'r2' | 'r3' | 'series' | 'park') => {
+    playTone(600, 'sine', 0.08, 0.15);
     if (preset === 'psu') {
+      handleSetDmmMode('v_dc');
+      handleSetDmmJack('v_ohm');
+      if (!jumperClosed) handleToggleJumper();
       handleSetProbe('red', 'SRC_POS');
       handleSetProbe('black', 'SRC_NEG');
     } else if (preset === 'r1') {
+      handleSetDmmMode('v_dc');
+      handleSetDmmJack('v_ohm');
+      if (!jumperClosed) handleToggleJumper();
       handleSetProbe('red', 'R1_A');
       handleSetProbe('black', 'R1_B');
     } else if (preset === 'r2') {
+      handleSetDmmMode('v_dc');
+      handleSetDmmJack('v_ohm');
+      if (!jumperClosed) handleToggleJumper();
       handleSetProbe('red', 'R2_A');
       handleSetProbe('black', 'R2_B');
     } else if (preset === 'r3') {
+      handleSetDmmMode('v_dc');
+      handleSetDmmJack('v_ohm');
+      if (!jumperClosed) handleToggleJumper();
       handleSetProbe('red', 'R3_A');
       handleSetProbe('black', 'R3_B');
     } else if (preset === 'series') {
+      handleSetDmmMode('a_dc');
+      handleSetDmmJack('ma_10a');
+      if (jumperClosed) handleToggleJumper();
       handleSetProbe('red', 'SERIES_JACK_A');
       handleSetProbe('black', 'SERIES_JACK_B');
     } else if (preset === 'park') {
@@ -1251,7 +1275,7 @@ export default function Room3Experience() {
         <span>Landscape view keeps the apparatus, notebook, and controls visible.</span>
       </div>
 
-      {!notebookOpen && (
+      {!notebookOpen && cameraMode === 'walk' && (
         <div className={`walk-reticle ${interaction ? 'active-target' : ''}`} aria-hidden="true">
           <span />
           <span />
@@ -1266,15 +1290,114 @@ export default function Room3Experience() {
 
       {cameraMode === 'closeup' && !notebookOpen && (
         <div className="closeup-hud-banner" role="status">
-          <div className="closeup-hud-badge">🔬 WORKBENCH INSTRUMENT CLOSE-UP</div>
-          <div className="closeup-hud-hint">Click apparatus in 3D or use controls · Press [ESC / E] to exit</div>
-          <button
-            type="button"
-            className="closeup-exit-button"
-            onClick={() => handleSetCloseup('walk')}
-          >
-            ← Exit to Exploration [ESC / E]
-          </button>
+          <div className="closeup-hud-header">
+            <div className="closeup-hud-badge">🔬 WORKBENCH CLOSE-UP</div>
+            {stationId === 'circuits' && (
+              <div className="closeup-cam-controls">
+                <button
+                  type="button"
+                  className={`cam-focus-btn ${closeupFocus === 'station' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('station')}
+                >
+                  📐 Full Workbench
+                </button>
+                <button
+                  type="button"
+                  className={`cam-focus-btn ${closeupFocus === 'board' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('board')}
+                >
+                  🔌 Resistor Board
+                </button>
+                <button
+                  type="button"
+                  className={`cam-focus-btn ${closeupFocus === 'multimeter' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('multimeter')}
+                >
+                  📟 Multimeter
+                </button>
+                <button
+                  type="button"
+                  className={`cam-focus-btn ${closeupFocus === 'psu' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('psu')}
+                >
+                  ⚡ Power Supply
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              className="closeup-exit-button"
+              onClick={() => handleSetCloseup('walk')}
+            >
+              ← Exit Close-Up [ESC / E]
+            </button>
+          </div>
+
+          {stationId === 'circuits' && (
+            <div className="closeup-circuits-quickbar">
+              <div className="closeup-guidance-pill">
+                <span className="step-tag">CURRENT TASK</span>
+                <span className="step-text">
+                  {currentGuidedStep ? currentGuidedStep.action : 'Measure voltage and current with multimeter'}
+                </span>
+                {currentGuidedStep?.expectedResult && (
+                  <span className="expected-pill">🎯 Target: {currentGuidedStep.expectedResult}</span>
+                )}
+              </div>
+              <div className="closeup-quick-buttons">
+                <span className="quick-title">⚡ Quick Probes:</span>
+                <button
+                  type="button"
+                  className={`quick-chip ${redTerminal === 'R1_A' && blackTerminal === 'R1_B' ? 'active' : ''}`}
+                  onClick={() => handleQuickProbe('r1')}
+                >
+                  Across R1 (3.7V)
+                </button>
+                <button
+                  type="button"
+                  className={`quick-chip ${redTerminal === 'R2_A' && blackTerminal === 'R2_B' ? 'active' : ''}`}
+                  onClick={() => handleQuickProbe('r2')}
+                >
+                  Across R2 (8.1V)
+                </button>
+                <button
+                  type="button"
+                  className={`quick-chip ${redTerminal === 'R3_A' && blackTerminal === 'R3_B' ? 'active' : ''}`}
+                  onClick={() => handleQuickProbe('r3')}
+                >
+                  Across R3 (12.2V)
+                </button>
+                <button
+                  type="button"
+                  className={`quick-chip ${redTerminal === 'SRC_POS' && blackTerminal === 'SRC_NEG' ? 'active' : ''}`}
+                  onClick={() => handleQuickProbe('psu')}
+                >
+                  Across PSU (24V)
+                </button>
+                <button
+                  type="button"
+                  className={`quick-chip ${redTerminal === 'SERIES_JACK_A' && blackTerminal === 'SERIES_JACK_B' ? 'active' : ''}`}
+                  onClick={() => handleQuickProbe('series')}
+                >
+                  Series Ammeter (36.9 mA)
+                </button>
+                <button
+                  type="button"
+                  className="quick-chip outline"
+                  onClick={() => handleQuickProbe('park')}
+                >
+                  Disconnect Probes
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {cameraMode === 'closeup' && !notebookOpen && closeupHoverText && (
+        <div className="closeup-hover-pill" role="status" aria-live="polite">
+          <span className="hover-icon">⚡</span>
+          <span className="hover-text">{closeupHoverText}</span>
         </div>
       )}
 
@@ -1284,7 +1407,7 @@ export default function Room3Experience() {
         </button>
       )}
 
-      {interaction && !notebookOpen && (
+      {interaction && !notebookOpen && cameraMode === 'walk' && (
         <aside className="equipment-inspector" aria-live="polite">
           <div className="inspector-badge-row">
             <span className="inspector-cat">{interaction.category}</span>

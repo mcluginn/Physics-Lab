@@ -16,6 +16,21 @@ export type Multimeter3DCallbacks = {
   onProbePlaced?: (probe: 'red' | 'black', terminal: TerminalId) => void;
   onFuseTripped?: () => void;
   playTone?: (freq: number, type: OscillatorType, duration: number, vol: number) => void;
+  onHoverTooltip?: (tooltip: string | null) => void;
+};
+
+// EIA Color Code Map
+const EIA_COLORS: Record<number, number> = {
+  0: 0x18181b, // Black
+  1: 0x78350f, // Brown
+  2: 0xdc2626, // Red
+  3: 0xea580c, // Orange
+  4: 0xeab308, // Yellow
+  5: 0x16a34a, // Green
+  6: 0x2563eb, // Blue
+  7: 0x7c3aed, // Violet
+  8: 0x4b5563, // Gray
+  9: 0xf8fafc, // White
 };
 
 export class Multimeter3D {
@@ -29,18 +44,24 @@ export class Multimeter3D {
   private lcdTexture: THREE.CanvasTexture;
   private rotaryDialMesh: THREE.Mesh | null = null;
   private redLeadJackMesh: THREE.Mesh | null = null;
+  private maJackMesh: THREE.Mesh | null = null;
 
   // Probes & Cables
   private redProbeGroup: THREE.Group;
   private blackProbeGroup: THREE.Group;
   private redCableMesh: THREE.Mesh | null = null;
   private blackCableMesh: THREE.Mesh | null = null;
-  private seriesJumperMesh: THREE.Mesh | null = null;
+  private psuRedWire: THREE.Mesh | null = null;
+  private psuBlackWire: THREE.Mesh | null = null;
+
+  // Circuit Hardware Meshes
+  private seriesJumperMesh: THREE.Group | null = null;
+  private jumperSprite: THREE.Sprite | null = null;
+  private boardBaseMesh: THREE.Mesh | null = null;
 
   // Terminal Positions (World/Local coordinates)
   public terminalPositions: Record<TerminalId, THREE.Vector3>;
   private callbacks: Multimeter3DCallbacks;
-  private activeProbe: 'red' | 'black' | null = null;
   private continuityBeepPlaying = false;
   private benchX: number;
 
@@ -48,7 +69,7 @@ export class Multimeter3D {
     this.benchX = benchX;
     this.callbacks = callbacks;
     this.root = new THREE.Group();
-    this.root.name = 'Multimeter_And_Probes_System';
+    this.root.name = 'Circuit_Trainer_And_Multimeter_System';
 
     this.dmmState = {
       mode: 'v_dc',
@@ -74,21 +95,22 @@ export class Multimeter3D {
     };
 
     // Terminal World Positions on Workbench (y = 0.94m benchtop)
+    // Board is centered at benchX - 0.05, y = 0.952, z = 0.12
     this.terminalPositions = {
-      SRC_POS: new THREE.Vector3(benchX - 0.70, 0.98, -0.15),
-      SRC_NEG: new THREE.Vector3(benchX - 0.62, 0.98, -0.15),
-      SERIES_JACK_A: new THREE.Vector3(benchX - 0.35, 0.97, 0.05),
-      SERIES_JACK_B: new THREE.Vector3(benchX - 0.22, 0.97, 0.05),
-      R1_A: new THREE.Vector3(benchX - 0.15, 0.97, 0.15),
-      R1_B: new THREE.Vector3(benchX - 0.02, 0.97, 0.15),
-      R2_A: new THREE.Vector3(benchX + 0.05, 0.97, 0.15),
-      R2_B: new THREE.Vector3(benchX + 0.18, 0.97, 0.15),
-      R3_A: new THREE.Vector3(benchX + 0.25, 0.97, 0.15),
-      R3_B: new THREE.Vector3(benchX + 0.38, 0.97, 0.15),
-      IND_A: new THREE.Vector3(benchX - 0.25, 0.97, -0.12),
-      IND_B: new THREE.Vector3(benchX - 0.12, 0.97, -0.12),
-      CAP_A: new THREE.Vector3(benchX + 0.15, 0.97, -0.12),
-      CAP_B: new THREE.Vector3(benchX + 0.28, 0.97, -0.12),
+      SRC_POS: new THREE.Vector3(benchX - 0.31, 0.97, 0.02),
+      SRC_NEG: new THREE.Vector3(benchX - 0.31, 0.97, 0.22),
+      SERIES_JACK_A: new THREE.Vector3(benchX - 0.15, 0.97, 0.22),
+      SERIES_JACK_B: new THREE.Vector3(benchX - 0.03, 0.97, 0.22),
+      R1_A: new THREE.Vector3(benchX - 0.20, 0.97, 0.06),
+      R1_B: new THREE.Vector3(benchX - 0.08, 0.97, 0.06),
+      R2_A: new THREE.Vector3(benchX - 0.06, 0.97, 0.06),
+      R2_B: new THREE.Vector3(benchX + 0.06, 0.97, 0.06),
+      R3_A: new THREE.Vector3(benchX + 0.08, 0.97, 0.06),
+      R3_B: new THREE.Vector3(benchX + 0.20, 0.97, 0.06),
+      IND_A: new THREE.Vector3(benchX - 0.16, 0.97, -0.02),
+      IND_B: new THREE.Vector3(benchX - 0.06, 0.97, -0.02),
+      CAP_A: new THREE.Vector3(benchX + 0.06, 0.97, -0.02),
+      CAP_B: new THREE.Vector3(benchX + 0.16, 0.97, -0.02),
     };
 
     // LCD Texture Canvas
@@ -103,23 +125,322 @@ export class Multimeter3D {
     this.redProbeGroup = new THREE.Group();
     this.blackProbeGroup = new THREE.Group();
 
+    this.buildCircuitTrainerBoard();
     this.buildMultimeterBody();
     this.buildTerminalSockets();
     this.buildProbes();
-    this.buildSeriesJumper();
+    this.buildPsuFeedWires();
     this.updateDisplay();
   }
 
   // -------------------------------------------------------------
-  // BUILD 3D MULTIMETER HARDWARE
+  // TEXT BADGE SPRITE GENERATOR
+  // -------------------------------------------------------------
+  private createBadgeSprite(title: string, sub?: string, accentColor = '#38bdf8'): THREE.Sprite {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 80;
+    const ctx = canvas.getContext('2d')!;
+
+    // Rounded card background
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+    const r = 16;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(6, 6, 308, 68, r) : ctx.rect(6, 6, 308, 68);
+    ctx.fill();
+
+    // Accent left bar
+    ctx.fillStyle = accentColor;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(6, 6, 12, 68, [r, 0, 0, r]) : ctx.rect(6, 6, 12, 68);
+    ctx.fill();
+
+    // Border
+    ctx.strokeStyle = accentColor;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Title text
+    ctx.font = 'bold 26px "JetBrains Mono", monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(title, 32, sub ? 14 : 26);
+
+    // Subtext if present
+    if (sub) {
+      ctx.font = 'bold 18px "JetBrains Mono", monospace';
+      ctx.fillStyle = accentColor;
+      ctx.fillText(sub, 32, 46);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(0.17, 0.042, 1);
+    return sprite;
+  }
+
+  // -------------------------------------------------------------
+  // BUILD AUTHENTIC UNIVERSITY CIRCUIT TRAINER BOARD
+  // -------------------------------------------------------------
+  private buildCircuitTrainerBoard() {
+    const boardGroup = new THREE.Group();
+    boardGroup.name = 'Circuit_Trainer_Board';
+    boardGroup.position.set(this.benchX - 0.05, 0.94 + 0.012, 0.12);
+
+    // 1. Heavy phenolic base plate
+    const baseMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.55,
+      metalness: 0.25,
+    });
+    this.boardBaseMesh = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.024, 0.38), baseMat);
+    this.boardBaseMesh.castShadow = true;
+    this.boardBaseMesh.receiveShadow = true;
+    boardGroup.add(this.boardBaseMesh);
+
+    // 2. Silkscreen Top Face Canvas Texture
+    const silkCanvas = document.createElement('canvas');
+    silkCanvas.width = 1024;
+    silkCanvas.height = 512;
+    const sCtx = silkCanvas.getContext('2d')!;
+
+    // Matte dark composite surface
+    sCtx.fillStyle = '#0f172a';
+    sCtx.fillRect(0, 0, 1024, 512);
+
+    // Border grid
+    sCtx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+    sCtx.lineWidth = 4;
+    sCtx.strokeRect(16, 16, 992, 480);
+
+    // University Header
+    sCtx.fillStyle = '#94a3b8';
+    sCtx.font = 'bold 22px monospace';
+    sCtx.fillText('UNIVERSITY PHYSICS LABORATORY · DC CIRCUIT TRAINER MOD-3', 36, 48);
+
+    // Copper Circuit Traces (Cyan lines)
+    sCtx.strokeStyle = '#38bdf8';
+    sCtx.lineWidth = 6;
+    sCtx.lineCap = 'round';
+    sCtx.lineJoin = 'round';
+
+    // Trace: +24V to Series Jumper A
+    sCtx.beginPath();
+    sCtx.moveTo(80, 150);
+    sCtx.lineTo(260, 150);
+    sCtx.lineTo(260, 360);
+    sCtx.stroke();
+
+    // Trace: Series Jumper B to R1 Node A
+    sCtx.beginPath();
+    sCtx.moveTo(420, 360);
+    sCtx.lineTo(420, 240);
+    sCtx.lineTo(240, 240);
+    sCtx.stroke();
+
+    // Trace: R1 to R2 to R3 to GND
+    sCtx.beginPath();
+    sCtx.moveTo(380, 240);
+    sCtx.lineTo(440, 240); // R1 -> R2
+    sCtx.stroke();
+
+    sCtx.beginPath();
+    sCtx.moveTo(580, 240);
+    sCtx.lineTo(640, 240); // R2 -> R3
+    sCtx.stroke();
+
+    sCtx.beginPath();
+    sCtx.moveTo(780, 240);
+    sCtx.lineTo(880, 240);
+    sCtx.lineTo(880, 420);
+    sCtx.lineTo(80, 420); // R3 -> GND
+    sCtx.stroke();
+
+    // Silkscreen Component Labels
+    sCtx.font = 'bold 20px monospace';
+    sCtx.fillStyle = '#f8fafc';
+    sCtx.fillText('+24V DC IN', 50, 120);
+    sCtx.fillText('0V GND', 50, 455);
+    sCtx.fillText('SERIES CURRENT BREAK', 260, 400);
+
+    sCtx.fillStyle = '#38bdf8';
+    sCtx.fillText('NODE A', 220, 205);
+    sCtx.fillText('NODE B', 390, 205);
+    sCtx.fillText('NODE C', 590, 205);
+    sCtx.fillText('NODE D (GND)', 750, 205);
+
+    const silkTexture = new THREE.CanvasTexture(silkCanvas);
+    silkTexture.colorSpace = THREE.SRGBColorSpace;
+    const topPlate = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.65, 0.37),
+      new THREE.MeshStandardMaterial({ map: silkTexture, roughness: 0.4 })
+    );
+    topPlate.rotation.x = -Math.PI / 2;
+    topPlate.position.y = 0.0125;
+    boardGroup.add(topPlate);
+
+    // 3. Build Realistic 3D Axial Resistors with EIA 4-Band Color Codes
+    // R1: 100 Ohms (Brown, Black, Brown, Gold)
+    const r1Mesh = this.buildAxialResistor(
+      'R1: 100 Ω',
+      100,
+      [1, 0, 1, 0], // Brown, Black, Brown, Gold
+      new THREE.Vector3(-0.09, 0.026, -0.06)
+    );
+    boardGroup.add(r1Mesh);
+
+    // R2: 220 Ohms (Red, Red, Brown, Gold)
+    const r2Mesh = this.buildAxialResistor(
+      'R2: 220 Ω',
+      220,
+      [2, 2, 1, 0], // Red, Red, Brown, Gold
+      new THREE.Vector3(0.05, 0.026, -0.06)
+    );
+    boardGroup.add(r2Mesh);
+
+    // R3: 330 Ohms (Orange, Orange, Brown, Gold)
+    const r3Mesh = this.buildAxialResistor(
+      'R3: 330 Ω',
+      330,
+      [3, 3, 1, 0], // Orange, Orange, Brown, Gold
+      new THREE.Vector3(0.19, 0.026, -0.06)
+    );
+    boardGroup.add(r3Mesh);
+
+    // 4. Build Series Jumper Plug
+    this.buildSeriesJumper(boardGroup);
+
+    this.root.add(boardGroup);
+  }
+
+  // -------------------------------------------------------------
+  // BUILD REALISTIC AXIAL RESISTOR WITH ACCURATE COLOR RINGS
+  // -------------------------------------------------------------
+  private buildAxialResistor(
+    label: string,
+    ohms: number,
+    bands: [number, number, number, number],
+    localPos: THREE.Vector3
+  ): THREE.Group {
+    const resGroup = new THREE.Group();
+    resGroup.position.copy(localPos);
+
+    // Ceramic body (tan/beige)
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0xdeb887,
+      roughness: 0.45,
+      metalness: 0.05,
+    });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.055, 20), bodyMat);
+    body.rotation.z = Math.PI / 2;
+    body.castShadow = true;
+    resGroup.add(body);
+
+    // Tapered end-caps
+    const capMat = new THREE.MeshStandardMaterial({ color: 0xdeb887, roughness: 0.45 });
+    const cap1 = new THREE.Mesh(new THREE.SphereGeometry(0.012, 16, 16), capMat);
+    cap1.position.x = -0.0275;
+    resGroup.add(cap1);
+
+    const cap2 = new THREE.Mesh(new THREE.SphereGeometry(0.012, 16, 16), capMat);
+    cap2.position.x = 0.0275;
+    resGroup.add(cap2);
+
+    // Color bands
+    const bandPositions = [-0.018, -0.007, 0.005, 0.018];
+    bands.forEach((digit, idx) => {
+      const color = idx === 3 ? 0xeab308 : EIA_COLORS[digit] || 0x18181b; // Gold for band 4
+      const bMat = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.3,
+        metalness: idx === 3 ? 0.8 : 0.1,
+      });
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0125, 0.0125, 0.004, 20), bMat);
+      band.rotation.z = Math.PI / 2;
+      band.position.x = bandPositions[idx];
+      resGroup.add(band);
+    });
+
+    // Axial lead wires (silver nickel)
+    const leadMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.95, roughness: 0.15 });
+    const leadLeft = new THREE.Mesh(new THREE.CylinderGeometry(0.0018, 0.0018, 0.035, 12), leadMat);
+    leadLeft.rotation.z = Math.PI / 2;
+    leadLeft.position.x = -0.045;
+    resGroup.add(leadLeft);
+
+    const leadRight = new THREE.Mesh(new THREE.CylinderGeometry(0.0018, 0.0018, 0.035, 12), leadMat);
+    leadRight.rotation.z = Math.PI / 2;
+    leadRight.position.x = 0.045;
+    resGroup.add(leadRight);
+
+    // Floating 3D Badge Sprite directly above resistor
+    const badge = this.createBadgeSprite(label, `${ohms} Ω ±5%`, '#38bdf8');
+    badge.position.set(0, 0.058, 0);
+    resGroup.add(badge);
+
+    return resGroup;
+  }
+
+  // -------------------------------------------------------------
+  // BUILD SERIES CURRENT JUMPER WITH FLOATING BADGE
+  // -------------------------------------------------------------
+  private buildSeriesJumper(boardGroup: THREE.Group) {
+    this.seriesJumperMesh = new THREE.Group();
+    this.seriesJumperMesh.name = 'Series_Loop_Jumper_Assembly';
+    this.seriesJumperMesh.position.set(-0.09, 0.026, 0.10);
+
+    // Green insulated jumper handle
+    const handleMat = new THREE.MeshStandardMaterial({
+      color: 0x10b981,
+      roughness: 0.35,
+      metalness: 0.1,
+    });
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.018, 0.018), handleMat);
+    handle.castShadow = true;
+    this.seriesJumperMesh.add(handle);
+
+    // Gold banana pins plunging into board
+    const pinMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.95, roughness: 0.15 });
+    const pin1 = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 0.02, 12), pinMat);
+    pin1.position.set(-0.05, -0.014, 0);
+    this.seriesJumperMesh.add(pin1);
+
+    const pin2 = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 0.02, 12), pinMat);
+    pin2.position.set(0.05, -0.014, 0);
+    this.seriesJumperMesh.add(pin2);
+
+    // Raycast Click Hitbox
+    const hitbox = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, 0.05, 0.05),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0 })
+    );
+    hitbox.name = 'Hitbox_Series_Jumper';
+    hitbox.userData.isInteractable = true;
+    hitbox.userData.action = 'toggle_jumper';
+    hitbox.userData.hoverTooltip = 'Series Loop Jumper · Click to Open/Close Circuit';
+    this.seriesJumperMesh.add(hitbox);
+    this.interactableMeshes.push(hitbox);
+
+    // Floating Badge Sprite
+    this.jumperSprite = this.createBadgeSprite('SERIES JUMPER', 'STATE: CLOSED (LOOP OK)', '#10b981');
+    this.jumperSprite.position.set(0, 0.035, 0);
+    this.seriesJumperMesh.add(this.jumperSprite);
+
+    boardGroup.add(this.seriesJumperMesh);
+  }
+
+  // -------------------------------------------------------------
+  // BUILD 3D FLUKE 87V MULTIMETER HARDWARE
   // -------------------------------------------------------------
   private buildMultimeterBody() {
     const meterGroup = new THREE.Group();
     meterGroup.name = 'DMM_Body_Group';
-    // Position on right side of workbench, tilted toward student
-    meterGroup.position.set(this.benchX + 1.15, 0.98, 0.12);
-    meterGroup.rotation.y = -Math.PI / 5;
-    meterGroup.rotation.x = 0.18; // 10 degree ergonomic tilt
+    // Positioned right beside circuit board, angled towards student
+    meterGroup.position.set(this.benchX + 0.38, 0.98, 0.14);
+    meterGroup.rotation.y = -Math.PI / 6; // 30 deg inward toward user
 
     // Yellow shock-absorbing rubber holster
     const holsterMat = new THREE.MeshStandardMaterial({
@@ -159,6 +480,7 @@ export class Multimeter3D {
     this.rotaryDialMesh.position.set(0, 0.055, 0.03);
     this.rotaryDialMesh.userData.isInteractable = true;
     this.rotaryDialMesh.userData.action = 'cycle_mode';
+    this.rotaryDialMesh.userData.hoverTooltip = 'Rotary Function Dial · Click to change measurement mode';
 
     // Dial indicator notch
     const notchMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
@@ -184,17 +506,24 @@ export class Multimeter3D {
     this.redLeadJackMesh.position.set(0.065, 0.052, 0.145);
     this.redLeadJackMesh.userData.isInteractable = true;
     this.redLeadJackMesh.userData.action = 'toggle_red_jack';
+    this.redLeadJackMesh.userData.hoverTooltip = 'V·Ω Jack (Red Lead) · Click to switch between Voltage and Current jacks';
     meterGroup.add(this.redLeadJackMesh);
     this.interactableMeshes.push(this.redLeadJackMesh);
 
     // mA / 10A Jack (Red)
-    const maJack = new THREE.Mesh(new THREE.CylinderGeometry(0.010, 0.010, 0.016, 16), jackRedMat);
-    maJack.name = 'DMM_Jack_mA';
-    maJack.position.set(-0.065, 0.052, 0.145);
-    maJack.userData.isInteractable = true;
-    maJack.userData.action = 'toggle_red_jack';
-    meterGroup.add(maJack);
-    this.interactableMeshes.push(maJack);
+    this.maJackMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.010, 0.010, 0.016, 16), jackRedMat);
+    this.maJackMesh.name = 'DMM_Jack_mA';
+    this.maJackMesh.position.set(-0.065, 0.052, 0.145);
+    this.maJackMesh.userData.isInteractable = true;
+    this.maJackMesh.userData.action = 'toggle_red_jack';
+    this.maJackMesh.userData.hoverTooltip = 'mA/10A Jack · Required for Current measurement in series';
+    meterGroup.add(this.maJackMesh);
+    this.interactableMeshes.push(this.maJackMesh);
+
+    // Floating Badge above DMM
+    const meterBadge = this.createBadgeSprite('FLUKE 87V DMM', 'TRUE-RMS MULTIMETER', '#f59e0b');
+    meterBadge.position.set(0, 0.18, 0);
+    meterGroup.add(meterBadge);
 
     this.root.add(meterGroup);
   }
@@ -208,18 +537,38 @@ export class Multimeter3D {
     const blackCollarMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.3 });
     const cyanCollarMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.3 });
 
+    const terminalTooltips: Record<TerminalId, string> = {
+      SRC_POS: 'Power Supply Positive Terminal (+24V DC)',
+      SRC_NEG: 'Power Supply Ground Return (0V GND)',
+      SERIES_JACK_A: 'Series Jumper Socket A (Insert Ammeter Here)',
+      SERIES_JACK_B: 'Series Jumper Socket B (Return Path to R1)',
+      R1_A: 'Resistor R1 Node A (Input side of 100 Ω resistor)',
+      R1_B: 'Resistor R1 Node B (Output side of 100 Ω resistor)',
+      R2_A: 'Resistor R2 Node A (Input side of 220 Ω resistor)',
+      R2_B: 'Resistor R2 Node B (Output side of 220 Ω resistor)',
+      R3_A: 'Resistor R3 Node A (Input side of 330 Ω resistor)',
+      R3_B: 'Resistor R3 Node B (GND return side of 330 Ω resistor)',
+      IND_A: 'Inductor Terminal A (150 mH)',
+      IND_B: 'Inductor Terminal B (150 mH)',
+      CAP_A: 'Capacitor Terminal A (47 μF)',
+      CAP_B: 'Capacitor Terminal B (47 μF)',
+    };
+
     Object.entries(this.terminalPositions).forEach(([tId, pos]) => {
       const socketGroup = new THREE.Group();
       socketGroup.position.copy(pos);
 
       // Collar
-      const isRed = tId.includes('POS') || tId.includes('A') || tId.includes('SRC_POS');
+      const isRed = tId.includes('POS') || tId === 'R1_A' || tId === 'R2_A' || tId === 'R3_A';
+      const isBlack = tId.includes('NEG') || tId === 'R3_B';
       const collarMat = tId.includes('SRC_POS')
         ? redCollarMat
         : tId.includes('SRC_NEG')
         ? blackCollarMat
         : isRed
         ? cyanCollarMat
+        : isBlack
+        ? blackCollarMat
         : goldMat;
 
       const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.012, 16), collarMat);
@@ -241,6 +590,7 @@ export class Multimeter3D {
       hitbox.name = `Terminal_${tId}`;
       hitbox.userData.isTerminal = true;
       hitbox.userData.terminalId = tId as TerminalId;
+      hitbox.userData.hoverTooltip = terminalTooltips[tId as TerminalId] || `Terminal ${tId} · Click to attach probe`;
       socketGroup.add(hitbox);
       this.interactableMeshes.push(hitbox);
 
@@ -273,11 +623,12 @@ export class Multimeter3D {
     redHitbox.name = 'Probe_Red';
     redHitbox.userData.isProbe = true;
     redHitbox.userData.probeColor = 'red';
+    redHitbox.userData.hoverTooltip = 'Red Test Probe (+) · Click terminal to connect';
     this.redProbeGroup.add(redHitbox);
     this.interactableMeshes.push(redHitbox);
 
-    // Initial resting position on table
-    this.redProbeGroup.position.set(this.benchX + 0.92, 0.96, 0.32);
+    // Initial resting position on table beside meter
+    this.redProbeGroup.position.set(this.benchX + 0.36, 0.96, 0.30);
     this.redProbeGroup.rotation.y = -Math.PI / 6;
     this.root.add(this.redProbeGroup);
 
@@ -300,11 +651,12 @@ export class Multimeter3D {
     blackHitbox.name = 'Probe_Black';
     blackHitbox.userData.isProbe = true;
     blackHitbox.userData.probeColor = 'black';
+    blackHitbox.userData.hoverTooltip = 'Black Test Probe (COM) · Click terminal to connect';
     this.blackProbeGroup.add(blackHitbox);
     this.interactableMeshes.push(blackHitbox);
 
-    // Initial resting position on table
-    this.blackProbeGroup.position.set(this.benchX + 1.02, 0.96, 0.32);
+    // Initial resting position on table beside meter
+    this.blackProbeGroup.position.set(this.benchX + 0.46, 0.96, 0.30);
     this.blackProbeGroup.rotation.y = -Math.PI / 6;
     this.root.add(this.blackProbeGroup);
 
@@ -312,20 +664,32 @@ export class Multimeter3D {
   }
 
   // -------------------------------------------------------------
-  // BUILD SERIES JUMPER WIRE
+  // BUILD POWER FEED HOOKUP WIRES FROM DC PSU TO TRAINER BOARD
   // -------------------------------------------------------------
-  private buildSeriesJumper() {
-    this.seriesJumperMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.005, 0.005, 0.13, 10),
-      new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.35 })
-    );
-    this.seriesJumperMesh.rotation.z = Math.PI / 2;
-    this.seriesJumperMesh.position.set(this.benchX - 0.285, 0.985, 0.05);
-    this.seriesJumperMesh.name = 'Series_Loop_Jumper';
-    this.seriesJumperMesh.userData.isInteractable = true;
-    this.seriesJumperMesh.userData.action = 'toggle_jumper';
-    this.root.add(this.seriesJumperMesh);
-    this.interactableMeshes.push(this.seriesJumperMesh);
+  private buildPsuFeedWires() {
+    const psuPos = new THREE.Vector3(this.benchX - 0.52, 1.02, 0.04);
+    const posPos = this.terminalPositions.SRC_POS;
+    const negPos = this.terminalPositions.SRC_NEG;
+
+    // Red Wire (+24V)
+    const redPsuCurve = new THREE.CatmullRomCurve3([
+      psuPos.clone().add(new THREE.Vector3(0.12, -0.04, 0.08)),
+      new THREE.Vector3(this.benchX - 0.42, 0.96, 0.03),
+      posPos.clone().add(new THREE.Vector3(0, 0.015, 0)),
+    ]);
+    const redPsuGeo = new THREE.TubeGeometry(redPsuCurve, 20, 0.004, 8, false);
+    this.psuRedWire = new THREE.Mesh(redPsuGeo, new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.4 }));
+    this.root.add(this.psuRedWire);
+
+    // Black Wire (GND)
+    const blackPsuCurve = new THREE.CatmullRomCurve3([
+      psuPos.clone().add(new THREE.Vector3(0.06, -0.04, 0.08)),
+      new THREE.Vector3(this.benchX - 0.42, 0.96, 0.14),
+      negPos.clone().add(new THREE.Vector3(0, 0.015, 0)),
+    ]);
+    const blackPsuGeo = new THREE.TubeGeometry(blackPsuCurve, 20, 0.004, 8, false);
+    this.psuBlackWire = new THREE.Mesh(blackPsuGeo, new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.4 }));
+    this.root.add(this.psuBlackWire);
   }
 
   // -------------------------------------------------------------
@@ -335,13 +699,14 @@ export class Multimeter3D {
     if (this.redCableMesh) this.root.remove(this.redCableMesh);
     if (this.blackCableMesh) this.root.remove(this.blackCableMesh);
 
-    // DMM Jack positions in world space
-    const dmmJackRedPos = new THREE.Vector3(
-      this.benchX + 1.15 + (this.dmmState.redJack === 'v_ohm' ? 0.06 : -0.06),
-      1.02,
-      0.18
+    // DMM Jack positions in world space (Meter at benchX + 0.44, 0.98, 0.14)
+    const meterOrigin = new THREE.Vector3(this.benchX + 0.44, 0.98, 0.14);
+    const dmmJackRedPos = meterOrigin.clone().add(
+      this.dmmState.redJack === 'v_ohm'
+        ? new THREE.Vector3(0.05, 0.06, 0.12)
+        : new THREE.Vector3(-0.06, 0.06, 0.12)
     );
-    const dmmJackBlackPos = new THREE.Vector3(this.benchX + 1.15 + 0.02, 1.02, 0.18);
+    const dmmJackBlackPos = meterOrigin.clone().add(new THREE.Vector3(0.01, 0.06, 0.12));
 
     // Red Cable Curve
     const redProbeTail = this.redProbeGroup.position.clone().add(new THREE.Vector3(0, 0.02, -0.05));
@@ -452,7 +817,7 @@ export class Multimeter3D {
         this.redProbeGroup.rotation.y = 0;
       } else {
         // Return to bench resting position
-        this.redProbeGroup.position.set(this.benchX + 0.92, 0.96, 0.32);
+        this.redProbeGroup.position.set(this.benchX + 0.36, 0.96, 0.30);
         this.redProbeGroup.rotation.y = -Math.PI / 6;
       }
     } else {
@@ -463,7 +828,7 @@ export class Multimeter3D {
         this.blackProbeGroup.rotation.x = -Math.PI / 4;
         this.blackProbeGroup.rotation.y = 0;
       } else {
-        this.blackProbeGroup.position.set(this.benchX + 1.02, 0.96, 0.32);
+        this.blackProbeGroup.position.set(this.benchX + 0.46, 0.96, 0.30);
         this.blackProbeGroup.rotation.y = -Math.PI / 6;
       }
     }

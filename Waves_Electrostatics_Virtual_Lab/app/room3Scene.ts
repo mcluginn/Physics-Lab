@@ -46,6 +46,7 @@ export type Room3SceneApi = {
   toggleSeriesJumper: () => void;
   resetDmmFuse: () => void;
   getDmmReading: () => MultimeterReading;
+  setCloseupFocus?: (focus: 'station' | 'board' | 'multimeter' | 'psu') => void;
 };
 
 export type EquipmentInteraction = {
@@ -67,6 +68,7 @@ export type Room3SceneCallbacks = {
   onPointerLockChange?: (locked: boolean) => void;
   onCameraModeChange?: (mode: 'walk' | 'closeup') => void;
   onDmmReadingChange?: (reading: MultimeterReading) => void;
+  onCloseupHover?: (text: string | null) => void;
 };
 
 export const ROOM3_EQUIPMENT_DESCRIPTIONS: Record<string, string> = {
@@ -1522,7 +1524,8 @@ export function createRoom3Scene(
 
   // 1. DC Power Supply / AC Function Generator Unit
   const psuGroup = new THREE.Group();
-  psuGroup.position.set(circuitsBenchX - 0.75, 0.94 + 0.16, -0.30);
+  psuGroup.position.set(circuitsBenchX - 0.52, 0.94 + 0.14, 0.04);
+  psuGroup.rotation.y = 0.28;
 
   const psuHousing = new THREE.Mesh(
     new THREE.BoxGeometry(0.58, 0.32, 0.42),
@@ -1630,7 +1633,7 @@ export function createRoom3Scene(
 
   // 2. Tektronix Dual-Channel Digital Storage Oscilloscope
   const oscGroup = new THREE.Group();
-  oscGroup.position.set(circuitsBenchX, 0.94 + 0.22, -0.40);
+  oscGroup.position.set(circuitsBenchX - 0.05, 0.94 + 0.22, -0.36);
 
   const oscHousing = new THREE.Mesh(
     new THREE.BoxGeometry(0.72, 0.44, 0.45),
@@ -1759,105 +1762,9 @@ export function createRoom3Scene(
     readout: `Waveform Trace: V(t) vs I(t) · Phase Shift φ = ${calculateCircuit(currentCircuits).phaseAngleDeg.toFixed(1)}°`,
   });
 
-  // 3. RLC Experiment Breadboard Matrix with Colored Jumper Wires
-  const breadboardGroup = new THREE.Group();
-  breadboardGroup.position.set(circuitsBenchX, 0.94 + 0.02, 0.15);
-
-  const breadboardPlate = new THREE.Mesh(
-    new THREE.BoxGeometry(0.85, 0.04, 0.48),
-    material(0xe2e8f0, { roughness: 0.7 })
-  );
-  breadboardGroup.add(breadboardPlate);
-
-  const create3DResistor = (x: number, z: number) => {
-    const resGroup = new THREE.Group();
-    resGroup.position.set(x, 0.03, z);
-    const body = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.02, 0.02, 0.12, 16),
-      material(0xdeb887, { roughness: 0.5 })
-    );
-    body.rotation.z = Math.PI / 2;
-    resGroup.add(body);
-
-    const b1 = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.015, 16), new THREE.MeshBasicMaterial({ color: 0xb45309 }));
-    b1.rotation.z = Math.PI / 2;
-    b1.position.x = -0.03;
-    resGroup.add(b1);
-    breadboardGroup.add(resGroup);
-  };
-  create3DResistor(-0.25, 0);
-  create3DResistor(0, 0);
-  create3DResistor(0.25, 0);
-
-  const inductor = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.035, 0.035, 0.14, 16),
-    material(0xb45309, { metalness: 0.85, roughness: 0.25 })
-  );
-  inductor.rotation.x = Math.PI / 2;
-  inductor.position.set(-0.25, 0.04, -0.14);
-  breadboardGroup.add(inductor);
-
-  const capacitor = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.03, 0.03, 0.1, 24),
-    material(0x0369a1, { metalness: 0.5, roughness: 0.3 })
-  );
-  capacitor.position.set(0.25, 0.06, -0.14);
-  breadboardGroup.add(capacitor);
-
-  // Insulated Hookup Jumper Wires connecting components
-  const wireMatRed = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.4 });
-  const wireMatBlue = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.4 });
-  const wireMatYellow = new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.4 });
-
-  const jumper1 = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.24, 8), wireMatRed);
-  jumper1.rotation.z = Math.PI / 2;
-  jumper1.position.set(-0.12, 0.035, 0);
-  breadboardGroup.add(jumper1);
-
-  const jumper2 = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.24, 8), wireMatBlue);
-  jumper2.rotation.z = Math.PI / 2;
-  jumper2.position.set(0.12, 0.035, 0);
-  breadboardGroup.add(jumper2);
-
-  const jumper3 = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.14, 8), wireMatYellow);
-  jumper3.rotation.x = Math.PI / 2;
-  jumper3.position.set(0, 0.035, -0.07);
-  breadboardGroup.add(jumper3);
-
-  scene.add(breadboardGroup);
-
-  // Load High-Fidelity Breadboard Circuit GLB Model
-  gltfLoader.load('/assets/room-3/electrical/breadboard_circuit.glb', (gltf) => {
-    const model = gltf.scene;
-    model.name = 'Breadboard_GLB';
-    model.scale.setScalar(1.25);
-    model.position.set(0, 0.015, 0);
-    model.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-    (breadboardPlate.material as THREE.Material).transparent = true;
-    (breadboardPlate.material as THREE.Material).opacity = 0;
-    (breadboardPlate.material as THREE.Material).depthWrite = false;
-    (breadboardPlate.material as THREE.Material).needsUpdate = true;
-    breadboardPlate.visible = true;
-    breadboardGroup.add(model);
-    registerInteractable(model, {
-      id: 'circuits-topology-selector',
-      stationId: 'circuits',
-      category: 'CIRCUIT TOPOLOGY',
-      name: 'Configurable RLC Breadboard Matrix',
-      description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-topology-selector'],
-      action: 'Change Circuit Topology (Series / Parallel / Combo)',
-      readout: `Active Topology: ${currentCircuits.topology.toUpperCase()} · Req = ${calculateCircuit(currentCircuits).req.toFixed(1)} Ω`,
-    });
-  }, undefined, (err) => console.warn('Breadboard GLB load note:', err));
-
   // 4. Rigol DDS Arbitrary Function Generator Unit
   const fgenGroup = new THREE.Group();
-  fgenGroup.position.set(circuitsBenchX + 0.85, 0.94 + 0.12, -0.32);
+  fgenGroup.position.set(circuitsBenchX + 0.72, 0.94 + 0.12, -0.32);
   gltfLoader.load('/assets/room-3/electrical/function_generator.glb', (gltf) => {
     const model = gltf.scene;
     model.name = 'FunctionGenerator_GLB';
@@ -1908,14 +1815,14 @@ export function createRoom3Scene(
     readout: 'DMM: DC VOLTAGE · AUTO-RANGE',
   });
 
-  registerInteractable(breadboardPlate, {
+  registerInteractable(multimeter3d.root, {
     id: 'circuits-topology-selector',
     stationId: 'circuits',
-    category: 'CIRCUIT TOPOLOGY',
-    name: 'Configurable RLC Breadboard Matrix',
-    description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-topology-selector'],
-    action: 'Change Circuit Topology (Series / Parallel / Combo)',
-    readout: `Active Topology: ${currentCircuits.topology.toUpperCase()} · Req = ${calculateCircuit(currentCircuits).req.toFixed(1)} Ω`,
+    category: 'CIRCUIT TRAINER',
+    name: 'University DC Circuit Trainer Board',
+    description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-topology-selector'] || 'Configurable DC series circuit board with precision axial resistors, binding posts, and series ammeter break.',
+    action: 'Inspect Circuit Trainer & Probes',
+    readout: `Active Circuit: ${currentCircuits.topology.toUpperCase()} · R_eq = ${calculateCircuit(currentCircuits).req.toFixed(1)} Ω`,
   });
 
   // -------------------------------------------------------------
@@ -2557,8 +2464,8 @@ export function createRoom3Scene(
 
   const CLOSEUP_TARGETS: Record<Room3StationId, { pos: THREE.Vector3; lookAt: THREE.Vector3 }> = {
     circuits: {
-      pos: new THREE.Vector3(STATION_X.circuits, 1.34, 0.72),
-      lookAt: new THREE.Vector3(STATION_X.circuits, 0.98, 0.08),
+      pos: new THREE.Vector3(STATION_X.circuits, 1.48, 0.94),
+      lookAt: new THREE.Vector3(STATION_X.circuits, 0.98, 0.10),
     },
     optics: {
       pos: new THREE.Vector3(STATION_X.optics, 1.34, 0.72),
@@ -2570,6 +2477,32 @@ export function createRoom3Scene(
     },
   };
 
+  const CIRCUITS_CLOSEUP_SUBVIEWS = {
+    station: {
+      pos: new THREE.Vector3(STATION_X.circuits, 1.48, 0.94),
+      lookAt: new THREE.Vector3(STATION_X.circuits, 0.98, 0.10),
+    },
+    board: {
+      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.30, 0.45),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.05, 0.96, 0.10),
+    },
+    multimeter: {
+      pos: new THREE.Vector3(STATION_X.circuits + 0.44, 1.25, 0.42),
+      lookAt: new THREE.Vector3(STATION_X.circuits + 0.44, 0.98, 0.14),
+    },
+    psu: {
+      pos: new THREE.Vector3(STATION_X.circuits - 0.52, 1.22, 0.35),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.52, 1.05, 0.04),
+    },
+  };
+
+  const setCloseupFocus = (focus: 'station' | 'board' | 'multimeter' | 'psu') => {
+    if (cameraMode !== 'closeup') return;
+    const t = CIRCUITS_CLOSEUP_SUBVIEWS[focus] || CIRCUITS_CLOSEUP_SUBVIEWS.station;
+    targetCloseupCamPos.copy(t.pos);
+    targetCloseupCamLookAt.copy(t.lookAt);
+  };
+
   const setCameraMode = (mode: 'walk' | 'closeup', targetStation: Room3StationId = activeStation) => {
     if (mode === cameraMode) return;
     cameraMode = mode;
@@ -2577,6 +2510,8 @@ export function createRoom3Scene(
       if (document.pointerLockElement) {
         document.exitPointerLock();
       }
+      currentHoveredInteraction = null;
+      callbacks.onInteractionChange?.(null);
       savedPlayerPos.copy(playerPosition);
       savedYaw = yaw;
       savedPitch = pitch;
@@ -2671,7 +2606,22 @@ export function createRoom3Scene(
     mouseScreenPos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     mouseActive = true;
 
-    if (cameraMode === 'closeup') return;
+    if (cameraMode === 'closeup') {
+      if (activeStation === 'circuits') {
+        raycaster.setFromCamera(mouseScreenPos, camera);
+        const hits = raycaster.intersectObjects(multimeter3d.interactableMeshes, true);
+        if (hits.length > 0) {
+          const hitObj = hits[0].object;
+          const tooltip = hitObj.userData.hoverTooltip || (hitObj.userData.terminalId ? `Terminal ${hitObj.userData.terminalId}` : null);
+          renderer.domElement.style.cursor = 'pointer';
+          callbacks.onCloseupHover?.(tooltip);
+        } else {
+          renderer.domElement.style.cursor = 'default';
+          callbacks.onCloseupHover?.(null);
+        }
+      }
+      return;
+    }
     if (document.pointerLockElement === renderer.domElement || document.pointerLockElement === container) {
       yaw -= e.movementX * 0.0022;
       pitch = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, pitch - e.movementY * 0.0022));
@@ -2811,8 +2761,10 @@ export function createRoom3Scene(
   // 19. Set Station Function (Framing Workbench Matching Room 02)
   // -------------------------------------------------------------
   const setStation = (station: Room3StationId) => {
+    if (station === activeStation && cameraMode === 'closeup') return;
+    const isStationChange = station !== activeStation;
     activeStation = station;
-    if (cameraMode === 'closeup') {
+    if (cameraMode === 'closeup' && isStationChange) {
       setCameraMode('walk');
     }
     playerPosition.set(STATION_X[station], eyeHeight, 4.55);
@@ -3040,5 +2992,6 @@ export function createRoom3Scene(
     toggleSeriesJumper: () => multimeter3d.toggleSeriesJumper(),
     resetDmmFuse: () => multimeter3d.resetFuse(),
     getDmmReading: () => multimeter3d.updateDisplay(),
+    setCloseupFocus,
   };
 }
