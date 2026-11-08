@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import {
   type CircuitSettings,
   type OpticsSettings,
@@ -47,6 +48,7 @@ export type Room3SceneApi = {
   resetDmmFuse: () => void;
   getDmmReading: () => MultimeterReading;
   setCloseupFocus?: (focus: 'station' | 'board' | 'multimeter' | 'psu') => void;
+  setCameraYawPitch?: (targetYaw: number, targetPitch?: number) => void;
 };
 
 export type EquipmentInteraction = {
@@ -135,11 +137,11 @@ export function createRoom3Scene(
 ): Room3SceneApi {
   // 1. Scene, Camera, Renderer Setup
   const scene = new THREE.Scene();
-  // Warm Deep Maroon / Burgundy Atmosphere matching Room 04
-  scene.background = new THREE.Color(0x180a0f);
-  scene.fog = new THREE.Fog(0x180a0f, 20, 65);
+  // Deep Celestial Cosmos Atmosphere matching Room 04
+  scene.background = new THREE.Color(0x040814);
+  scene.fog = new THREE.Fog(0x040814, 32, 115);
 
-  const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 70);
+  const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 115);
   let activeStation: Room3StationId = 'circuits';
   const eyeHeight = 1.70;
   // Student initially stands on the central inlaid brass compass rose medallion, facing north toward the workbenches
@@ -147,6 +149,7 @@ export function createRoom3Scene(
   let yaw = 0;
   let pitch = -0.06;
   const movement = { forward: false, backward: false, left: false, right: false };
+  const turning = { left: false, right: false };
   const analogMovement = new THREE.Vector2();
 
   let isPaused = false;
@@ -714,6 +717,10 @@ export function createRoom3Scene(
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.generateMipmaps = true;
+    tex.needsUpdate = true;
     return tex;
   };
 
@@ -812,6 +819,10 @@ export function createRoom3Scene(
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.generateMipmaps = true;
+    tex.needsUpdate = true;
     return tex;
   };
 
@@ -902,6 +913,10 @@ export function createRoom3Scene(
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.generateMipmaps = true;
+    tex.needsUpdate = true;
     return tex;
   };
 
@@ -1196,23 +1211,7 @@ export function createRoom3Scene(
   southChairRail.position.set(0, 1.15, frontZ - 0.19);
   scene.add(southChairRail);
 
-  // Clerestory Daylight Window Ribbon with Mahogany & Brass Framing
-  const skyCanvas = document.createElement('canvas');
-  skyCanvas.width = 1024;
-  skyCanvas.height = 256;
-  const skyContext = skyCanvas.getContext('2d');
-  if (skyContext) {
-    const skyGradient = skyContext.createLinearGradient(0, 0, 0, 256);
-    skyGradient.addColorStop(0, '#fdba74');
-    skyGradient.addColorStop(0.4, '#fed7aa');
-    skyGradient.addColorStop(0.7, '#ffedd5');
-    skyGradient.addColorStop(1, '#6b21a8');
-    skyContext.fillStyle = skyGradient;
-    skyContext.fillRect(0, 0, 1024, 256);
-  }
-  const skyTexture = new THREE.CanvasTexture(skyCanvas);
-  skyTexture.colorSpace = THREE.SRGBColorSpace;
-
+  // Clerestory Observatory Window Ribbon overlooking the Cosmic Starfield
   const ribbonWidth = 15.6;
   const ribbonHeight = 0.62;
   const ribbonCenterY = 3.82;
@@ -1226,80 +1225,382 @@ export function createRoom3Scene(
   ribbonBrassTrim.position.set(0, ribbonCenterY - ribbonHeight / 2 - 0.02, ribbonZ);
   scene.add(ribbonBrassTrim);
 
-  const ribbonSky = new THREE.Mesh(
-    new THREE.PlaneGeometry(ribbonWidth, ribbonHeight),
-    new THREE.MeshBasicMaterial({ map: skyTexture, side: THREE.DoubleSide })
-  );
-  ribbonSky.position.set(0, ribbonCenterY, ribbonZ - 0.01);
-  ribbonSky.rotation.y = Math.PI;
-  scene.add(ribbonSky);
+  // Vertical antique brass mullions across the clerestory ribbon
+  for (let rx = -ribbonWidth / 2 + 2.6; rx < ribbonWidth / 2; rx += 2.6) {
+    const rMullion = new THREE.Mesh(new THREE.BoxGeometry(0.04, ribbonHeight, 0.08), brassTrimMaterial);
+    rMullion.position.set(rx, ribbonCenterY, ribbonZ);
+    scene.add(rMullion);
+  }
 
-  const daylight = new THREE.DirectionalLight(0xffecd1, 1.25);
-  daylight.position.set(0, 4.2, frontZ - 1.0);
-  daylight.target.position.set(0, 1.0, 0);
-  scene.add(daylight);
-  scene.add(daylight.target);
+  // Cool celestial starlight illumination streaming in through the observatory windows
+  const celestialMoonlight = new THREE.DirectionalLight(0x7dd3fc, 1.85);
+  celestialMoonlight.position.set(18, 14, -10);
+  celestialMoonlight.target.position.set(0, 1.0, 0);
+  scene.add(celestialMoonlight);
+  scene.add(celestialMoonlight.target);
 
-  // 3. Side Walls (East & West at +/- 10.8m)
-  [-ROOM2_CONFIG.room.sideX, ROOM2_CONFIG.room.sideX].forEach((x) => {
-    const sideWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.wallThickness, ROOM2_CONFIG.room.height, ROOM2_CONFIG.room.depth), wallMaroonMaterial);
-    sideWall.position.set(x, ROOM2_CONFIG.room.height / 2, 0);
-    sideWall.receiveShadow = true;
-    scene.add(sideWall);
+  // 3. Side Walls (East & West at +/- 10.8m) with Grand University Observatory Windows
+  const windowZPositions = [-4.5, 0.0, 4.5];
+  const sideWallXPositions = [-ROOM2_CONFIG.room.sideX, ROOM2_CONFIG.room.sideX];
 
-    // Warm cream wall acoustic insets
-    [-4.5, 0.0, 4.5].forEach((pz) => {
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 2.2, 2.4), creamPanelMaterial);
-      panel.position.set(x > 0 ? x - 0.16 : x + 0.16, 2.5, pz);
-      scene.add(panel);
+  sideWallXPositions.forEach((x) => {
+    const isEast = x > 0;
+    const innerX = isEast ? x - 0.16 : x + 0.16;
 
-      const panelTrim = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.24, 2.44), brassTrimMaterial);
-      panelTrim.position.set(x > 0 ? x - 0.15 : x + 0.15, 2.5, pz);
-      scene.add(panelTrim);
-    });
+    // A. Solid Wall Base (below Y = 1.15m, full length 14.8m)
+    const baseWall = new THREE.Mesh(new THREE.BoxGeometry(0.32, 1.15, ROOM2_CONFIG.room.depth), wallMaroonMaterial);
+    baseWall.position.set(x, 0.575, 0);
+    baseWall.receiveShadow = true;
+    scene.add(baseWall);
 
-    const sideWainscot = new THREE.Mesh(new THREE.BoxGeometry(0.34, 1.15, ROOM2_CONFIG.room.depth), mahoganyDeskMaterial);
-    sideWainscot.position.set(x > 0 ? x - 0.18 : x + 0.18, 0.575, 0);
+    const sideWainscot = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.15, ROOM2_CONFIG.room.depth), mahoganyDeskMaterial);
+    sideWainscot.position.set(innerX, 0.575, 0);
     scene.add(sideWainscot);
 
-    const sideBaseboard = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, ROOM2_CONFIG.room.depth), mahoganyDeskMaterial);
-    sideBaseboard.position.set(x > 0 ? x - 0.20 : x + 0.20, 0.08, 0);
+    const sideBaseboard = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, ROOM2_CONFIG.room.depth), mahoganyDeskMaterial);
+    sideBaseboard.position.set(isEast ? x - 0.18 : x + 0.18, 0.08, 0);
     scene.add(sideBaseboard);
 
-    const sideChairRail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, ROOM2_CONFIG.room.depth), brassTrimMaterial);
-    sideChairRail.position.set(x > 0 ? x - 0.19 : x + 0.19, 1.15, 0);
+    const sideChairRail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, ROOM2_CONFIG.room.depth), brassTrimMaterial);
+    sideChairRail.position.set(isEast ? x - 0.18 : x + 0.18, 1.15, 0);
     scene.add(sideChairRail);
-  });
 
-  // Decorative Wall Sconces with warm amber illumination along side walls
-  const sconceZPositions = [-4.5, 0.0, 4.5];
-  [-ROOM2_CONFIG.room.sideX + 0.24, ROOM2_CONFIG.room.sideX - 0.24].forEach((sx) => {
-    sconceZPositions.forEach((sz) => {
-      const sconceGroup = new THREE.Group();
-      sconceGroup.position.set(sx, 2.4, sz);
+    // B. Solid Wall Header (above Y = 3.65m, full length 14.8m)
+    const headerWall = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.55, ROOM2_CONFIG.room.depth), wallMaroonMaterial);
+    headerWall.position.set(x, 3.925, 0);
+    headerWall.receiveShadow = true;
+    scene.add(headerWall);
 
-      const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 0.14), brassTrimMaterial);
-      sconceGroup.add(bracket);
+    const sideFrieze = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.22, ROOM2_CONFIG.room.depth), mahoganyDeskMaterial);
+    sideFrieze.position.set(innerX, 3.76, 0);
+    scene.add(sideFrieze);
 
-      const shade = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.08, 0.05, 0.20, 16),
-        new THREE.MeshStandardMaterial({
-          color: 0xffecd1,
-          emissive: 0xffb356,
-          emissiveIntensity: 1.8,
-          roughness: 0.3,
-        })
-      );
-      shade.position.set(0, 0.10, 0);
-      sconceGroup.add(shade);
+    const sideCrownMolding = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, ROOM2_CONFIG.room.depth), brassTrimMaterial);
+    sideCrownMolding.position.set(isEast ? x - 0.18 : x + 0.18, 4.17, 0);
+    scene.add(sideCrownMolding);
 
-      const sLight = new THREE.PointLight(0xffb766, 1.2, 5.5, 1.8);
-      sLight.position.set(0, 0.12, 0);
-      sconceGroup.add(sLight);
+    // C. 4 Solid Wall Piers between/around window openings (Y from 1.15 to 3.65m, height 2.50m)
+    const pierDefs = [
+      { centerZ: -6.55, length: 1.70 },
+      { centerZ: -2.25, length: 2.10, hasPilaster: true },
+      { centerZ: 2.25, length: 2.10, hasPilaster: true },
+      { centerZ: 6.55, length: 1.70 },
+    ];
 
-      scene.add(sconceGroup);
+    pierDefs.forEach((p) => {
+      const pier = new THREE.Mesh(new THREE.BoxGeometry(0.32, 2.50, p.length), wallMaroonMaterial);
+      pier.position.set(x, 2.40, p.centerZ);
+      pier.receiveShadow = true;
+      scene.add(pier);
+
+      if (p.hasPilaster) {
+        // Architectural Mahogany Pilaster Pier
+        const pilaster = new THREE.Mesh(new THREE.BoxGeometry(0.04, 2.50, 1.80), mahoganyDeskMaterial);
+        pilaster.position.set(innerX, 2.40, p.centerZ);
+        scene.add(pilaster);
+
+        // Antique Brass Side Edges on Pilaster
+        [-0.90, 0.90].forEach((ez) => {
+          const edge = new THREE.Mesh(new THREE.BoxGeometry(0.02, 2.50, 0.04), brassTrimMaterial);
+          edge.position.set(isEast ? x - 0.19 : x + 0.19, 2.40, p.centerZ + ez);
+          scene.add(edge);
+        });
+
+        // Wall Sconce on Pilaster
+        const sconceGroup = new THREE.Group();
+        sconceGroup.position.set(isEast ? x - 0.22 : x + 0.22, 2.40, p.centerZ);
+
+        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 0.14), brassTrimMaterial);
+        sconceGroup.add(bracket);
+
+        const shade = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.08, 0.05, 0.20, 16),
+          new THREE.MeshStandardMaterial({
+            color: 0xffecd1,
+            emissive: 0xffb356,
+            emissiveIntensity: 1.8,
+            roughness: 0.3,
+          })
+        );
+        shade.position.set(0, 0.10, 0);
+        sconceGroup.add(shade);
+
+        const sLight = new THREE.PointLight(0xffb766, 1.2, 5.5, 1.8);
+        sLight.position.set(0, 0.12, 0);
+        sconceGroup.add(sLight);
+
+        scene.add(sconceGroup);
+      }
+    });
+
+    // D. 3 Grand University Observatory Windows (Looking out into Deep Cosmic Space)
+    windowZPositions.forEach((pz) => {
+      // Mahogany Window Sill
+      const sill = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.08, 2.60), mahoganyDeskMaterial);
+      sill.position.set(isEast ? x - 0.06 : x + 0.06, 1.18, pz);
+      scene.add(sill);
+
+      // Antique Brass Sill Apron Trim
+      const sillTrim = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 2.62), brassTrimMaterial);
+      sillTrim.position.set(isEast ? x - 0.20 : x + 0.20, 1.15, pz);
+      scene.add(sillTrim);
+
+      // Mahogany Side Jambs
+      [-1.20, 1.20].forEach((jz) => {
+        const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.36, 2.45, 0.06), mahoganyDeskMaterial);
+        jamb.position.set(x, 2.425, pz + jz);
+        scene.add(jamb);
+      });
+
+      // Mahogany Top Header Casing
+      const topCasing = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.06, 2.40), mahoganyDeskMaterial);
+      topCasing.position.set(x, 3.65, pz);
+      scene.add(topCasing);
+
+      // Architectural Brass Window Mullions (forming 6 conservatory window panes per opening)
+      const vertMullion = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.45, 0.06), brassTrimMaterial);
+      vertMullion.position.set(x, 2.425, pz);
+      scene.add(vertMullion);
+
+      const horizTransom1 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, 2.40), brassTrimMaterial);
+      horizTransom1.position.set(x, 1.95, pz);
+      scene.add(horizTransom1);
+
+      const horizTransom2 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, 2.40), brassTrimMaterial);
+      horizTransom2.position.set(x, 2.85, pz);
+      scene.add(horizTransom2);
     });
   });
+
+  // --- Deep 3D Celestial Starfield System (Matching Room 04) ---
+  const createStarGlowTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d')!;
+    const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    grad.addColorStop(0.16, 'rgba(255, 255, 255, 0.92)');
+    grad.addColorStop(0.45, 'rgba(186, 230, 253, 0.55)');
+    grad.addColorStop(0.75, 'rgba(56, 189, 248, 0.18)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  const starCount = 1400;
+  const starGeo = new THREE.BufferGeometry();
+  const starPos = new Float32Array(starCount * 3);
+  const starColors = new Float32Array(starCount * 3);
+
+  const starPalette = [
+    new THREE.Color(0xffffff), // pure diamond white
+    new THREE.Color(0xa5f3fc), // O/B cyan blue
+    new THREE.Color(0x93c5fd), // Sirius electric sapphire
+    new THREE.Color(0x38bdf8), // radiant sky cyan
+    new THREE.Color(0xfef08a), // G-type yellow
+    new THREE.Color(0xfba571), // K/M orange-red
+    new THREE.Color(0xe9d5ff), // violet starlight
+  ];
+
+  for (let i = 0; i < starCount; i++) {
+    let sx = (Math.random() - 0.5) * 80;
+    let sy = Math.random() * 32 - 2;
+    let sz = (Math.random() - 0.5) * 80;
+    // Push away if within room boundaries
+    if (Math.abs(sx) < 13 && Math.abs(sz) < 10 && sy < 8) {
+      if (Math.random() > 0.5) {
+        sx += (sx >= 0 ? 1 : -1) * (14 + Math.random() * 15);
+      } else {
+        sz += (sz >= 0 ? 1 : -1) * (11 + Math.random() * 15);
+      }
+    }
+    starPos[i * 3 + 0] = sx;
+    starPos[i * 3 + 1] = sy;
+    starPos[i * 3 + 2] = sz;
+
+    const col = starPalette[Math.floor(Math.random() * starPalette.length)];
+    starColors[i * 3 + 0] = col.r;
+    starColors[i * 3 + 1] = col.g;
+    starColors[i * 3 + 2] = col.b;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+
+  const starGlowTex = createStarGlowTexture();
+  const starMaterial = new THREE.PointsMaterial({
+    size: 0.75,
+    map: starGlowTex,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.95,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  });
+  const starPoints = new THREE.Points(starGeo, starMaterial);
+  scene.add(starPoints);
+
+  // --- Landmark Twinkling Stars with 4-Point Diffraction Spikes ---
+  const createDiffractionSpikeTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d')!;
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    grad.addColorStop(0.18, 'rgba(255, 255, 255, 0.92)');
+    grad.addColorStop(0.5, 'rgba(186, 230, 253, 0.45)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+
+    const hGrad = ctx.createLinearGradient(0, 64, 128, 64);
+    hGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    hGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.95)');
+    hGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = hGrad;
+    ctx.fillRect(0, 62, 128, 4);
+
+    const vGrad = ctx.createLinearGradient(64, 0, 64, 128);
+    vGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    vGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.95)');
+    vGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = vGrad;
+    ctx.fillRect(62, 0, 4, 128);
+
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  interface LandmarkStar {
+    sprite: THREE.Sprite;
+    baseScale: number;
+    twinkleSpeed: number;
+    phase: number;
+  }
+  const landmarkStars: LandmarkStar[] = [];
+  const diffractionTex = createDiffractionSpikeTexture();
+
+  const landmarkDefs = [
+    // Outside East Windows (visible looking toward X = +10.8m)
+    { name: 'Sirius', x: 22.0, y: 7.2, z: -4.0, color: 0x93c5fd, scale: 2.3, speed: 3.2, phase: 0.1 },
+    { name: 'Betelgeuse', x: 24.0, y: 8.8, z: 3.5, color: 0xfba571, scale: 2.6, speed: 2.4, phase: 1.2 },
+    { name: 'Aldebaran', x: 21.0, y: 5.4, z: 6.8, color: 0xfde047, scale: 2.0, speed: 2.8, phase: 5.3 },
+    // Outside West Windows (visible looking toward X = -10.8m)
+    { name: 'Rigel', x: -22.0, y: 6.5, z: -3.5, color: 0x67e8f9, scale: 2.2, speed: 3.7, phase: 2.4 },
+    { name: 'Vega', x: -23.5, y: 8.2, z: 4.0, color: 0xa5f3fc, scale: 2.4, speed: 3.0, phase: 4.8 },
+    { name: 'Arcturus', x: -21.0, y: 5.8, z: -6.0, color: 0xfb923c, scale: 2.1, speed: 2.6, phase: 1.8 },
+    // North & South Exterior Vista
+    { name: 'Polaris', x: 0.0, y: 11.0, z: -25.0, color: 0xffffff, scale: 2.4, speed: 2.1, phase: 3.5 },
+    { name: 'Canopus', x: -5.0, y: 9.5, z: 24.0, color: 0xfef08a, scale: 2.1, speed: 3.1, phase: 4.2 },
+  ];
+
+  landmarkDefs.forEach((def) => {
+    const mat = new THREE.SpriteMaterial({
+      map: diffractionTex,
+      color: def.color,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      fog: false,
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(def.x, def.y, def.z);
+    sprite.scale.set(def.scale, def.scale, 1);
+    scene.add(sprite);
+    landmarkStars.push({
+      sprite,
+      baseScale: def.scale,
+      twinkleSpeed: def.speed,
+      phase: def.phase,
+    });
+  });
+
+  // --- 3D NASA Moon System (Visible outside East Observatory Windows) ---
+  const moonDiffuseMap = textureLoader.load('/assets/moon/Textures/Diffuse_2K.png');
+  moonDiffuseMap.colorSpace = THREE.SRGBColorSpace;
+  const moonBumpMap = textureLoader.load('/assets/moon/Textures/Bump_2K.png');
+
+  const moonMaterial = new THREE.MeshStandardMaterial({
+    map: moonDiffuseMap,
+    bumpMap: moonBumpMap,
+    bumpScale: 0.08,
+    roughness: 0.88,
+    metalness: 0.05,
+    emissive: new THREE.Color(0xf1f5f9),
+    emissiveMap: moonDiffuseMap,
+    emissiveIntensity: 0.45,
+    fog: false,
+  });
+
+  const moonGroup = new THREE.Group();
+  moonGroup.position.set(24.0, 9.5, -6.5);
+  moonGroup.rotation.y = -Math.PI / 3;
+  scene.add(moonGroup);
+
+  let moonMesh: THREE.Object3D = new THREE.Mesh(
+    new THREE.SphereGeometry(2.1, 64, 64),
+    moonMaterial
+  );
+  moonGroup.add(moonMesh);
+
+  const objLoader = new OBJLoader();
+  objLoader.load(
+    '/assets/moon/moon.obj',
+    (obj) => {
+      obj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const m = child as THREE.Mesh;
+          m.material = moonMaterial;
+          m.castShadow = false;
+          m.receiveShadow = false;
+        }
+      });
+      obj.scale.set(1.20, 1.20, 1.20);
+      moonGroup.remove(moonMesh);
+      moonMesh = obj;
+      moonGroup.add(obj);
+    },
+    undefined,
+    (err) => {
+      console.warn('Moon OBJ loaded with fallback sphere:', err);
+    }
+  );
+
+  // Soft atmospheric lunar corona halo
+  const createMoonCoronaTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d')!;
+    const grad = ctx.createRadialGradient(128, 128, 20, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(224, 242, 254, 0.45)');
+    grad.addColorStop(0.35, 'rgba(186, 230, 253, 0.22)');
+    grad.addColorStop(0.70, 'rgba(56, 189, 248, 0.06)');
+    grad.addColorStop(1, 'rgba(14, 165, 233, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  const moonCoronaMat = new THREE.SpriteMaterial({
+    map: createMoonCoronaTexture(),
+    color: 0xffffff,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+  });
+  const moonCorona = new THREE.Sprite(moonCoronaMat);
+  moonCorona.position.set(24.0, 9.5, -6.6);
+  moonCorona.scale.set(9.2, 9.2, 1.0);
+  scene.add(moonCorona);
+
+  // Dedicated Moonlight streaming through the windows into the lab
+  const moonPointLight = new THREE.PointLight(0xdbeafe, 3.2, 50, 1.1);
+  moonPointLight.position.set(23.0, 9.5, -6.0);
+  scene.add(moonPointLight);
 
   // Structural Columns in Corners with Mahogany & Brass Moldings
   [
@@ -1437,13 +1738,81 @@ export function createRoom3Scene(
   // -------------------------------------------------------------
   // 8. South Wall Master Whiteboard & Casework (Across Stations)
   // -------------------------------------------------------------
-  const whiteboardMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(6.2, 3.1),
-    new THREE.MeshStandardMaterial({ map: whiteboardTexture, roughness: 0.22, metalness: 0.05 })
+  const whiteboardGroup = new THREE.Group();
+  whiteboardGroup.position.set(0, 2.40, frontZ - 0.22);
+
+  // Solid rich mahogany backing board (elevated clearly above chair rail at Y = 1.15)
+  const wbBacking = new THREE.Mesh(
+    new THREE.BoxGeometry(6.60, 2.30, 0.04),
+    mahoganyDeskMaterial
   );
-  whiteboardMesh.position.set(0, 2.25, frontZ - 0.20);
+  whiteboardGroup.add(wbBacking);
+
+  // Outer antique brass surround bezel
+  const wbBrassBezel = new THREE.Mesh(
+    new THREE.BoxGeometry(6.68, 2.38, 0.05),
+    brassTrimMaterial
+  );
+  wbBrassBezel.position.set(0, 0, -0.005);
+  whiteboardGroup.add(wbBrassBezel);
+
+  // 4 Antique brass corner rosettes
+  [
+    [-3.28, -1.12],
+    [3.28, -1.12],
+    [-3.28, 1.12],
+    [3.28, 1.12],
+  ].forEach(([rx, ry]) => {
+    const rosette = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.07), brassTrimMaterial);
+    rosette.position.set(rx, ry, -0.01);
+    whiteboardGroup.add(rosette);
+  });
+
+  // Porcelain Whiteboard Surface (with polygonOffset & depthWrite: true to guarantee zero z-fighting)
+  const whiteboardMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(6.40, 2.14),
+    new THREE.MeshStandardMaterial({
+      map: whiteboardTexture,
+      roughness: 0.18,
+      metalness: 0.02,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      depthWrite: true,
+    })
+  );
+  whiteboardMesh.position.set(0, 0, -0.025);
   whiteboardMesh.rotation.y = Math.PI;
-  scene.add(whiteboardMesh);
+  whiteboardGroup.add(whiteboardMesh);
+
+  // Marker Tray at the bottom edge
+  const markerTray = new THREE.Mesh(new THREE.BoxGeometry(6.40, 0.04, 0.12), mahoganyDeskMaterial);
+  markerTray.position.set(0, -1.17, -0.06);
+  whiteboardGroup.add(markerTray);
+
+  const markerTrayLip = new THREE.Mesh(new THREE.BoxGeometry(6.42, 0.02, 0.02), brassTrimMaterial);
+  markerTrayLip.position.set(0, -1.15, -0.11);
+  whiteboardGroup.add(markerTrayLip);
+
+  // Felt Eraser
+  const eraserMat = new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.85 });
+  const eraser = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 0.08), eraserMat);
+  eraser.position.set(0.35, -1.13, -0.06);
+  whiteboardGroup.add(eraser);
+
+  // Dry-Erase Markers (Black, Blue, Red)
+  const markerColors = [0x0f172a, 0x2563eb, 0xdc2626];
+  markerColors.forEach((mCol, idx) => {
+    const marker = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.012, 0.012, 0.14, 12),
+      new THREE.MeshStandardMaterial({ color: mCol, roughness: 0.3 })
+    );
+    marker.rotation.z = Math.PI / 2;
+    marker.position.set(-0.45 + idx * 0.18, -1.14, -0.06);
+    whiteboardGroup.add(marker);
+  });
+
+  scene.add(whiteboardGroup);
 
   registerInteractable(whiteboardMesh, {
     id: 'physics-whiteboard',
@@ -3138,10 +3507,12 @@ export function createRoom3Scene(
       return;
     }
     const key = e.key.toLowerCase();
+    if (['arrowleft', 'q'].includes(key)) turning.left = true;
+    else if (['arrowright'].includes(key)) turning.right = true;
     if (['w', 'arrowup'].includes(key)) movement.forward = true;
     else if (['s', 'arrowdown'].includes(key)) movement.backward = true;
-    else if (['a', 'arrowleft'].includes(key)) movement.left = true;
-    else if (['d', 'arrowright'].includes(key)) movement.right = true;
+    else if (key === 'a') movement.left = true;
+    else if (key === 'd') movement.right = true;
     else if (key === 'e') interact();
     else if (key === 'v') {
       character.toggleView();
@@ -3156,10 +3527,12 @@ export function createRoom3Scene(
 
   const onKeyUp = (e: KeyboardEvent) => {
     const key = e.key.toLowerCase();
+    if (['arrowleft', 'q'].includes(key)) turning.left = false;
+    else if (['arrowright'].includes(key)) turning.right = false;
     if (['w', 'arrowup'].includes(key)) movement.forward = false;
     else if (['s', 'arrowdown'].includes(key)) movement.backward = false;
-    else if (['a', 'arrowleft'].includes(key)) movement.left = false;
-    else if (['d', 'arrowright'].includes(key)) movement.right = false;
+    else if (key === 'a') movement.left = false;
+    else if (key === 'd') movement.right = false;
   };
 
   window.addEventListener('keydown', onKeyDown);
@@ -3215,6 +3588,24 @@ export function createRoom3Scene(
     animationFrameId = requestAnimationFrame(animate);
     const delta = Math.min(0.08, clock.getDelta());
     const elapsed = clock.getElapsedTime();
+
+    // Twinkling landmark stars
+    const now = performance.now();
+    landmarkStars.forEach((star) => {
+      const twinkle = 1 + Math.sin(now * 0.001 * star.twinkleSpeed + star.phase) * 0.32;
+      star.sprite.scale.set(star.baseScale * twinkle, star.baseScale * twinkle, 1);
+    });
+
+    // Smooth keyboard turning
+    const turnSpeed = 2.4;
+    if (turning.left) {
+      yaw += turnSpeed * delta;
+      updateCamera();
+    }
+    if (turning.right) {
+      yaw -= turnSpeed * delta;
+      updateCamera();
+    }
 
     // Door opening animation
     if (isDoorOpening && leftExitLeaf && rightExitLeaf) {
@@ -3375,6 +3766,14 @@ export function createRoom3Scene(
       relativityPosterTex.dispose();
       whiteboardTexture.dispose();
       doorSignTexture.dispose();
+      starGeo.dispose();
+      starMaterial.dispose();
+      starGlowTex.dispose();
+      diffractionTex.dispose();
+      moonMaterial.dispose();
+      moonDiffuseMap.dispose();
+      moonBumpMap.dispose();
+      moonCoronaMat.dispose();
       renderer.dispose();
       if (renderer.domElement.parentElement) {
         renderer.domElement.parentElement.removeChild(renderer.domElement);
@@ -3468,5 +3867,10 @@ export function createRoom3Scene(
     resetDmmFuse: () => multimeter3d.resetFuse(),
     getDmmReading: () => multimeter3d.updateDisplay(),
     setCloseupFocus,
+    setCameraYawPitch: (targetYaw: number, targetPitch = pitch) => {
+      yaw = targetYaw;
+      pitch = targetPitch;
+      updateCamera();
+    },
   };
 }

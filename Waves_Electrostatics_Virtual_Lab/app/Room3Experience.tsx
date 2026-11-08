@@ -526,6 +526,7 @@ export default function Room3Experience() {
       });
       sceneApi.current = api;
       if (typeof window !== 'undefined') {
+        (window as unknown as { __room3Scene?: unknown }).__room3Scene = api;
         const queryStation = new URLSearchParams(window.location.search).get('station') as Room3StationId;
         if (queryStation && ['circuits', 'optics', 'relativity'].includes(queryStation)) {
           api.setStation(queryStation);
