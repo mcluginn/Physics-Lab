@@ -448,8 +448,17 @@ export type StationProgress = {
 
 export type Room3Progress = Record<Room3StationId, StationProgress>;
 
-export const STEP_NAMES = ['Explore', 'Predict', 'Set up', 'Run', 'Measure', 'Calculate', 'Analyze', 'Report'];
-export const STEP_POINTS = [10, 10, 10, 15, 15, 20, 10, 10]; // Sum = 100 pts per station
+export const STEP_NAMES = [
+  'Equipment',
+  'Assembly',
+  'Power Config',
+  'Instrument Prep',
+  'Voltage Proc',
+  'Current Proc',
+  'Data Collection',
+  'Computation',
+];
+export const STEP_POINTS = [10, 10, 10, 10, 10, 10, 20, 20]; // Sum = 100 pts per station (3 stations = 300 pts)
 
 export function createDefaultRoom3Progress(): Room3Progress {
   const station = (): StationProgress => ({
@@ -508,22 +517,22 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
     id: 'circuits',
     number: '01',
     shortName: 'DC & AC Circuits',
-    title: 'DC & AC Electrical Circuits — Voltage, Current & Impedance',
-    subtitle: 'Voltage · Current · Resistance · AC/DC Power',
+    title: 'DC & AC Electrical Circuits — Verification of Ohm\'s Law',
+    subtitle: 'Voltage · Current · Resistance · Digital Multimeter Operation',
     accent: '#38bdf8',
-    objective: 'Analyze direct current (DC) and alternating current (AC) electrical circuits to determine voltage, current, resistance, and power using fundamental laws of electricity.',
+    objective: 'Investigate direct current series circuits to verify Ohm\'s Law (V = I·R) across multiple operating voltages using a digital multimeter in parallel and series configurations.',
     sourceLesson: 'Lesson 8 — DC & AC Electrical Systems',
     placardSrc: '/assets/placards/apparatus_electricity.png',
     placardAlt: 'Cinematic laboratory test bench for DC and AC electrical circuits with oscilloscope and power supply',
     steps: [
-      { title: 'Equipment Identification & Workbench Setup', prompt: 'Identify the DC power supply, AC function generator, Fluke digital multimeter, Tektronix oscilloscope, and breadboard terminal matrix. Enter Workbench Close-Up mode [E].', target: 'Locate instruments and enter instrument close-up mode.' },
-      { title: 'Circuit Assembly & Jumper Loop Check', prompt: 'Verify the series resistor network (R1 = 100 Ω, R2 = 220 Ω, R3 = 330 Ω) and ensure the series loop jumper is closed to provide a continuous conductive path.', target: 'Verify closed loop continuity before applying power.' },
-      { title: 'Power Supply Setup & Energization', prompt: 'Configure the DC power supply to 24.0 V DC and energize the circuit. Observe the illuminated power indicator and oscilloscope standby waveform.', target: 'Apply 24.0 V DC potential across the network.' },
-      { title: 'Parallel Voltage Measurement (V⎓)', prompt: 'Set the Fluke DMM to DC Voltage (V⎓) with the red lead in the V·Ω jack. Place probes in parallel across the source (24.00 V) and across R1 (3.69 V).', target: 'Practice non-intrusive parallel potential difference measurement.' },
-      { title: 'Series Current Measurement (A⎓ Insertion)', prompt: 'De-energize circuit, open the series break (remove jumper), move red lead to mA jack, switch to A⎓, insert meter in series between loop terminals, re-energize, and measure current (36.92 mA).', target: 'Execute proper series insertion with burden shunt protection.' },
-      { title: 'De-energized Resistance Measurement (Ω)', prompt: 'Turn OFF the power supply. Switch DMM to Ohms (Ω) and red lead to V·Ω. Place probes across R1 terminals to measure isolated resistance (100.0 Ω).', target: 'Observe that resistance must only be measured on de-energized circuits.' },
-      { title: 'Parallel Network & Continuity Testing', prompt: 'Switch to Parallel topology, measure branch currents, and switch DMM to Continuity mode to verify low-resistance bus connectivity (< 30 Ω audible tone).', target: 'Analyze current division across parallel branches and verify continuity.' },
-      { title: 'Experimental Analysis & Report Certification', prompt: 'Record five experimental trials across multiple voltages and frequencies. Verify theoretical Ohm\'s Law and impedance values within ±2% and submit the certified lab notebook.', target: 'Submit multi-trial notebook and earn 100 station points.' },
+      { title: 'Equipment Identification & Workbench Setup', prompt: 'Identify the DC power supply, AC function generator, Fluke 87V digital multimeter, Tektronix oscilloscope, and breadboard terminal matrix. Enter Workbench Close-Up mode [E].', target: 'Locate instruments and enter instrument close-up mode.' },
+      { title: 'Circuit Assembly & Continuity Inspection', prompt: 'Verify the series resistor network (R1 = 100 Ω, R2 = 220 Ω, R3 = 330 Ω) and ensure the series loop jumper is closed to provide a continuous conductive path (Req = 650 Ω).', target: 'Verify closed loop continuity before applying power.' },
+      { title: 'Power Supply Setup & Energization', prompt: 'Configure the DC power supply to nominal 24.0 V DC and energize the circuit. Observe the illuminated power indicator and oscilloscope standby display.', target: 'Apply potential across the network and verify steady-state power.' },
+      { title: 'Multimeter Instrument Preparation', prompt: 'Configure the Fluke 87V digital multimeter: turn rotary selector dial to DC Voltage (V⎓) and verify test leads are connected to COM (ground) and V·Ω (high impedance) sockets.', target: 'Prepare digital multimeter for high-impedance voltage sensing.' },
+      { title: 'Voltage Measurement Procedure (Parallel)', prompt: 'Practice non-intrusive potential difference measurement by placing test probes in parallel across the power supply rails (24.00 V) and across resistor R1 (3.69 V).', target: 'Observe parallel potential difference measurement without breaking the circuit.' },
+      { title: 'Current Measurement Procedure (Series)', prompt: 'De-energize the supply, open the series break (remove jumper), move red lead to mA jack, switch dial to A⎓, connect in series across break terminals, and re-energize to measure loop current (36.92 mA).', target: 'Execute proper series ammeter insertion with burden shunt protection.' },
+      { title: 'Five-Trial Experimental Data Collection', prompt: 'Conduct five experimental measurement trials across assigned operating voltages (4 V, 8 V, 12 V, 16 V, 20 V). For each trial, measure network voltage and loop current.', target: 'Record five distinct voltage-current trials into the experimental dataset.' },
+      { title: 'Experimental Data Computation & Analysis', prompt: 'Compute experimental resistance (Ri = Vi / Ii), average resistance Rmean, sample standard deviation, percentage error vs. theoretical 650 Ω, and perform linear regression analysis (V vs. I).', target: 'Complete scientific calculations, regression analysis, and certify lab notebook.' },
     ],
     prediction: {
       question: 'In an AC series RLC circuit, what condition achieves resonance where total impedance Z is minimized?',
@@ -547,22 +556,22 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
     id: 'optics',
     number: '02',
     shortName: 'Optics Bench',
-    title: 'Geometric & Physical Optics — Refraction, Lenses & Diffraction',
-    subtitle: 'Reflection · Refraction · Lenses & Mirrors · Diffraction',
+    title: 'Geometric & Physical Optics — Thin Lens Equation Verification',
+    subtitle: 'Reflection · Refraction · Thin Lens Imaging · Diffraction',
     accent: '#10b981',
-    objective: 'Apply the principles of geometric and physical optics to analyze light behavior involving reflection, refraction, lenses, mirrors, and diffraction patterns.',
+    objective: 'Apply the Thin Lens Equation (1/f = 1/u + 1/v) to measure object and image distances, calculate experimental focal length, and analyze real inverted image formation.',
     sourceLesson: 'Lesson 9 — Geometric & Physical Optics',
     placardSrc: '/assets/placards/apparatus_optics.png',
     placardAlt: 'Cinematic precision optical bench with diode laser, refraction prism, lenses, and interference fringes',
     steps: [
       { title: 'Inspect the optical rail & components', prompt: 'Examine the 2-meter optical track, tunable laser source, semicircular prism tank, lens mounts, slit apertures, and observation screen.', target: 'Familiarize yourself with optical rail alignment and vernier cursors.' },
-      { title: 'Predict Total Internal Reflection (TIR)', prompt: 'Determine the condition required for 100% optical reflection at a dielectric boundary.', target: 'Relate Snell\'s law indices n1 and n2 to the critical angle θc.' },
-      { title: 'Calibrate laser and optical zero axis', prompt: 'Set baseline: λ = 532 nm (emerald), n1 = 1.00 (air), n2 = 1.52 (crown glass), θ1 = 30.0°, f = +20 cm, do = 40 cm.', target: 'Align the central optical axis and verify zero angular deflection.' },
-      { title: 'Project light beam & switch sub-modes', prompt: 'Switch between Refraction & TIR, Lenses & Mirrors, and Double-Slit Diffraction to observe live rays and interference patterns.', target: 'Observe wave bending, focal convergence, and sinusoidal intensity fringes.' },
-      { title: 'Record five multi-optical trials', prompt: 'Vary incident angle θ1, object distance do, or slit separation d to log five distinct optical conditions.', target: 'Capture refracted angles, image positions/magnifications, or fringe spacings.' },
-      { title: 'Verify optical law calculations', prompt: 'Calculate theoretical refracted angles θ2 = arcsin(n1/n2 sin θ1), image distances di = (1/f - 1/do)⁻¹, or fringe spacing Δy = λL/d.', target: 'Verify all five trial values within ±2% tolerance.' },
-      { title: 'Synthesize optical & wave findings', prompt: 'Document Snell\'s law validation, thin-lens image classifications (real/virtual, upright/inverted), diffraction spread, and apparatus tolerances.', target: 'Formulate observations, physical conclusions, and practical lab recommendations.' },
-      { title: 'Submit certified optics report', prompt: 'Review experimental data, ray diagrams, and interference profile, then download certified PDF and CSV reports.', target: 'Finalize station certification and unlock full optics score.' },
+      { title: 'Optical Rail Alignment & Baseline Calibration', prompt: 'Verify paraxial alignment along the central optical axis to prevent spherical aberration and alignment parallax.', target: 'Align central rail axis and calibrate vernier cursor.' },
+      { title: 'Laser Source Setup & Energization', prompt: 'Turn ON the tunable laser source at emerald calibration wavelength λ = 532 nm.', target: 'Energize monochromatic laser beam.' },
+      { title: 'Lens Preparation & Thin Lens Alignment', prompt: 'Mount the converging lens with nominal focal length f = +20.0 cm on the central rail carrier.', target: 'Prepare thin lens optical configuration.' },
+      { title: 'Real Image Formation Procedure', prompt: 'Position object lamp in front of lens and observe inverted real image formation on opposite side according to Gaussian optics (1/f = 1/u + 1/v).', target: 'Observe real inverted image projection.' },
+      { title: 'Screen Focusing & Sharpness Adjustment Procedure', prompt: 'Slide observation screen along the rail until sharp focus is achieved. Confirm image sharpness indicator is at 100%.', target: 'Verify image sharpness focusing criteria.' },
+      { title: 'Five-Trial Experimental Data Collection', prompt: 'Record five experimental trials at assigned object distances u = [30, 35, 40, 50, 60] cm. For each condition, adjust screen for sharp focus and record image distance v.', target: 'Log five sharp-focus thin lens trials.' },
+      { title: 'Experimental Data Computation & Analysis', prompt: 'Calculate experimental focal length (fi = uv/(u+v)), mean focal length fmean, standard deviation, percentage error vs. nominal 20.0 cm, and plot 1/v vs. 1/u regression.', target: 'Complete focal length calculations, regression fit, and certify optics report.' },
     ],
     prediction: {
       question: 'When light travels from an optically denser medium to a less dense medium (n₁ > n₂) at an incident angle exceeding the critical angle (θ₁ > θ_c), what optical phenomenon occurs?',
@@ -590,19 +599,19 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
     title: 'Special Relativity — Lorentz Transformation & Mass-Energy',
     subtitle: 'Time Dilation · Length Contraction · Mass-Energy Equivalence',
     accent: '#a855f7',
-    objective: 'Apply the postulates of special relativity to calculate relativistic effects, including time dilation, length contraction, and mass-energy equivalence.',
+    objective: 'Apply the postulates of special relativity to calculate relativistic effects, including time dilation, length contraction, and mass-energy equivalence across multiple velocities.',
     sourceLesson: 'Lesson 10 — Special Theory of Relativity',
     placardSrc: '/assets/placards/apparatus_relativity.png',
     placardAlt: 'Cinematic relativistic photon light-clock apparatus and linear accelerator beam pipe',
     steps: [
       { title: 'Inspect the dual-frame observation deck', prompt: 'Compare Stationary Frame S (lab clock, calorimeter) with Moving Frame S\' (relativistic spacecraft, photon light clock, contracting meter rod).', target: 'Observe how inertial reference frames compare according to Einstein\'s postulates.' },
-      { title: 'Predict relativistic clock rates', prompt: 'Choose how moving clock ticks compare to stationary laboratory clocks as velocity approaches c.', target: 'Apply the invariance of the speed of light to the geometric photon clock.' },
-      { title: 'Calibrate relativistic baseline state', prompt: 'Initialize baseline: β = 0.600c (where γ = 1.250), proper time Δt₀ = 10.0 s, proper length L₀ = 20.0 m, Alpha Particle (⁴He²⁺) preset.', target: 'Verify resting time synchronization and proper length calibration.' },
-      { title: 'Accelerate frame and trigger photon clock', prompt: 'Increase velocity ratio β toward 0.999c, watching the animated photon bounce along its hypotenuse path and the meter rod contract.', target: 'Visually witness physical length contraction strictly along the axis of motion.' },
-      { title: 'Record five relativistic trials', prompt: 'Vary velocity ratio β (e.g. 0.00c, 0.60c, 0.80c, 0.866c, 0.99c) or particle rest masses to record five complete datasets.', target: 'Record Lorentz factor γ, dilated time Δt, contracted length L, and relativistic kinetic energy K.' },
-      { title: 'Verify theoretical Lorentz calculations', prompt: 'Calculate Lorentz factor γ = 1/√(1 - β²), dilated time Δt = γ Δt₀, and total relativistic energy E = γ m₀ c² for all five trials.', target: 'Verify calculations within ±2% relative tolerance.' },
-      { title: 'Synthesize relativistic findings & muon test', prompt: 'Analyze how high-velocity cosmic-ray muons reach sea level (lifetime dilation), discuss mass-energy equivalence, and document cosmic implications.', target: 'Complete observations, theoretical deduction, and experimental notes.' },
-      { title: 'Submit certified relativity report', prompt: 'Review Lorentz transformation data, energy-momentum metrics, and download certified laboratory PDF and CSV files.', target: 'Certify all 3 stations and celebrate 300/300 points mastery.' },
+      { title: 'Reference Frame Calibration & Invariance Inspection', prompt: 'Compare Stationary Laboratory Frame S with Moving Particle Frame S\'. Verify the invariance of the speed of light c across both frames.', target: 'Calibrate reference frames and proper length L0 = 20.0 m.' },
+      { title: 'Particle Accelerator Power & Baseline Calibration', prompt: 'Turn ON particle accelerator in baseline rest state (β = 0.00c). Confirm proper time Δt0 = 10.0 s, rest energy E0 = m0c², and K = 0 MeV.', target: 'Initialize resting frame baseline parameters.' },
+      { title: 'Relativistic Light Clock Preparation', prompt: 'Inspect the photon light clock mechanism. Observe the diagonal photon bounce path geometry as observed from the stationary lab frame.', target: 'Understand light clock geometric time dilation mechanism.' },
+      { title: 'Time Dilation Measurement Procedure', prompt: 'Accelerate particle to relativistic velocity and measure dilated time interval Δt = γ Δt0 using the laboratory detector clock.', target: 'Observe time dilation effect as velocity increases.' },
+      { title: 'Length Contraction Measurement Procedure', prompt: 'Observe physical contraction of the flight tunnel and meter rod strictly along the axis of motion according to L = L0 / γ.', target: 'Measure longitudinal relativistic length contraction.' },
+      { title: 'Five-Trial Simulation Data Collection', prompt: 'Record five experimental simulation trials across assigned velocity ratios β = [0.10, 0.20, 0.30, 0.40, 0.50]c. Record Lorentz factor γ, dilated time Δt, and contracted length L.', target: 'Record five relativistic trials into simulation dataset.' },
+      { title: 'Experimental Data Computation & Analysis', prompt: 'Compute experimental Lorentz factor, dilated time, sample standard deviation, plot γ vs. β relativistic curve, and certify special relativity report.', target: 'Complete Lorentz calculations, curve fit, and certify relativity report.' },
     ],
     prediction: {
       question: 'As an inertial frame moves at relativistic velocity v relative to an observer, how does the elapsed time interval Δt measured by the stationary observer compare to the proper time interval Δt₀ measured in the moving frame?',
@@ -631,35 +640,68 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
 export const TRIAL_COLUMNS: Record<Room3StationId, Array<{ key: string; label: string }>> = {
   circuits: [
     { key: 'trial', label: '#' },
-    { key: 'mode', label: 'Mode' },
-    { key: 'topology', label: 'Topology' },
     { key: 'vs', label: 'Vs (V)' },
-    { key: 'freq', label: 'f (Hz)' },
-    { key: 'impedance', label: 'Z (Ω)' },
-    { key: 'current', label: 'I (A)' },
-    { key: 'powerFactor', label: 'cos φ' },
-    { key: 'realPower', label: 'P (W)' },
+    { key: 'measuredV', label: 'Measured V (V)' },
+    { key: 'measuredI_mA', label: 'Current (mA)' },
+    { key: 'measuredI_A', label: 'Current (A)' },
+    { key: 'resistance', label: 'R_exp (Ω)' },
+    { key: 'expectedR', label: 'R_theor (Ω)' },
+    { key: 'percentError', label: '% Error' },
   ],
   optics: [
     { key: 'trial', label: '#' },
-    { key: 'subMode', label: 'Sub-Mode' },
-    { key: 'wavelength', label: 'λ (nm)' },
-    { key: 'paramA', label: 'θ₁ (°) / dₒ (cm) / d (mm)' },
-    { key: 'paramB', label: 'n₂(λ) / f (cm) / a (mm)' },
-    { key: 'theoretical', label: 'Theory (θ₂ / dᵢ / Δy)' },
-    { key: 'measured', label: 'Measured' },
-    { key: 'percentError', label: '% error' },
-    { key: 'classification', label: 'Result Classification' },
+    { key: 'u', label: 'Object u (cm)' },
+    { key: 'v', label: 'Image v (cm)' },
+    { key: 'invU', label: '1/u (cm⁻¹)' },
+    { key: 'invV', label: '1/v (cm⁻¹)' },
+    { key: 'f_exp', label: 'f_exp (cm)' },
+    { key: 'f_nom', label: 'f_nom (cm)' },
+    { key: 'percentError', label: '% Error' },
   ],
   relativity: [
     { key: 'trial', label: '#' },
     { key: 'beta', label: 'β (v/c)' },
     { key: 'speed', label: 'Speed (m/s)' },
-    { key: 'gamma', label: 'γ (Lorentz)' },
+    { key: 'gamma', label: 'γ (Theory)' },
+    { key: 'measuredGamma', label: 'γ (Detector)' },
     { key: 'dilatedTime', label: 'Δt (s)' },
     { key: 'contractedLength', label: 'L (m)' },
     { key: 'kineticEnergy', label: 'K (MeV)' },
-    { key: 'totalEnergy', label: 'E_total (MeV)' },
+  ],
+};
+
+export type AssignedTrialCondition = {
+  trialIndex: number;
+  label: string;
+  targetParam: string;
+  targetValue: number;
+  unit: string;
+  expectedSecondary: number;
+  secondaryUnit: string;
+  instruction: string;
+};
+
+export const ROOM3_ASSIGNED_TRIALS: Record<Room3StationId, AssignedTrialCondition[]> = {
+  circuits: [
+    { trialIndex: 0, label: 'Trial 1', targetParam: 'Vs', targetValue: 4.0, unit: 'V', expectedSecondary: 6.15, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 4.0 V. Measure voltage across network in parallel, then insert ammeter in series to measure current.' },
+    { trialIndex: 1, label: 'Trial 2', targetParam: 'Vs', targetValue: 8.0, unit: 'V', expectedSecondary: 12.31, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 8.0 V. Measure voltage across network in parallel, then insert ammeter in series to measure current.' },
+    { trialIndex: 2, label: 'Trial 3', targetParam: 'Vs', targetValue: 12.0, unit: 'V', expectedSecondary: 18.46, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 12.0 V. Measure voltage across network in parallel, then insert ammeter in series to measure current.' },
+    { trialIndex: 3, label: 'Trial 4', targetParam: 'Vs', targetValue: 16.0, unit: 'V', expectedSecondary: 24.62, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 16.0 V. Measure voltage across network in parallel, then insert ammeter in series to measure current.' },
+    { trialIndex: 4, label: 'Trial 5', targetParam: 'Vs', targetValue: 20.0, unit: 'V', expectedSecondary: 30.77, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 20.0 V. Measure voltage across network in parallel, then insert ammeter in series to measure current.' },
+  ],
+  optics: [
+    { trialIndex: 0, label: 'Trial 1', targetParam: 'u', targetValue: 30.0, unit: 'cm', expectedSecondary: 60.00, secondaryUnit: 'cm', instruction: 'Position object lamp at u = 30.0 cm. Slide observation screen until image achieves sharp focus (v ≈ 60.0 cm).' },
+    { trialIndex: 1, label: 'Trial 2', targetParam: 'u', targetValue: 35.0, unit: 'cm', expectedSecondary: 46.67, secondaryUnit: 'cm', instruction: 'Position object lamp at u = 35.0 cm. Slide observation screen until image achieves sharp focus (v ≈ 46.7 cm).' },
+    { trialIndex: 2, label: 'Trial 3', targetParam: 'u', targetValue: 40.0, unit: 'cm', expectedSecondary: 40.00, secondaryUnit: 'cm', instruction: 'Position object lamp at u = 40.0 cm (2f). Slide observation screen until image achieves sharp focus (v = 40.0 cm, M = -1.0×).' },
+    { trialIndex: 3, label: 'Trial 4', targetParam: 'u', targetValue: 50.0, unit: 'cm', expectedSecondary: 33.33, secondaryUnit: 'cm', instruction: 'Position object lamp at u = 50.0 cm. Slide observation screen until image achieves sharp focus (v ≈ 33.3 cm).' },
+    { trialIndex: 4, label: 'Trial 5', targetParam: 'u', targetValue: 60.0, unit: 'cm', expectedSecondary: 30.00, secondaryUnit: 'cm', instruction: 'Position object lamp at u = 60.0 cm (3f). Slide observation screen until image achieves sharp focus (v = 30.0 cm).' },
+  ],
+  relativity: [
+    { trialIndex: 0, label: 'Trial 1', targetParam: 'β', targetValue: 0.10, unit: 'c', expectedSecondary: 1.005, secondaryUnit: 'γ', instruction: 'Accelerate particle to β = 0.100c. Measure Lorentz factor γ, dilated time Δt, and contracted length L.' },
+    { trialIndex: 1, label: 'Trial 2', targetParam: 'β', targetValue: 0.20, unit: 'c', expectedSecondary: 1.021, secondaryUnit: 'γ', instruction: 'Accelerate particle to β = 0.200c. Measure Lorentz factor γ, dilated time Δt, and contracted length L.' },
+    { trialIndex: 2, label: 'Trial 3', targetParam: 'β', targetValue: 0.30, unit: 'c', expectedSecondary: 1.048, secondaryUnit: 'γ', instruction: 'Accelerate particle to β = 0.300c. Measure Lorentz factor γ, dilated time Δt, and contracted length L.' },
+    { trialIndex: 3, label: 'Trial 4', targetParam: 'β', targetValue: 0.40, unit: 'c', expectedSecondary: 1.091, secondaryUnit: 'γ', instruction: 'Accelerate particle to β = 0.400c. Measure Lorentz factor γ, dilated time Δt, and contracted length L.' },
+    { trialIndex: 4, label: 'Trial 5', targetParam: 'β', targetValue: 0.50, unit: 'c', expectedSecondary: 1.155, secondaryUnit: 'γ', instruction: 'Accelerate particle to β = 0.500c. Measure Lorentz factor γ, dilated time Δt, and contracted length L.' },
   ],
 };
 
@@ -800,6 +842,60 @@ export function calculateTrialStats(values: number[]) {
   const stdDev = Math.sqrt(variance);
   const sem = stdDev / Math.sqrt(values.length);
   return { mean, stdDev, sem };
+}
+
+export function computeCircuitOhmMetrics(trials: TrialRecord[]) {
+  const valid = trials.filter((t) => Number(t.measuredI_A ?? t.current ?? 0) > 0);
+  const resistances = valid.map((t) => {
+    if (typeof t.resistance === 'number') return Number(t.resistance);
+    const v = Number(t.measuredV ?? t.vs ?? 0);
+    const i = Number(t.measuredI_A ?? t.current ?? 0.001);
+    return v / i;
+  });
+  const stats = calculateTrialStats(resistances);
+  const theoreticalReq = 650.0;
+  const percentError = stats.mean > 0 ? Math.abs((stats.mean - theoreticalReq) / theoreticalReq) * 100 : 0;
+  return {
+    resistances,
+    mean: stats.mean,
+    stdDev: stats.stdDev,
+    sem: stats.sem,
+    theoreticalReq,
+    percentError,
+  };
+}
+
+export function computeOpticsLensMetrics(trials: TrialRecord[]) {
+  const valid = trials.filter((t) => Number(t.u ?? t.paramA ?? 0) > 0 && Number(t.v ?? t.measured ?? 0) > 0);
+  const focalLengths = valid.map((t) => {
+    if (typeof t.f_exp === 'number') return Number(t.f_exp);
+    const u = Number(t.u ?? t.paramA ?? 30);
+    const v = Number(t.v ?? t.measured ?? 60);
+    return (u * v) / (u + v);
+  });
+  const stats = calculateTrialStats(focalLengths);
+  const nominalF = 20.0;
+  const percentError = stats.mean > 0 ? Math.abs((stats.mean - nominalF) / nominalF) * 100 : 0;
+  return {
+    focalLengths,
+    mean: stats.mean,
+    stdDev: stats.stdDev,
+    sem: stats.sem,
+    nominalF,
+    percentError,
+  };
+}
+
+export function computeRelativityMetrics(trials: TrialRecord[]) {
+  const valid = trials.filter((t) => typeof t.beta !== 'undefined');
+  const gammas = valid.map((t) => Number(t.measuredGamma ?? t.gamma ?? 1));
+  const stats = calculateTrialStats(gammas);
+  return {
+    gammas,
+    mean: stats.mean,
+    stdDev: stats.stdDev,
+    sem: stats.sem,
+  };
 }
 
 export function generateRoom3CSV(stationId: Room3StationId, trials: TrialRecord[]): string {

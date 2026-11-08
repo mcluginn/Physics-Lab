@@ -25,6 +25,11 @@ export type RegressionResult = {
   xAxisLabel: string;
   yAxisLabel: string;
   title: string;
+  sumX: number;
+  sumY: number;
+  sumXY: number;
+  sumX2: number;
+  n: number;
 };
 
 export function computeRoom3Regression(stationId: Room3StationId, trials: TrialRecord[]): RegressionResult | null {
@@ -38,40 +43,47 @@ export function computeRoom3Regression(stationId: Room3StationId, trials: TrialR
 
   if (stationId === 'circuits') {
     xAxisLabel = 'Total Current I (A)';
-    yAxisLabel = 'Source Voltage Vs (V)';
-    title = "Ohm's Law & Impedance: Vs vs. Current (Slope = Z)";
+    yAxisLabel = 'Measured Voltage V (V)';
+    title = "Ohm's Law: Voltage vs. Current (Slope = Req = 650 Ω)";
 
     trials.forEach((trial, index) => {
       const trialNum = Number(trial.trial ?? index + 1);
-      const current = Number(trial.current ?? 0.1);
-      const vs = Number(trial.vs ?? 24.0);
+      const current = Number(
+        trial.measuredI_A ??
+        (typeof trial.measuredI_mA !== 'undefined' ? Number(trial.measuredI_mA) / 1000 : null) ??
+        trial.current ??
+        0.006
+      );
+      const vs = Number(trial.measuredV ?? trial.vs ?? 4.0);
       points.push({
         trial: trialNum,
         x: current,
         y: vs,
-        xLabel: `${current.toFixed(3)} A`,
-        yLabel: `${vs.toFixed(1)} V`,
+        xLabel: `${(current * 1000).toFixed(2)} mA (${current.toFixed(5)} A)`,
+        yLabel: `${vs.toFixed(2)} V`,
         raw: trial,
       });
     });
   } else if (stationId === 'optics') {
-    // Detect subMode from first trial
-    const subMode = String(trials[0]?.subMode ?? 'refraction');
-    if (subMode === 'imaging') {
-      xAxisLabel = 'Inverse Object Distance 1/do (cm⁻¹)';
-      yAxisLabel = 'Inverse Image Distance 1/di (cm⁻¹)';
-      title = 'Gaussian Thin-Lens Equation: 1/di vs. 1/do';
+    // Thin Lens Equation or Refraction/Diffraction
+    const subMode = String(trials[0]?.subMode ?? (trials[0]?.u ? 'imaging' : 'refraction'));
+    if (subMode === 'imaging' || typeof trials[0]?.u !== 'undefined') {
+      xAxisLabel = 'Inverse Object Distance 1/u (cm⁻¹)';
+      yAxisLabel = 'Inverse Image Distance 1/v (cm⁻¹)';
+      title = 'Thin Lens Equation: 1/v vs. 1/u (Intercept = 1/f = 0.050 cm⁻¹)';
 
       trials.forEach((trial, index) => {
         const trialNum = Number(trial.trial ?? index + 1);
-        const x = Number(trial.xVal ?? (1 / Math.max(0.1, Number(trial.paramA ?? 40))));
-        const y = Number(trial.yVal ?? (1 / Math.max(0.1, Number(trial.measured ?? 40))));
+        const u = Number(trial.u ?? trial.paramA ?? 40);
+        const v = Number(trial.v ?? trial.measured ?? 40);
+        const x = Number(trial.invU ?? (1 / Math.max(0.1, u)));
+        const y = Number(trial.invV ?? (1 / Math.max(0.1, v)));
         points.push({
           trial: trialNum,
           x,
           y,
-          xLabel: `${x.toFixed(4)} cm⁻¹`,
-          yLabel: `${y.toFixed(4)} cm⁻¹`,
+          xLabel: `${x.toFixed(4)} cm⁻¹ (u=${u.toFixed(1)} cm)`,
+          yLabel: `${y.toFixed(4)} cm⁻¹ (v=${v.toFixed(1)} cm)`,
           raw: trial,
         });
       });
@@ -94,7 +106,6 @@ export function computeRoom3Regression(stationId: Room3StationId, trials: TrialR
         });
       });
     } else {
-      // Default refraction: sin(theta1) vs sin(theta2)
       xAxisLabel = 'sin θ₁ (Incident Sine)';
       yAxisLabel = 'sin θ₂ (Refracted Sine)';
       title = "Snell's Law: sin θ₂ vs. sin θ₁ (Slope = n₁/n₂)";
@@ -119,11 +130,11 @@ export function computeRoom3Regression(stationId: Room3StationId, trials: TrialR
     // Relativity: gamma vs dilatedTime
     xAxisLabel = 'Lorentz Factor γ (dimensionless)';
     yAxisLabel = 'Dilated Time Δt (s)';
-    title = 'Relativistic Time Dilation: Δt vs. γ (Slope = Δt₀)';
+    title = 'Relativistic Time Dilation: Δt vs. γ (Slope = Δt₀ = 10.0 s)';
 
     trials.forEach((trial, index) => {
       const trialNum = Number(trial.trial ?? index + 1);
-      const gamma = Number(trial.gamma ?? 1.25);
+      const gamma = Number(trial.measuredGamma ?? trial.gamma ?? 1.25);
       const dilated = Number(trial.dilatedTime ?? 12.5);
       points.push({
         trial: trialNum,
@@ -205,6 +216,11 @@ export function computeRoom3Regression(stationId: Room3StationId, trials: TrialR
     xAxisLabel,
     yAxisLabel,
     title,
+    sumX,
+    sumY,
+    sumXY,
+    sumX2,
+    n,
   };
 }
 

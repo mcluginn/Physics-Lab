@@ -1873,9 +1873,9 @@ export function createRoom3Scene(
     id: 'circuits-topology-selector',
     stationId: 'circuits',
     category: 'CIRCUIT TRAINER',
-    name: 'University DC Circuit Trainer Board',
-    description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-topology-selector'] || 'Configurable DC series circuit board with precision axial resistors, binding posts, and series ammeter break.',
-    action: 'Inspect Circuit Trainer & Probes',
+    name: 'Solderless Breadboard Circuit Trainer',
+    description: '830-tie-point solderless breadboard with precision axial resistors, jumper wires, and series ammeter break.',
+    action: 'Inspect Breadboard & Probes',
     readout: `Active Circuit: ${currentCircuits.topology.toUpperCase()} · R_eq = ${calculateCircuit(currentCircuits).req.toFixed(1)} Ω`,
   });
 
@@ -2518,8 +2518,8 @@ export function createRoom3Scene(
 
   const CLOSEUP_TARGETS: Record<Room3StationId, { pos: THREE.Vector3; lookAt: THREE.Vector3 }> = {
     circuits: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.42, 0.88),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.05, 1.02, -0.15),
+      pos: new THREE.Vector3(STATION_X.circuits + 0.04, 1.38, 0.78),
+      lookAt: new THREE.Vector3(STATION_X.circuits + 0.04, 0.98, 0.04),
     },
     optics: {
       pos: new THREE.Vector3(STATION_X.optics, 1.34, 0.72),
@@ -2533,20 +2533,20 @@ export function createRoom3Scene(
 
   const CIRCUITS_CLOSEUP_SUBVIEWS = {
     station: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.42, 0.88),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.05, 1.02, -0.15),
+      pos: new THREE.Vector3(STATION_X.circuits + 0.04, 1.38, 0.78),
+      lookAt: new THREE.Vector3(STATION_X.circuits + 0.04, 0.98, 0.04),
     },
     board: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.10, 1.26, 0.42),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.10, 0.96, 0.10),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.08, 1.22, 0.38),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.08, 0.96, 0.10),
     },
     multimeter: {
-      pos: new THREE.Vector3(STATION_X.circuits + 0.45, 1.24, 0.42),
-      lookAt: new THREE.Vector3(STATION_X.circuits + 0.45, 0.97, 0.14),
+      pos: new THREE.Vector3(STATION_X.circuits + 0.30, 1.18, 0.36),
+      lookAt: new THREE.Vector3(STATION_X.circuits + 0.30, 0.96, 0.10),
     },
     psu: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.65, 1.22, -0.08),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.65, 1.04, -0.48),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.65, 1.18, -0.10),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.65, 1.02, -0.42),
     },
   };
 

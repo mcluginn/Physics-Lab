@@ -14,6 +14,7 @@ import {
   INITIAL_OPTICS,
   INITIAL_RELATIVITY,
   MASS_PRESETS,
+  ROOM3_ASSIGNED_TRIALS,
   ROOM3_GUIDE_QUESTIONS,
   ROOM3_STATIONS,
   STEP_NAMES,
@@ -22,6 +23,10 @@ import {
   calculateCircuit,
   calculateOptics,
   calculateRelativity,
+  calculateTrialStats,
+  computeCircuitOhmMetrics,
+  computeOpticsLensMetrics,
+  computeRelativityMetrics,
   createDefaultRoom3Progress,
   generateRoom3CSV,
   isStationFinished,
@@ -276,11 +281,15 @@ export default function Room3Experience() {
   const experienceMode: ExperienceMode = 'guided';
   const [guidedStepIndex, setGuidedStepIndex] = useState(0);
   const [showGuidedHint, setShowGuidedHint] = useState(false);
+  const [retakeTrialIndex, setRetakeTrialIndex] = useState<number | null>(null);
+  const [activeTrialTab, setActiveTrialTab] = useState<number>(0);
 
   // Reset guided step on station change
   useEffect(() => {
     setGuidedStepIndex(0);
     setShowGuidedHint(false);
+    setRetakeTrialIndex(null);
+    setActiveTrialTab(0);
   }, [stationId]);
 
   // Station Definitions & Telemetry Derived States
@@ -289,6 +298,11 @@ export default function Room3Experience() {
   const circuitResult = useMemo(() => calculateCircuit(circuits), [circuits]);
   const opticsResult = useMemo(() => calculateOptics(optics), [optics]);
   const relativityResult = useMemo(() => calculateRelativity(relativity), [relativity]);
+
+  const circuitMetrics = useMemo(() => computeCircuitOhmMetrics(stationProgress.trials), [stationProgress.trials]);
+  const opticsMetrics = useMemo(() => computeOpticsLensMetrics(stationProgress.trials), [stationProgress.trials]);
+  const relativityMetrics = useMemo(() => computeRelativityMetrics(stationProgress.trials), [stationProgress.trials]);
+  const regression = useMemo(() => computeRoom3Regression(stationId, stationProgress.trials), [stationId, stationProgress.trials]);
 
   // Derived Curriculum & Guided Validation
   const currentCurriculum = STATION_CURRICULUM[stationId];
@@ -739,128 +753,185 @@ export default function Room3Experience() {
     });
   };
 
-  // Trial Logging Helper with Duplicate Rejection & Experimental Noise
-  const recordCurrentTrial = () => {
-    if (stationProgress.trials.length >= TOTAL_TRIALS) return;
-
-    // Check duplicate against existing trials
-    let isDuplicate = false;
+  // Helper to set assigned trial condition
+  const handleSetAssignedCondition = (targetVal: number) => {
+    playTone(520, 'sine', 0.08, 0.15);
     if (stationId === 'circuits') {
-      isDuplicate = stationProgress.trials.some(
-        (t) =>
-          Math.abs(Number(t.vs) - circuits.vs) < 1.0 &&
-          t.mode === circuits.mode.toUpperCase() &&
-          t.topology === circuits.topology &&
-          Math.abs(Number(t.freq) - (circuits.mode === 'ac' ? circuits.freq : 0)) < 1.0
-      );
+      setCircuits((prev) => ({ ...prev, vs: targetVal, powerOn: true, mode: 'dc', topology: 'series' }));
     } else if (stationId === 'optics') {
-      isDuplicate = stationProgress.trials.some((t) => {
-        if (t.subMode !== optics.subMode || t.wavelength !== optics.wavelength) return false;
-        if (optics.subMode === 'refraction') {
-          return Math.abs(Number(t.paramA) - optics.theta1) < 2.0 && Math.abs(Number(t.paramB) - opticsResult.effectiveN2) < 0.02;
-        } else if (optics.subMode === 'imaging') {
-          return Math.abs(Number(t.paramA) - optics.objectDistance) < 5.0 && Math.abs(Number(t.paramB) - optics.focalLength) < 1.0;
-        } else {
-          return Math.abs(Number(t.paramA) - optics.slitSeparation) < 0.05 && Math.abs(Number(t.paramB) - optics.screenDistance) < 0.1;
-        }
-      });
+      setOptics((prev) => ({ ...prev, objectDistance: targetVal, subMode: 'imaging', focalLength: 20.0, powerOn: true }));
     } else {
-      isDuplicate = stationProgress.trials.some(
-        (t) => Math.abs(Number(t.beta) - relativity.beta) < 0.05 && t.preset === relativity.massPreset
-      );
+      setRelativity((prev) => ({ ...prev, beta: targetVal, powerOn: true, massPreset: 'alpha' }));
     }
+  };
 
-    if (isDuplicate) {
-      setMeasurementWarning('Duplicate Measurement Rejected: Vary your input parameter (ΔVs ≥ 1 V, Δθ₁ ≥ 2°, Δdo ≥ 5 cm, or Δβ ≥ 0.05c) to record a distinct experimental data point.');
-      playTone(220, 'sawtooth', 0.2, 0.25);
-      return;
+  // Reset experiment trials
+  const handleResetTrials = () => {
+    setProgress((prev) => {
+      const st = { ...prev[stationId] };
+      const completed = [...st.completed];
+      completed[6] = false;
+      completed[7] = false;
+      return {
+        ...prev,
+        [stationId]: {
+          ...st,
+          trials: [],
+          completed,
+          calculations: ['', '', '', '', ''],
+        },
+      };
+    });
+    setRetakeTrialIndex(null);
+    setActiveTrialTab(0);
+    setMeasurementWarning('');
+    playTone(300, 'sawtooth', 0.1, 0.15);
+  };
+
+  // Trial Logging Helper with Assigned Operating Points, Duplicate Check & Explicit Replacement
+  const recordCurrentTrial = (explicitIndex?: number) => {
+    const isReplacing = typeof explicitIndex === 'number' || retakeTrialIndex !== null;
+    const targetIndex = isReplacing
+      ? (typeof explicitIndex === 'number' ? explicitIndex : (retakeTrialIndex ?? 0))
+      : stationProgress.trials.length;
+
+    if (targetIndex >= TOTAL_TRIALS) return;
+
+    const assigned = ROOM3_ASSIGNED_TRIALS[stationId][targetIndex];
+    const trialNum = targetIndex + 1;
+
+    let newTrial: TrialRecord;
+
+    if (stationId === 'circuits') {
+      // Check operating voltage match (assigned trial)
+      if (Math.abs(circuits.vs - assigned.targetValue) > 1.5) {
+        setMeasurementWarning(
+          `Voltage Mismatch for Trial ${trialNum}: Assigned operating point is Vs = ${assigned.targetValue.toFixed(1)} V, but power supply is set to ${circuits.vs.toFixed(1)} V. Adjust voltage to ${assigned.targetValue.toFixed(1)} V or click "Set ${assigned.targetValue}V".`
+        );
+        playTone(220, 'sawtooth', 0.2, 0.25);
+        return;
+      }
+
+      if (!circuits.powerOn) {
+        setMeasurementWarning('Circuit Unpowered: Turn the Power Supply ON to take live voltage and current readings.');
+        playTone(220, 'sawtooth', 0.2, 0.25);
+        return;
+      }
+
+      // Measured voltage: live DMM reading if in DC voltage mode across source/network, else circuits.vs with slight realistic ADC display variation
+      let measuredV = circuits.vs * (1 + (Math.sin(trialNum * 13.7) * 0.002));
+      if (dmmMode === 'v_dc' && dmmJack === 'v_ohm' && dmmReading.value !== null && Math.abs(dmmReading.value) > 0.5) {
+        measuredV = Math.abs(dmmReading.value);
+      }
+
+      // Measured current: live DMM reading if in series, else simulation loop current with realistic meter shunt burden
+      let measuredI_A = (circuits.vs / 650.0) * (1 + (Math.cos(trialNum * 11.3) * 0.002));
+      if ((dmmMode === 'a_dc' || dmmMode === 'a_ac') && dmmJack === 'ma_10a' && !jumperClosed && dmmReading.value !== null && Math.abs(dmmReading.value) > 0.0001) {
+        measuredI_A = Math.abs(dmmReading.value) / (dmmReading.displayString.includes('mA') ? 1000 : 1);
+      }
+      const measuredI_mA = measuredI_A * 1000;
+
+      const resistance = measuredI_A > 0 ? measuredV / measuredI_A : 650.0;
+      const expectedR = 650.0;
+      const percentError = Math.abs((resistance - expectedR) / expectedR) * 100;
+
+      newTrial = {
+        trial: trialNum,
+        vs: assigned.targetValue,
+        measuredV: Number(measuredV.toFixed(2)),
+        measuredI_mA: Number(measuredI_mA.toFixed(2)),
+        measuredI_A: Number(measuredI_A.toFixed(5)),
+        resistance: Number(resistance.toFixed(1)),
+        expectedR,
+        percentError: Number(percentError.toFixed(2)),
+        mode: circuits.mode.toUpperCase(),
+        topology: circuits.topology,
+        current: Number(measuredI_A.toFixed(5)),
+        impedance: Number(resistance.toFixed(1)),
+      };
+    } else if (stationId === 'optics') {
+      if (Math.abs(optics.objectDistance - assigned.targetValue) > 2.0) {
+        setMeasurementWarning(
+          `Object Distance Mismatch for Trial ${trialNum}: Assigned distance is u = ${assigned.targetValue.toFixed(1)} cm. Adjust object distance to ${assigned.targetValue.toFixed(1)} cm or click "Set ${assigned.targetValue} cm".`
+        );
+        playTone(220, 'sawtooth', 0.2, 0.25);
+        return;
+      }
+
+      const u = assigned.targetValue;
+      const theorV = (u * 20.0) / (u - 20.0);
+      const measuredV = theorV * (1 + (Math.sin(trialNum * 7.9) * 0.003));
+      const invU = 1 / u;
+      const invV = 1 / measuredV;
+      const f_exp = (u * measuredV) / (u + measuredV);
+      const f_nom = 20.0;
+      const percentError = Math.abs((f_exp - f_nom) / f_nom) * 100;
+
+      newTrial = {
+        trial: trialNum,
+        u,
+        v: Number(measuredV.toFixed(2)),
+        invU: Number(invU.toFixed(4)),
+        invV: Number(invV.toFixed(4)),
+        f_exp: Number(f_exp.toFixed(2)),
+        f_nom,
+        percentError: Number(percentError.toFixed(2)),
+        subMode: 'imaging',
+        wavelength: optics.wavelength,
+        paramA: u,
+        paramB: 20.0,
+        theoretical: Number(theorV.toFixed(2)),
+        measured: Number(measuredV.toFixed(2)),
+      };
+    } else {
+      if (Math.abs(relativity.beta - assigned.targetValue) > 0.03) {
+        setMeasurementWarning(
+          `Velocity Ratio Mismatch for Trial ${trialNum}: Assigned velocity ratio is β = ${assigned.targetValue.toFixed(2)}c. Adjust velocity slider to ${assigned.targetValue.toFixed(2)}c or click "Set ${assigned.targetValue}c".`
+        );
+        playTone(220, 'sawtooth', 0.2, 0.25);
+        return;
+      }
+
+      const beta = assigned.targetValue;
+      const theorGamma = 1 / Math.sqrt(1 - beta * beta);
+      const measuredGamma = theorGamma * (1 + (Math.sin(trialNum * 5.3) * 0.002));
+      const speed = beta * 299792458;
+      const dilatedTime = measuredGamma * 10.0;
+      const contractedLength = 20.0 / measuredGamma;
+      const restEnergy = 3727.38;
+      const kineticEnergy = (measuredGamma - 1) * restEnergy;
+      const totalEnergy = measuredGamma * restEnergy;
+
+      newTrial = {
+        trial: trialNum,
+        beta,
+        speed: Number(speed.toFixed(0)),
+        gamma: Number(theorGamma.toFixed(4)),
+        measuredGamma: Number(measuredGamma.toFixed(4)),
+        dilatedTime: Number(dilatedTime.toFixed(2)),
+        contractedLength: Number(contractedLength.toFixed(2)),
+        kineticEnergy: Number(kineticEnergy.toFixed(1)),
+        totalEnergy: Number(totalEnergy.toFixed(1)),
+        preset: relativity.massPreset,
+      };
     }
 
     setMeasurementWarning('');
+    setRetakeTrialIndex(null);
     playTone(600, 'square', 0.1, 0.2);
-
-    let newTrial: TrialRecord;
-    const trialNum = stationProgress.trials.length + 1;
-
-    if (stationId === 'circuits') {
-      const adcNoise = 1 + (Math.sin(trialNum * 13.7) * 0.003); // ±0.3% ADC display fluctuation
-      const measuredCurrent = circuitResult.current * (circuitResult.current > 0 ? adcNoise : 1);
-      const measuredPower = circuitResult.realPower * (circuitResult.realPower > 0 ? adcNoise : 1);
-
-      newTrial = {
-        trial: trialNum,
-        mode: circuits.mode.toUpperCase(),
-        topology: circuits.topology,
-        vs: circuits.vs,
-        freq: circuits.mode === 'ac' ? circuits.freq : 0,
-        impedance: circuitResult.impedance,
-        current: measuredCurrent,
-        powerFactor: circuitResult.powerFactor,
-        realPower: measuredPower,
-      };
-    } else if (stationId === 'optics') {
-      let paramA = 0;
-      let paramB = 0;
-      let theoretical = 0;
-      let measured = 0;
-      let classification = '';
-
-      if (optics.subMode === 'refraction') {
-        paramA = optics.theta1;
-        paramB = opticsResult.effectiveN2;
-        theoretical = opticsResult.theta2Deg ?? 0;
-        measured = theoretical * (1 + (Math.sin(trialNum * 11.3) * 0.015)); // +/- 1.5% measurement noise
-        classification = opticsResult.isTIR ? 'TIR' : 'Refracted';
-      } else if (optics.subMode === 'imaging') {
-        paramA = optics.objectDistance;
-        paramB = optics.focalLength;
-        theoretical = opticsResult.imageDistanceCm ?? 0;
-        measured = theoretical !== 0 ? theoretical * (1 + (Math.sin(trialNum * 11.3) * 0.015)) : 0;
-        classification = `${opticsResult.imageType} · ${opticsResult.imageOrientation}`;
-      } else {
-        paramA = optics.slitSeparation;
-        paramB = optics.screenDistance;
-        theoretical = opticsResult.fringeSpacingMm;
-        measured = theoretical * (1 + (Math.sin(trialNum * 11.3) * 0.015));
-        classification = `λ=${optics.wavelength}nm`;
-      }
-
-      const percentError = Math.abs((measured - theoretical) / Math.max(0.01, theoretical)) * 100;
-
-      newTrial = {
-        trial: trialNum,
-        subMode: optics.subMode,
-        wavelength: optics.wavelength,
-        paramA,
-        paramB,
-        theoretical,
-        measured,
-        percentError,
-        classification,
-      };
-    } else {
-      const jitter = 1 + (Math.sin(trialNum * 7.9) * 0.004); // ±0.4% detector jitter
-      newTrial = {
-        trial: trialNum,
-        preset: relativity.massPreset,
-        beta: relativity.beta,
-        speed: relativityResult.speedMps,
-        gamma: relativityResult.gamma,
-        measuredGamma: relativityResult.gamma * jitter,
-        dilatedTime: relativityResult.dilatedTime * jitter,
-        contractedLength: relativityResult.contractedLength * jitter,
-        kineticEnergy: relativityResult.kineticEnergyMeV,
-        totalEnergy: relativityResult.totalEnergyMeV,
-      };
-    }
 
     setProgress((prev) => {
       const st = { ...prev[stationId] };
-      const updatedTrials = [...st.trials, newTrial];
+      const updatedTrials = [...st.trials];
+      if (targetIndex < updatedTrials.length) {
+        updatedTrials[targetIndex] = newTrial;
+      } else {
+        updatedTrials.push(newTrial);
+      }
       const isComplete = updatedTrials.length >= TOTAL_TRIALS;
       const completed = [...st.completed];
-      if (isComplete && !completed[4]) {
-        completed[4] = true;
+      if (isComplete && !completed[6]) {
+        completed[6] = true;
         playSuccessChime();
       }
       return {
@@ -869,7 +940,7 @@ export default function Room3Experience() {
           ...st,
           trials: updatedTrials,
           completed,
-          currentStep: isComplete ? Math.max(st.currentStep, 5) : st.currentStep,
+          currentStep: isComplete ? Math.max(st.currentStep, 7) : st.currentStep,
         },
       };
     });
@@ -944,77 +1015,44 @@ export default function Room3Experience() {
     if (!stepValidation.isPassed) return;
     playTone(523, 'sine', 0.15, 0.25);
 
-    // Auto-complete corresponding notebook steps based on guided step
+    // Complete current guided step in progress
     setProgress((prev) => {
       const sp = { ...prev[stationId] };
       const completed = [...sp.completed];
+      if (guidedStepIndex < 6) {
+        completed[guidedStepIndex] = true;
+      }
       if (stationId === 'circuits') {
         if (guidedStepIndex === 0) {
-          completed[0] = true;
           sp.inspected = Array.from(new Set([...sp.inspected, 'circuits-power-switch', 'circuits-multimeter', 'circuits-topology-selector']));
-        } else if (guidedStepIndex === 1) {
-          completed[1] = true;
-          sp.predictionAnswer = station.prediction.answer;
-        } else if (guidedStepIndex === 2 || guidedStepIndex === 3) {
-          completed[2] = true;
-          sp.setupActions = Array.from(new Set([...sp.setupActions, 'dmm-mode-set', 'leads-connected']));
-        } else if (guidedStepIndex === 4 || guidedStepIndex === 5 || guidedStepIndex === 6) {
-          completed[3] = true;
-          completed[4] = true;
-        } else if (guidedStepIndex === 7) {
-          completed[5] = true;
-          completed[6] = true;
         }
       } else if (stationId === 'optics') {
         if (guidedStepIndex === 0) {
-          completed[0] = true;
           sp.inspected = Array.from(new Set([...sp.inspected, 'optics-laser', 'optics-angle-dial', 'optics-screen']));
-        } else if (guidedStepIndex === 1) {
-          completed[1] = true;
-          sp.predictionAnswer = station.prediction.answer;
-          completed[2] = true;
-        } else if (guidedStepIndex === 2 || guidedStepIndex === 3) {
-          completed[3] = true;
-          completed[4] = true;
-        } else if (guidedStepIndex === 4) {
-          completed[5] = true;
-          completed[6] = true;
         }
       } else {
         if (guidedStepIndex === 0) {
-          completed[0] = true;
           sp.inspected = Array.from(new Set([...sp.inspected, 'relativity-velocity-dial', 'relativity-light-clock', 'relativity-contracting-rod']));
-        } else if (guidedStepIndex === 1) {
-          completed[1] = true;
-          sp.predictionAnswer = station.prediction.answer;
-        } else if (guidedStepIndex === 2 || guidedStepIndex === 3) {
-          completed[2] = true;
-          completed[3] = true;
-          completed[4] = true;
-        } else if (guidedStepIndex === 4) {
-          completed[5] = true;
-          completed[6] = true;
         }
       }
       return { ...prev, [stationId]: { ...sp, completed } };
     });
 
-    // Auto-record trial measurements for empirical steps
-    if (stationId === 'circuits' && (guidedStepIndex === 4 || guidedStepIndex === 5 || guidedStepIndex === 6)) {
-      recordCurrentTrial();
-    } else if (stationId === 'optics' && (guidedStepIndex === 2 || guidedStepIndex === 3 || guidedStepIndex === 4)) {
-      recordCurrentTrial();
-    } else if (stationId === 'relativity' && (guidedStepIndex === 1 || guidedStepIndex === 2 || guidedStepIndex === 3 || guidedStepIndex === 4)) {
-      recordCurrentTrial();
-    }
-
-    const totalSteps = currentCurriculum?.steps.length ?? 1;
+    const totalSteps = currentCurriculum?.steps.length ?? 8;
     if (guidedStepIndex < totalSteps - 1) {
-      setGuidedStepIndex((prev) => prev + 1);
+      const nextIndex = guidedStepIndex + 1;
+      setGuidedStepIndex(nextIndex);
       setShowGuidedHint(false);
+      if (nextIndex === 6) {
+        setNotebookOpen(true);
+        setNotebookStep(6);
+      } else if (nextIndex === 7) {
+        setNotebookOpen(true);
+        setNotebookStep(7);
+      }
     } else {
       setNotebookOpen(true);
-      setNotebookStep(6);
+      setNotebookStep(7);
     }
   };
   const verifyPrediction = (choice: number) => {
@@ -1037,11 +1075,11 @@ export default function Room3Experience() {
     }
   };
 
-  // Step 6 Theoretical Calculations verification (Strict ±2% tolerance)
+  // Step 8 Experimental Computation Verification (Strict ±2% tolerance)
   const verifyCalculations = () => {
     const trials = stationProgress.trials;
     if (trials.length < TOTAL_TRIALS) {
-      setCalculationFeedback('Please record all 5 trials in Step 5 before verifying theoretical calculations.');
+      setCalculationFeedback('Please record all 5 experimental trials in Step 7 before verifying calculations.');
       setCalculationStatus('incorrect');
       return;
     }
@@ -1058,11 +1096,11 @@ export default function Room3Experience() {
       const userVal = parseFloat(stationProgress.calculations[i]);
       let expected = 0;
       if (stationId === 'circuits') {
-        expected = Number(t.impedance);
+        expected = Number(t.resistance ?? t.impedance ?? 650.0);
       } else if (stationId === 'optics') {
-        expected = Number(t.theoretical);
+        expected = Number(t.f_exp ?? t.theoretical ?? 20.0);
       } else {
-        expected = Number(t.gamma);
+        expected = Number(t.gamma ?? 1.0);
       }
 
       if (isNaN(userVal)) {
@@ -1085,7 +1123,7 @@ export default function Room3Experience() {
 
     setCalculationStatus('correct');
     setCalculationFeedback('Verification Passed! All 5 calculations match physical theoretical laws within ±2% tolerance.');
-    completeStep(5);
+    completeStep(7);
   };
 
   // Step 6 Guide Questions Handler
@@ -2255,7 +2293,7 @@ export default function Room3Experience() {
             type="button"
             className="record-button"
             disabled={stationProgress.trials.length >= TOTAL_TRIALS}
-            onClick={recordCurrentTrial}
+            onClick={() => recordCurrentTrial()}
           >
             📝 Record Current State (Trial {stationProgress.trials.length + 1} / 5)
           </button>
@@ -2513,28 +2551,56 @@ export default function Room3Experience() {
                 </div>
               )}
 
-              {/* STEP 2: PREDICT (10 pts) */}
+              {/* STEP 2: ASSEMBLY & INSPECTION (10 pts) */}
               {notebookStep === 1 && (
                 <div className="step-content">
                   <div className="step-badge-row">
                     <span className="step-points-pill">+10 Points</span>
-                    <h4>Step 2: Formulate Theoretical Prediction</h4>
+                    <h4>Step 2: Circuit Assembly & Continuity Inspection</h4>
                   </div>
-                  <p className="prediction-question">{station.prediction.question}</p>
+                  <p className="step-prompt">{station.steps[1].prompt}</p>
 
-                  <div className="prediction-options">
-                    {station.prediction.options.map((opt, i) => (
-                      <label key={opt} className={currentPredictionAnswer === i ? 'selected' : ''}>
-                        <input
-                          type="radio"
-                          name="prediction"
-                          checked={currentPredictionAnswer === i}
-                          onChange={() => verifyPrediction(i)}
-                        />
-                        <span>{String.fromCharCode(65 + i)}</span>
-                        <div>{opt}</div>
-                      </label>
-                    ))}
+                  <div className="calibration-box" style={{ borderLeft: '4px solid #38bdf8' }}>
+                    <b>Resistor Network Assembly & Equivalent Resistance:</b>
+                    {stationId === 'circuits' && (
+                      <p style={{ margin: '6px 0 0' }}>
+                        Three precision metal-film resistors are connected in a continuous series loop: <b>R1 = 100 Ω</b>, <b>R2 = 220 Ω</b>, <b>R3 = 330 Ω</b>.<br />
+                        Because there is only one continuous path for charge carriers, the total equivalent resistance is strictly additive:
+                        <br />
+                        <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#38bdf8' }}>
+                          Req = R1 + R2 + R3 = 100 Ω + 220 Ω + 330 Ω = 650.0 Ω
+                        </span>
+                      </p>
+                    )}
+                    {stationId === 'optics' && (
+                      <p style={{ margin: '6px 0 0' }}>
+                        Central optical track alignment ensures paraxial rays converge along the principal axis without spherical distortion.
+                      </p>
+                    )}
+                    {stationId === 'relativity' && (
+                      <p style={{ margin: '6px 0 0' }}>
+                        Inertial Reference Frame S (laboratory rest frame) and Frame S&apos; (particle proper frame) establish invariant rest measurements: <b>L0 = 20.0 m</b>, <b>Δt0 = 10.0 s</b>.
+                      </p>
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: '16px' }}>
+                    <b>Theoretical Prediction Checkpoint:</b>
+                    <p className="prediction-question" style={{ marginTop: '6px' }}>{station.prediction.question}</p>
+                    <div className="prediction-options">
+                      {station.prediction.options.map((opt, i) => (
+                        <label key={opt} className={currentPredictionAnswer === i ? 'selected' : ''}>
+                          <input
+                            type="radio"
+                            name="prediction"
+                            checked={currentPredictionAnswer === i}
+                            onChange={() => verifyPrediction(i)}
+                          />
+                          <span>{String.fromCharCode(65 + i)}</span>
+                          <div>{opt}</div>
+                        </label>
+                      ))}
+                    </div>
                   </div>
 
                   {predictionFeedback && (
@@ -2542,211 +2608,147 @@ export default function Room3Experience() {
                       {predictionFeedback}
                     </div>
                   )}
-                </div>
-              )}
-
-              {/* STEP 3: SET UP (10 pts) */}
-              {notebookStep === 2 && (
-                <div className="step-content">
-                  <div className="step-badge-row">
-                    <span className="step-points-pill">+10 Points</span>
-                    <h4>Step 3: Calibrate Baseline Experimental State</h4>
-                  </div>
-                  <p className="step-prompt">{station.steps[2].prompt}</p>
-
-                  <div className="calibration-box">
-                    <b>Baseline Reference Parameters:</b>
-                    {stationId === 'circuits' && (
-                      <p>Vs = 24.0 V · R1 = 100 Ω · R2 = 220 Ω · R3 = 330 Ω · Mode = DC · Topology = Series</p>
-                    )}
-                    {stationId === 'optics' && (
-                      <p>λ = 532 nm (emerald) · n1 = 1.00 · n2 = 1.52 · θ1 = 30.0° · f = +20 cm · do = 40 cm</p>
-                    )}
-                    {stationId === 'relativity' && (
-                      <p>β = 0.600c (γ = 1.250) · Proper Time Δt₀ = 10.0 s · Proper Length L₀ = 20.0 m</p>
-                    )}
-                  </div>
-
-                  {setupMismatches.length > 0 ? (
-                    <div className="feedback-alert incorrect" style={{ marginTop: '14px' }}>
-                      ⚠️ Calibration Warning ({setupMismatches.length} parameter{setupMismatches.length > 1 ? 's' : ''} out of spec):
-                      <ul style={{ margin: '6px 0 0 16px' }}>
-                        {setupMismatches.map((m) => (
-                          <li key={m}>{m}</li>
-                        ))}
-                      </ul>
-                      Adjust live controls on the right or click &quot;Reset to Exact Baseline&quot; below.
-                    </div>
-                  ) : (
-                    <div className="feedback-alert correct" style={{ marginTop: '14px' }}>
-                      ✓ Calibration Verified: Live controls match all required physical baseline parameters!
-                    </div>
-                  )}
 
                   <div className="button-row" style={{ marginTop: '16px' }}>
                     <button
                       type="button"
                       className="notebook-action"
-                      onClick={() => {
-                        if (stationId === 'circuits') setCircuits(INITIAL_CIRCUITS);
-                        else if (stationId === 'optics') setOptics(INITIAL_OPTICS);
-                        else setRelativity(INITIAL_RELATIVITY);
-                        playTone(520, 'sine', 0.1, 0.2);
-                      }}
+                      disabled={stationProgress.completed[1]}
+                      onClick={() => completeStep(1)}
                     >
-                      Reset Controls to Baseline Calibration
+                      {stationProgress.completed[1] ? '✓ Step 2 Complete (10/10 pts)' : 'Confirm Circuit Assembly (+10 pts)'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 3: POWER CONFIGURATION (10 pts) */}
+              {notebookStep === 2 && (
+                <div className="step-content">
+                  <div className="step-badge-row">
+                    <span className="step-points-pill">+10 Points</span>
+                    <h4>Step 3: Power Supply Setup & Energization</h4>
+                  </div>
+                  <p className="step-prompt">{station.steps[2].prompt}</p>
+
+                  <div className="calibration-box" style={{ borderLeft: '4px solid #38bdf8' }}>
+                    <b>DC Power Supply Specification:</b>
+                    {stationId === 'circuits' && (
+                      <p style={{ margin: '6px 0 0' }}>
+                        Regulated DC Laboratory Power Supply: Output potential set to <b>Vs = 24.0 V DC</b>.<br />
+                        Energizing the supply establishes a constant potential difference across the series resistor matrix.
+                      </p>
+                    )}
+                    {stationId === 'optics' && (
+                      <p style={{ margin: '6px 0 0' }}>
+                        Diode Laser Source: λ = 532 nm (Emerald green). Monochromatic coherent optical beam.
+                      </p>
+                    )}
+                    {stationId === 'relativity' && (
+                      <p style={{ margin: '6px 0 0' }}>
+                        Linear Particle Accelerator: Baseline rest state β = 0.00c (Rest Energy E₀ = 3727.38 MeV, K = 0 MeV).
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="telemetry-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '16px' }}>
+                    <div className="telemetry-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px' }}>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>SOURCE POTENTIAL</span>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8' }}>{circuits.vs.toFixed(1)} V DC</div>
+                    </div>
+                    <div className="telemetry-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px' }}>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>POWER STATUS</span>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: circuits.powerOn ? '#10b981' : '#ef4444' }}>
+                        {circuits.powerOn ? '● ENERGIZED' : '○ DE-ENERGIZED'}
+                      </div>
+                    </div>
+                    <div className="telemetry-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px' }}>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>CIRCUIT REGIME</span>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: '#a855f7' }}>DC Steady-State</div>
+                    </div>
+                  </div>
+
+                  <div className="button-row" style={{ marginTop: '16px' }}>
+                    <button
+                      type="button"
+                      className="notebook-action"
+                      style={{ background: '#0284c7', borderColor: '#38bdf8' }}
+                      onClick={() => setCircuits((prev) => ({ ...prev, vs: 24.0, powerOn: true }))}
+                    >
+                      ⚡ Energize Power Supply at 24.0 V DC
                     </button>
                     <button
                       type="button"
                       className="notebook-action"
-                      disabled={stationProgress.completed[2] || setupMismatches.length > 0}
+                      disabled={stationProgress.completed[2] || !circuits.powerOn}
                       onClick={() => completeStep(2)}
                     >
-                      {stationProgress.completed[2] ? '✓ Calibration Confirmed (10/10 pts)' : 'Confirm Calibration Baseline (+10 pts)'}
+                      {stationProgress.completed[2] ? '✓ Step 3 Complete (10/10 pts)' : 'Confirm Power Configuration (+10 pts)'}
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* STEP 4: RUN (15 pts) */}
+              {/* STEP 4: INSTRUMENT PREPARATION (10 pts) */}
               {notebookStep === 3 && (
                 <div className="step-content">
                   <div className="step-badge-row">
-                    <span className="step-points-pill">+15 Points</span>
-                    <h4>Step 4: Energize Apparatus & Observe Dynamic Telemetry</h4>
+                    <span className="step-points-pill">+10 Points</span>
+                    <h4>Step 4: Multimeter Instrument Preparation</h4>
                   </div>
                   <p className="step-prompt">{station.steps[3].prompt}</p>
 
-                  <div className="run-settling-card">
-                    {runSettling ? (
-                      <div className="settling-state">
-                        <div className="spinner" />
-                        <p>Simulating physical excitation & logging stable instrument steady-state...</p>
-                      </div>
-                    ) : (
-                      <div className="ready-state">
-                        {!isStationEnergized ? (
-                          <div className="feedback-alert incorrect" style={{ marginBottom: '14px' }}>
-                            {stationId === 'circuits' && '⚠️ Power Supply is OFF or Series Jumper is OPEN! Turn ON power supply and close jumper in workbench controls to run.'}
-                            {stationId === 'optics' && '⚠️ Laser Diode Source is powered OFF! Turn ON laser source in live controls to observe beam refraction.'}
-                            {stationId === 'relativity' && '⚠️ Particle Beam Accelerator is in STANDBY! Set accelerator beam to ACTIVE to observe relativistic dilation.'}
-                          </div>
-                        ) : (
-                          <div className="feedback-alert correct" style={{ marginBottom: '14px' }}>
-                            ✓ Apparatus is fully energized and calibrated. Ready to lock in steady-state telemetry.
-                          </div>
-                        )}
-                        <p>Apparatus is energized. Observe the real-time oscilloscope phase, refracted beam, or contracting photon clock in the 3D viewport.</p>
-                        <div className="button-row" style={{ marginTop: '14px' }}>
-                          <button
-                            type="button"
-                            className="notebook-action"
-                            onClick={() => returnToApparatus(`Operate the highlighted ${GUIDANCE_LABELS[RUN_TARGET[stationId]]} to run the experiment and observe live readings.`)}
-                          >
-                            Return to highlighted run control
-                          </button>
-                          <button
-                            type="button"
-                            className="notebook-action"
-                            disabled={stationProgress.completed[3] || !isStationEnergized || runSettling}
-                            onClick={() => {
-                              setRunSettling(true);
-                              playTone(400, 'square', 0.1, 0.2);
-                              setTimeout(() => {
-                                setRunSettling(false);
-                                completeStep(3);
-                              }, 1200);
-                            }}
-                          >
-                            {stationProgress.completed[3] ? '✓ Run Verified (+15 pts)' : 'Energize & Lock In Steady State (+15 pts)'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                  <div className="calibration-box" style={{ borderLeft: '4px solid #38bdf8' }}>
+                    <b>Fluke 87V True-RMS Digital Multimeter Architecture:</b>
+                    <p style={{ margin: '6px 0 0' }}>
+                      <b>Input Impedance:</b> In Voltage sensing mode (V⎓), the meter connects its internal <b>10 MΩ precision voltage divider</b>. This high impedance prevents loading error when measuring across high-resistance nodes.<br />
+                      <b>Lead Routing:</b> Black lead connects to <b>COM</b> (circuit reference ground). Red lead connects to <b>V·Ω</b>. The mA/10A jack is reserved strictly for current measurement with burden shunts.
+                    </p>
                   </div>
-                </div>
-              )}
 
-              {/* STEP 5: MEASURE (15 pts) */}
-              {notebookStep === 4 && (
-                <div className="step-content">
-                  <div className="step-badge-row">
-                    <span className="step-points-pill">+15 Points</span>
-                    <h4>Step 5: Record Five Experimental Trials ({stationProgress.trials.length} / 5)</h4>
-                  </div>
-                  <p className="step-prompt">{station.steps[4].prompt}</p>
-
-                  {measurementWarning && (
-                    <div className="feedback-alert incorrect" style={{ marginBottom: '14px' }}>
-                      {measurementWarning}
+                  <div className="dmm-prep-controls" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '16px' }}>
+                    <div style={{ padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>ROTARY SELECTOR DIAL</span>
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                        <button
+                          type="button"
+                          className="notebook-action"
+                          style={{ padding: '6px 10px', fontSize: '12px', background: dmmMode === 'v_dc' ? '#0284c7' : '#0f172a' }}
+                          onClick={() => handleSetDmmMode('v_dc')}
+                        >
+                          V⎓ (DC Volts)
+                        </button>
+                        <button
+                          type="button"
+                          className="notebook-action"
+                          style={{ padding: '6px 10px', fontSize: '12px', background: dmmMode === 'a_dc' ? '#0284c7' : '#0f172a' }}
+                          onClick={() => handleSetDmmMode('a_dc')}
+                        >
+                          A⎓ (DC Amps)
+                        </button>
+                      </div>
                     </div>
-                  )}
-
-                  <div className="table-scroll">
-                    <table className="trial-table">
-                      <thead>
-                        <tr>
-                          {stationId === 'circuits' && (
-                            <>
-                              <th>#</th><th>Mode</th><th>Topology</th><th>Vs (V)</th><th>f (Hz)</th><th>Z (Ω)</th><th>I (A)</th><th>P (W)</th>
-                            </>
-                          )}
-                          {stationId === 'optics' && (
-                            <>
-                              {optics.subMode === 'refraction' && (
-                                <>
-                                  <th>#</th><th>Sub-Mode</th><th>λ (nm)</th><th>θ₁ (°)</th><th>Effective n₂</th><th>θ₂ Theory (°)</th><th>θ₂ Meas (°)</th><th>Status</th>
-                                </>
-                              )}
-                              {optics.subMode === 'imaging' && (
-                                <>
-                                  <th>#</th><th>Sub-Mode</th><th>λ (nm)</th><th>do (cm)</th><th>f (cm)</th><th>di Theory (cm)</th><th>di Meas (cm)</th><th>Image Type</th>
-                                </>
-                              )}
-                              {optics.subMode === 'diffraction' && (
-                                <>
-                                  <th>#</th><th>Sub-Mode</th><th>λ (nm)</th><th>d (mm)</th><th>L (m)</th><th>Δy Theory (mm)</th><th>Δy Meas (mm)</th><th>Tag</th>
-                                </>
-                              )}
-                            </>
-                          )}
-                          {stationId === 'relativity' && (
-                            <>
-                              <th>#</th><th>Particle</th><th>β (v/c)</th><th>Speed (m/s)</th><th>γ (Theory)</th><th>γ (Detector)</th><th>Δt (s)</th><th>Contracted L (m)</th>
-                            </>
-                          )}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {stationProgress.trials.map((t) => (
-                          <tr key={String(t.trial)}>
-                            <td>{t.trial}</td>
-                            {stationId === 'circuits' && (
-                              <>
-                                <td>{t.mode}</td><td>{String(t.topology).toUpperCase()}</td><td>{formatValue(t.vs)}</td><td>{formatValue(t.freq)}</td><td>{formatValue(t.impedance)}</td><td>{formatValue(t.current)}</td><td>{formatValue(t.realPower)}</td>
-                              </>
-                            )}
-                            {stationId === 'optics' && (
-                              <>
-                                <td>{t.subMode}</td><td>{t.wavelength}</td><td>{formatValue(t.paramA)}</td><td>{formatValue(t.paramB)}</td><td>{formatValue(t.theoretical)}</td><td>{formatValue(t.measured)}</td><td>{t.classification}</td>
-                              </>
-                            )}
-                            {stationId === 'relativity' && (
-                              <>
-                                <td>{String(t.preset ?? 'alpha').toUpperCase()}</td><td>{formatValue(t.beta)}</td><td>{formatValue(t.speed)}</td><td>{formatValue(t.gamma)}</td><td>{formatValue(t.measuredGamma ?? t.gamma)}</td><td>{formatValue(t.dilatedTime)}</td><td>{formatValue(t.contractedLength)}</td>
-                              </>
-                            )}
-                          </tr>
-                        ))}
-                        {stationProgress.trials.length === 0 && (
-                          <tr>
-                            <td colSpan={8} style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8' }}>
-                              No trials recorded yet. Use the live sliders on the right and click &quot;Record Current State&quot;.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+                    <div style={{ padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>RED LEAD INPUT JACK</span>
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                        <button
+                          type="button"
+                          className="notebook-action"
+                          style={{ padding: '6px 10px', fontSize: '12px', background: dmmJack === 'v_ohm' ? '#0284c7' : '#0f172a' }}
+                          onClick={() => handleSetDmmJack('v_ohm')}
+                        >
+                          V·Ω (Hi-Z Volts/Ohms)
+                        </button>
+                        <button
+                          type="button"
+                          className="notebook-action"
+                          style={{ padding: '6px 10px', fontSize: '12px', background: dmmJack === 'ma_10a' ? '#0284c7' : '#0f172a' }}
+                          onClick={() => handleSetDmmJack('ma_10a')}
+                        >
+                          mA / 10A (Shunt)
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="button-row" style={{ marginTop: '16px' }}>
@@ -2754,124 +2756,161 @@ export default function Room3Experience() {
                       type="button"
                       className="notebook-action"
                       style={{ background: '#059669', borderColor: '#10b981' }}
-                      disabled={stationProgress.trials.length >= TOTAL_TRIALS}
-                      onClick={recordCurrentTrial}
+                      onClick={() => {
+                        handleSetDmmMode('v_dc');
+                        handleSetDmmJack('v_ohm');
+                      }}
                     >
-                      ➕ Record Current State as Trial #{stationProgress.trials.length + 1}
+                      ⚡ Auto-Prepare DMM for DC Voltage Sensing
                     </button>
                     <button
                       type="button"
                       className="notebook-action"
-                      onClick={() => returnToApparatus(`Use the highlighted ${GUIDANCE_LABELS[`${stationId}-clipboard`]} to record trial ${Math.min(TOTAL_TRIALS, stationProgress.trials.length + 1)}.`)}
-                      disabled={stationProgress.trials.length >= TOTAL_TRIALS}
+                      disabled={stationProgress.completed[3]}
+                      onClick={() => completeStep(3)}
                     >
-                      Return to apparatus to record
+                      {stationProgress.completed[3] ? '✓ Step 4 Complete (10/10 pts)' : 'Confirm Multimeter Preparation (+10 pts)'}
                     </button>
-                    {stationProgress.trials.length >= TOTAL_TRIALS && (
-                      <button
-                        type="button"
-                        className="notebook-action"
-                        disabled={stationProgress.completed[4]}
-                        onClick={() => completeStep(4)}
-                      >
-                        {stationProgress.completed[4] ? '✓ 5 Trials Recorded (15/15 pts)' : 'Complete Step 5 (+15 pts)'}
-                      </button>
-                    )}
                   </div>
                 </div>
               )}
 
-              {/* STEP 6: CALCULATE (20 pts) */}
-              {notebookStep === 5 && (
+              {/* STEP 5: VOLTAGE MEASUREMENT PROCEDURE (10 pts) */}
+              {notebookStep === 4 && (
                 <div className="step-content">
                   <div className="step-badge-row">
-                    <span className="step-points-pill">+20 Points</span>
-                    <h4>Step 6: Verify Theoretical Calculations (±2% Tolerance)</h4>
+                    <span className="step-points-pill">+10 Points</span>
+                    <h4>Step 5: Voltage Measurement Procedure (Parallel)</h4>
                   </div>
-                  <p className="step-prompt">{station.steps[5].prompt}</p>
+                  <p className="step-prompt">{station.steps[4].prompt}</p>
 
-                  {/* Formula and Worked Hint Toggle Box */}
-                  <div style={{ marginBottom: '16px' }}>
+                  <div className="calibration-box" style={{ borderLeft: '4px solid #38bdf8' }}>
+                    <b>⚡ Non-Intrusive Parallel Measurement Principle:</b>
+                    <p style={{ margin: '6px 0 0' }}>
+                      Voltage represents the difference in electric potential between two physical points.
+                      To measure voltage, the voltmeter test probes are connected <b>in parallel across the component</b>.
+                      Because the meter has a 10 MΩ internal resistance, it does not interrupt circuit current or disturb normal operation.
+                    </p>
+                  </div>
+
+                  {stationId === 'circuits' && (
+                    <div style={{ marginTop: '16px' }}>
+                      <b>Practice Measuring Potential Drops Across Circuit Elements:</b>
+                      <div className="probe-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '10px' }}>
+                        <button
+                          type="button"
+                          className="notebook-action"
+                          style={{ background: (redTerminal === 'SRC_POS' && blackTerminal === 'SRC_NEG') ? 'rgba(56, 189, 248, 0.25)' : '#0f172a', borderColor: '#38bdf8' }}
+                          onClick={() => handleQuickProbe('psu')}
+                        >
+                          🔌 Measure Source Potential (Vs = 24.00 V)
+                        </button>
+                        <button
+                          type="button"
+                          className="notebook-action"
+                          style={{ background: (redTerminal === 'R1_A' && blackTerminal === 'R1_B') ? 'rgba(56, 189, 248, 0.25)' : '#0f172a', borderColor: '#38bdf8' }}
+                          onClick={() => handleQuickProbe('r1')}
+                        >
+                          🔌 Measure Resistor R1 Drop (V1 ≈ 3.69 V)
+                        </button>
+                        <button
+                          type="button"
+                          className="notebook-action"
+                          style={{ background: (redTerminal === 'R2_A' && blackTerminal === 'R2_B') ? 'rgba(56, 189, 248, 0.25)' : '#0f172a', borderColor: '#38bdf8' }}
+                          onClick={() => handleQuickProbe('r2')}
+                        >
+                          🔌 Measure Resistor R2 Drop (V2 ≈ 8.12 V)
+                        </button>
+                        <button
+                          type="button"
+                          className="notebook-action"
+                          style={{ background: (redTerminal === 'R3_A' && blackTerminal === 'R3_B') ? 'rgba(56, 189, 248, 0.25)' : '#0f172a', borderColor: '#38bdf8' }}
+                          onClick={() => handleQuickProbe('r3')}
+                        >
+                          🔌 Measure Resistor R3 Drop (V3 ≈ 12.18 V)
+                        </button>
+                      </div>
+
+                      <div className="live-meter-display" style={{ marginTop: '14px', padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>FLUKE 87V LCD READOUT (PARALLEL)</span>
+                          <div style={{ fontSize: '22px', fontFamily: 'monospace', fontWeight: 700, color: '#38bdf8' }}>{dmmReading.displayString}</div>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Red Lead: <b>{redTerminal ?? 'Unconnected'}</b></span><br />
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Black Lead: <b>{blackTerminal ?? 'Unconnected'}</b></span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="button-row" style={{ marginTop: '16px' }}>
                     <button
                       type="button"
                       className="notebook-action"
-                      style={{ background: showCalcHint ? '#1e293b' : '#0f172a', borderColor: '#38bdf8', fontSize: '12px' }}
-                      onClick={() => setShowCalcHint((v) => !v)}
+                      disabled={stationProgress.completed[4]}
+                      onClick={() => completeStep(4)}
                     >
-                      {showCalcHint ? '▲ Hide Formula & Worked Hint' : '💡 Show Formula & Worked Hint (Trial #1 Guide)'}
+                      {stationProgress.completed[4] ? '✓ Step 5 Complete (10/10 pts)' : 'Confirm Voltage Procedure (+10 pts)'}
                     </button>
+                  </div>
+                </div>
+              )}
 
-                    {showCalcHint && (
-                      <div className="calibration-box" style={{ marginTop: '10px', borderLeft: '4px solid #38bdf8' }}>
-                        <b>Physics Theory & Worked Calculation:</b>
-                        {stationId === 'circuits' && (
-                          <div>
-                            <p style={{ margin: '4px 0' }}><b>Formula:</b> DC: Z = Req = R1 + R2 + R3 (Series) | AC: Z = √(Req² + (XL − XC)²)</p>
-                            {stationProgress.trials.length > 0 && (
-                              <p style={{ margin: '4px 0', color: '#38bdf8' }}>
-                                <b>Trial #1 Worked Hint:</b> For Vs = {stationProgress.trials[0].vs} V ({stationProgress.trials[0].mode}): Theoretical Impedance Z = {Number(stationProgress.trials[0].impedance).toFixed(2)} Ω. (Enter within ±2%).
-                              </p>
-                            )}
-                          </div>
-                        )}
-                        {stationId === 'optics' && (
-                          <div>
-                            <p style={{ margin: '4px 0' }}><b>Formula:</b> Refraction: θ₂ = arcsin((n₁/n₂) · sin θ₁) | Imaging: 1/di = 1/f − 1/do | Diffraction: Δy = (λ·L)/d</p>
-                            {stationProgress.trials.length > 0 && (
-                              <p style={{ margin: '4px 0', color: '#38bdf8' }}>
-                                <b>Trial #1 Worked Hint:</b> Theoretical Value = {Number(stationProgress.trials[0].theoretical).toFixed(2)}. (Enter within ±2%).
-                              </p>
-                            )}
-                          </div>
-                        )}
-                        {stationId === 'relativity' && (
-                          <div>
-                            <p style={{ margin: '4px 0' }}><b>Formula:</b> Lorentz Factor γ = 1 / √(1 − β²)</p>
-                            {stationProgress.trials.length > 0 && (
-                              <p style={{ margin: '4px 0', color: '#38bdf8' }}>
-                                <b>Trial #1 Worked Hint:</b> For β = {stationProgress.trials[0].beta}c: γ = 1 / √(1 − {Number(stationProgress.trials[0].beta).toFixed(3)}²) = {Number(stationProgress.trials[0].gamma).toFixed(3)}. (Enter within ±2%).
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
+              {/* STEP 6: CURRENT MEASUREMENT PROCEDURE (10 pts) */}
+              {notebookStep === 5 && (
+                <div className="step-content">
+                  <div className="step-badge-row">
+                    <span className="step-points-pill">+10 Points</span>
+                    <h4>Step 6: Current Measurement Procedure (Series Insertion)</h4>
+                  </div>
+                  <p className="step-prompt">{station.steps[5].prompt}</p>
+
+                  <div className="calibration-box" style={{ borderLeft: '4px solid #f59e0b' }}>
+                    <b>⚠️ CRITICAL ELECTRICAL SAFETY & SERIES INSERTION PRINCIPLE:</b>
+                    <p style={{ margin: '6px 0 0' }}>
+                      An ammeter has near-zero internal resistance (shunt shunt resistance ~0.1 Ω).<br />
+                      <b>SAFETY MANDATE: NEVER CONNECT AN AMMETER IN PARALLEL ACROSS A VOLTAGE SOURCE.</b>
+                      Connecting in parallel causes a dead short circuit, drawing hundreds of amperes and blowing the internal protective fuse!
+                    </p>
+                    <p style={{ margin: '6px 0 0', fontWeight: 600 }}>
+                      Procedure: 1. De-energize power supply. 2. Remove the series loop jumper to create an open break. 3. Plug red test lead into mA/10A jack. 4. Turn dial to A⎓. 5. Connect meter probes across the break terminals. 6. Re-energize circuit.
+                    </p>
                   </div>
 
-                  <div className="calc-inputs-table">
-                    {stationProgress.trials.map((t, i) => (
-                      <div key={i} className="calc-row calculation-entry" style={{ display: 'grid', gridTemplateColumns: '1fr 140px', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                        <span><b>Trial #{i + 1}:</b> ({stationId === 'circuits' ? `Vs=${t.vs}V, I=${formatValue(t.current)}A` : stationId === 'optics' ? `Input=${t.paramA}` : `β=${t.beta}c`})</span>
-                        <div className="calc-input-wrapper">
-                          <input
-                            type="number"
-                            step="any"
-                            style={{ padding: '8px 12px' }}
-                            placeholder={stationId === 'circuits' ? 'Calc Z (Ω)' : stationId === 'optics' ? 'Calc Theory' : 'Calc γ'}
-                            value={stationProgress.calculations[i] || ''}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setProgress((prev) => {
-                                const st = { ...prev[stationId] };
-                                const calcs = [...st.calculations];
-                                calcs[i] = val;
-                                return { ...prev, [stationId]: { ...st, calculations: calcs } };
-                              });
-                            }}
-                          />
+                  {stationId === 'circuits' && (
+                    <div style={{ marginTop: '16px' }}>
+                      <div className="button-row">
+                        <button
+                          type="button"
+                          className="notebook-action"
+                          style={{ background: '#0284c7', borderColor: '#38bdf8' }}
+                          onClick={() => handleQuickProbe('series')}
+                        >
+                          ⚡ Insert Ammeter Safely in Series Break (36.92 mA)
+                        </button>
+                        <button
+                          type="button"
+                          className="notebook-action"
+                          style={{ background: '#334155', borderColor: '#64748b' }}
+                          onClick={() => handleToggleJumper()}
+                        >
+                          Toggle Series Jumper ({jumperClosed ? 'Currently CLOSED' : 'Currently OPEN'})
+                        </button>
+                      </div>
+
+                      <div className="live-meter-display" style={{ marginTop: '14px', padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>FLUKE 87V AMMETER READOUT (SERIES)</span>
+                          <div style={{ fontSize: '22px', fontFamily: 'monospace', fontWeight: 700, color: dmmReading.tripFuse ? '#ef4444' : '#10b981' }}>
+                            {dmmReading.displayString}
+                          </div>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Dial: <b>{dmmMode.toUpperCase()}</b> · Jack: <b>{dmmJack.toUpperCase()}</b></span><br />
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Series Loop: <b>{!jumperClosed && (redTerminal === 'SERIES_JACK_A' || blackTerminal === 'SERIES_JACK_A') ? 'COMPLETED BY AMMETER' : jumperClosed ? 'CLOSED BY JUMPER' : 'OPEN BREAK'}</b></span>
                         </div>
                       </div>
-                    ))}
-                    {stationProgress.trials.length === 0 && (
-                      <p style={{ color: '#94a3b8', fontStyle: 'italic', margin: '12px 0' }}>
-                        Log 5 experimental trials in Step 5 before performing calculations.
-                      </p>
-                    )}
-                  </div>
-
-                  {calculationFeedback && (
-                    <div className={`feedback-alert ${calculationStatus}`}>
-                      {calculationFeedback}
                     </div>
                   )}
 
@@ -2880,32 +2919,520 @@ export default function Room3Experience() {
                       type="button"
                       className="notebook-action"
                       disabled={stationProgress.completed[5]}
-                      onClick={verifyCalculations}
+                      onClick={() => completeStep(5)}
                     >
-                      {stationProgress.completed[5] ? '✓ Calculations Verified (20/20 pts)' : 'Verify All Calculations (+20 pts)'}
+                      {stationProgress.completed[5] ? '✓ Step 6 Complete (10/10 pts)' : 'Confirm Current Procedure (+10 pts)'}
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* STEP 7: ANALYZE (10 pts) */}
+              {/* STEP 7: FIVE-TRIAL EXPERIMENTAL DATA COLLECTION (20 pts) */}
               {notebookStep === 6 && (
                 <div className="step-content">
                   <div className="step-badge-row">
-                    <span className="step-points-pill">+10 Points</span>
-                    <h4>Step 7: Least-Squares Regression & Scientific Synthesis</h4>
+                    <span className="step-points-pill">+20 Points</span>
+                    <h4>Step 7: Five-Trial Experimental Data Collection ({stationProgress.trials.length} / {TOTAL_TRIALS})</h4>
+                  </div>
+                  <p className="step-prompt">{station.steps[6].prompt}</p>
+
+                  {/* Trial Operating Points Selection Rail */}
+                  <div className="trial-condition-rail" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', margin: '14px 0' }}>
+                    {ROOM3_ASSIGNED_TRIALS[stationId].map((condition, idx) => {
+                      const isRecorded = stationProgress.trials.length > idx;
+                      const isActive = activeTrialTab === idx;
+                      return (
+                        <button
+                          key={condition.label}
+                          type="button"
+                          className={`trial-chip-btn ${isActive ? 'active' : ''} ${isRecorded ? 'recorded' : ''}`}
+                          style={{
+                            padding: '10px 8px',
+                            background: isActive ? '#0284c7' : isRecorded ? 'rgba(16, 185, 129, 0.15)' : '#0f172a',
+                            border: isActive ? '2px solid #38bdf8' : isRecorded ? '1px solid #10b981' : '1px solid #334155',
+                            borderRadius: '8px',
+                            color: '#fff',
+                            cursor: 'pointer',
+                            textAlign: 'center',
+                          }}
+                          onClick={() => {
+                            setActiveTrialTab(idx);
+                            setRetakeTrialIndex(isRecorded ? idx : null);
+                          }}
+                        >
+                          <div style={{ fontSize: '11px', color: isRecorded ? '#34d399' : '#94a3b8' }}>
+                            {isRecorded ? '✓ Recorded' : `Trial ${idx + 1}`}
+                          </div>
+                          <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>
+                            {condition.targetParam} = {condition.targetValue}{condition.unit}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
 
-                  {/* Academic Regression Engine SVG Plot */}
+                  {/* Active Assigned Trial Card */}
+                  {(() => {
+                    const assigned = ROOM3_ASSIGNED_TRIALS[stationId][activeTrialTab] ?? ROOM3_ASSIGNED_TRIALS[stationId][0];
+                    const trialNum = activeTrialTab + 1;
+                    const isAlreadyRecorded = stationProgress.trials.length > activeTrialTab;
+                    return (
+                      <div className="active-trial-card" style={{ padding: '16px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '10px', marginBottom: '16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <span style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              ACTIVE TRIAL #{trialNum} · ASSIGNED OPERATING CONDITION
+                            </span>
+                            <h4 style={{ margin: '4px 0', fontSize: '18px', color: '#f8fafc' }}>
+                              {stationId === 'circuits' && `Assigned Source Voltage: Vs = ${assigned.targetValue.toFixed(1)} V (Expected I = ${assigned.expectedSecondary} mA)`}
+                              {stationId === 'optics' && `Assigned Object Distance: u = ${assigned.targetValue.toFixed(1)} cm (Expected v ≈ ${assigned.expectedSecondary.toFixed(1)} cm)`}
+                              {stationId === 'relativity' && `Assigned Velocity Ratio: β = ${assigned.targetValue.toFixed(2)}c (Expected γ = ${assigned.expectedSecondary.toFixed(3)})`}
+                            </h4>
+                          </div>
+                          <button
+                            type="button"
+                            className="notebook-action"
+                            style={{ background: '#0284c7', borderColor: '#38bdf8', padding: '6px 12px', fontSize: '12px' }}
+                            onClick={() => handleSetAssignedCondition(assigned.targetValue)}
+                          >
+                            ⚡ Set Target {assigned.targetParam} = {assigned.targetValue}{assigned.unit}
+                          </button>
+                        </div>
+
+                        <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#94a3b8' }}>
+                          <b>Instructions:</b> {assigned.instruction}
+                        </p>
+
+                        {/* Live Telemetry Bar for Trial */}
+                        <div className="trial-live-bar" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '12px' }}>
+                          <div style={{ padding: '8px 12px', background: '#0f172a', borderRadius: '6px', border: '1px solid #334155' }}>
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>LIVE SOURCE POTENTIAL</span>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#38bdf8' }}>{circuits.vs.toFixed(2)} V</div>
+                          </div>
+                          <div style={{ padding: '8px 12px', background: '#0f172a', borderRadius: '6px', border: '1px solid #334155' }}>
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>LIVE CURRENT (SERIES)</span>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#10b981' }}>{(circuitResult.current * 1000).toFixed(2)} mA</div>
+                          </div>
+                          <div style={{ padding: '8px 12px', background: '#0f172a', borderRadius: '6px', border: '1px solid #334155' }}>
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>THEORETICAL RESISTANCE Req</span>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#a855f7' }}>650.0 Ω</div>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons for Active Trial */}
+                        <div className="button-row" style={{ marginTop: '14px' }}>
+                          <button
+                            type="button"
+                            className="notebook-action"
+                            style={{ background: isAlreadyRecorded ? '#d97706' : '#059669', borderColor: isAlreadyRecorded ? '#f59e0b' : '#10b981' }}
+                            onClick={() => recordCurrentTrial(activeTrialTab)}
+                          >
+                            {isAlreadyRecorded ? `🔄 Replace / Retake Trial #${trialNum}` : `⚡ Record Trial #${trialNum} to Dataset`}
+                          </button>
+                          <button
+                            type="button"
+                            className="notebook-action"
+                            style={{ background: '#334155', borderColor: '#64748b' }}
+                            onClick={() => handleQuickProbe('psu')}
+                          >
+                            Parallel Voltage Probes
+                          </button>
+                          <button
+                            type="button"
+                            className="notebook-action"
+                            style={{ background: '#334155', borderColor: '#64748b' }}
+                            onClick={() => handleQuickProbe('series')}
+                          >
+                            Series Ammeter Probes
+                          </button>
+                          {stationProgress.trials.length > 0 && (
+                            <button
+                              type="button"
+                              className="notebook-action"
+                              style={{ background: '#7f1d1d', borderColor: '#ef4444' }}
+                              onClick={handleResetTrials}
+                            >
+                              🗑️ Reset All Trials
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {measurementWarning && (
+                    <div className="feedback-alert incorrect" style={{ marginBottom: '14px' }}>
+                      {measurementWarning}
+                    </div>
+                  )}
+
+                  {/* FIVE-TRIAL EXPERIMENTAL DATA TABLE */}
+                  <div className="table-scroll">
+                    <table className="trial-table">
+                      <thead>
+                        <tr>
+                          {stationId === 'circuits' && (
+                            <>
+                              <th>#</th><th>Vs (V)</th><th>Measured V (V)</th><th>Current (mA)</th><th>Current (A)</th><th>R_exp (Ω)</th><th>Req Theor (Ω)</th><th>% Error</th><th>Action</th>
+                            </>
+                          )}
+                          {stationId === 'optics' && (
+                            <>
+                              <th>#</th><th>Object u (cm)</th><th>Image v (cm)</th><th>1/u (cm⁻¹)</th><th>1/v (cm⁻¹)</th><th>f_exp (cm)</th><th>f_nom (cm)</th><th>% Error</th><th>Action</th>
+                            </>
+                          )}
+                          {stationId === 'relativity' && (
+                            <>
+                              <th>#</th><th>β (v/c)</th><th>Speed (m/s)</th><th>γ (Theory)</th><th>γ (Detector)</th><th>Δt (s)</th><th>Contracted L (m)</th><th>Action</th>
+                            </>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stationProgress.trials.map((t, idx) => (
+                          <tr key={String(t.trial)} style={{ cursor: 'pointer' }} onClick={() => { setActiveTrialTab(idx); setRetakeTrialIndex(idx); }}>
+                            <td><b>{t.trial}</b></td>
+                            {stationId === 'circuits' && (
+                              <>
+                                <td>{formatValue(t.vs)}</td>
+                                <td style={{ color: '#38bdf8', fontWeight: 600 }}>{formatValue(t.measuredV ?? t.vs)}</td>
+                                <td style={{ color: '#10b981', fontWeight: 600 }}>{formatValue(t.measuredI_mA ?? (Number(t.current) * 1000))}</td>
+                                <td>{formatValue(t.measuredI_A ?? t.current)}</td>
+                                <td style={{ color: '#a855f7', fontWeight: 700 }}>{formatValue(t.resistance ?? t.impedance)}</td>
+                                <td>650.0</td>
+                                <td>{formatValue(t.percentError)}%</td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    style={{ fontSize: '11px', padding: '2px 6px', background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                    onClick={(e) => { e.stopPropagation(); setActiveTrialTab(idx); setRetakeTrialIndex(idx); }}
+                                  >
+                                    Retake
+                                  </button>
+                                </td>
+                              </>
+                            )}
+                            {stationId === 'optics' && (
+                              <>
+                                <td>{formatValue(t.u ?? t.paramA)}</td>
+                                <td style={{ color: '#38bdf8', fontWeight: 600 }}>{formatValue(t.v ?? t.measured)}</td>
+                                <td>{formatValue(t.invU)}</td>
+                                <td>{formatValue(t.invV)}</td>
+                                <td style={{ color: '#10b981', fontWeight: 700 }}>{formatValue(t.f_exp)}</td>
+                                <td>20.0</td>
+                                <td>{formatValue(t.percentError)}%</td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    style={{ fontSize: '11px', padding: '2px 6px', background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                    onClick={(e) => { e.stopPropagation(); setActiveTrialTab(idx); setRetakeTrialIndex(idx); }}
+                                  >
+                                    Retake
+                                  </button>
+                                </td>
+                              </>
+                            )}
+                            {stationId === 'relativity' && (
+                              <>
+                                <td>{formatValue(t.beta)}</td>
+                                <td>{formatValue(t.speed)}</td>
+                                <td>{formatValue(t.gamma)}</td>
+                                <td style={{ color: '#38bdf8', fontWeight: 600 }}>{formatValue(t.measuredGamma)}</td>
+                                <td style={{ color: '#10b981', fontWeight: 600 }}>{formatValue(t.dilatedTime)}</td>
+                                <td>{formatValue(t.contractedLength)}</td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    style={{ fontSize: '11px', padding: '2px 6px', background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                    onClick={(e) => { e.stopPropagation(); setActiveTrialTab(idx); setRetakeTrialIndex(idx); }}
+                                  >
+                                    Retake
+                                  </button>
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        ))}
+                        {stationProgress.trials.length === 0 && (
+                          <tr>
+                            <td colSpan={9} style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8' }}>
+                              No experimental trials recorded yet. Select an assigned trial operating point above and click &quot;Record Trial&quot;.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Completion and Step Advance */}
+                  <div className="button-row" style={{ marginTop: '16px' }}>
+                    {stationProgress.trials.length >= TOTAL_TRIALS ? (
+                      <button
+                        type="button"
+                        className="notebook-action"
+                        style={{ background: '#059669', borderColor: '#10b981', padding: '10px 20px', fontSize: '14px', fontWeight: 700 }}
+                        onClick={() => {
+                          completeStep(6);
+                          setNotebookStep(7);
+                        }}
+                      >
+                        ✓ 5 Trials Complete (+20 pts) — Proceed to Step 8: Computation & Analysis →
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: '13px', color: '#94a3b8' }}>
+                        Awaiting {TOTAL_TRIALS - stationProgress.trials.length} more trial{TOTAL_TRIALS - stationProgress.trials.length > 1 ? 's' : ''} to unlock computation stage.
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 8: EXPERIMENTAL DATA COMPUTATION & ANALYSIS (20 pts) */}
+              {notebookStep === 7 && (
+                <div className="step-content">
+                  <div className="step-badge-row">
+                    <span className="step-points-pill">+20 Points</span>
+                    <h4>Step 8: Computation of Experimental Data and Scientific Analysis</h4>
+                  </div>
+                  <p className="step-prompt">{station.steps[7].prompt}</p>
+
+                  {/* SECTION A: EXPERIMENTAL OBSERVATIONS (DATA TABLE) */}
+                  <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid #334155', paddingBottom: '6px' }}>
+                    <h5 style={{ margin: 0, color: '#38bdf8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                      Section A: Experimental Observations (Five-Trial Recorded Dataset)
+                    </h5>
+                  </div>
+
+                  <div className="table-scroll">
+                    <table className="trial-table">
+                      <thead>
+                        <tr>
+                          {stationId === 'circuits' && (
+                            <>
+                              <th>#</th><th>Vs (V)</th><th>Measured V (V)</th><th>Current (mA)</th><th>Current (A)</th><th>R_exp (Ω)</th><th>Req Theor (Ω)</th><th>% Error</th>
+                            </>
+                          )}
+                          {stationId === 'optics' && (
+                            <>
+                              <th>#</th><th>Object u (cm)</th><th>Image v (cm)</th><th>1/u (cm⁻¹)</th><th>1/v (cm⁻¹)</th><th>f_exp (cm)</th><th>f_nom (cm)</th><th>% Error</th>
+                            </>
+                          )}
+                          {stationId === 'relativity' && (
+                            <>
+                              <th>#</th><th>β (v/c)</th><th>Speed (m/s)</th><th>γ (Theory)</th><th>γ (Detector)</th><th>Δt (s)</th><th>Contracted L (m)</th>
+                            </>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stationProgress.trials.map((t) => (
+                          <tr key={String(t.trial)}>
+                            <td><b>{t.trial}</b></td>
+                            {stationId === 'circuits' && (
+                              <>
+                                <td>{formatValue(t.vs)}</td>
+                                <td style={{ color: '#38bdf8' }}>{formatValue(t.measuredV ?? t.vs)}</td>
+                                <td style={{ color: '#10b981' }}>{formatValue(t.measuredI_mA ?? (Number(t.current) * 1000))}</td>
+                                <td>{formatValue(t.measuredI_A ?? t.current)}</td>
+                                <td style={{ color: '#a855f7', fontWeight: 700 }}>{formatValue(t.resistance ?? t.impedance)}</td>
+                                <td>650.0</td>
+                                <td>{formatValue(t.percentError)}%</td>
+                              </>
+                            )}
+                            {stationId === 'optics' && (
+                              <>
+                                <td>{formatValue(t.u ?? t.paramA)}</td>
+                                <td style={{ color: '#38bdf8' }}>{formatValue(t.v ?? t.measured)}</td>
+                                <td>{formatValue(t.invU)}</td>
+                                <td>{formatValue(t.invV)}</td>
+                                <td style={{ color: '#10b981', fontWeight: 700 }}>{formatValue(t.f_exp)}</td>
+                                <td>20.0</td>
+                                <td>{formatValue(t.percentError)}%</td>
+                              </>
+                            )}
+                            {stationId === 'relativity' && (
+                              <>
+                                <td>{formatValue(t.beta)}</td>
+                                <td>{formatValue(t.speed)}</td>
+                                <td>{formatValue(t.gamma)}</td>
+                                <td style={{ color: '#38bdf8' }}>{formatValue(t.measuredGamma)}</td>
+                                <td style={{ color: '#10b981' }}>{formatValue(t.dilatedTime)}</td>
+                                <td>{formatValue(t.contractedLength)}</td>
+                              </>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* SECTION B: COMPUTATION AND ANALYSIS */}
+                  <div className="section-divider" style={{ margin: '22px 0 10px', borderBottom: '1px solid #334155', paddingBottom: '6px' }}>
+                    <h5 style={{ margin: 0, color: '#10b981', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                      Section B: Computation of Experimental Data & Error Quantification
+                    </h5>
+                  </div>
+
+                  {/* 1. Per-Trial Formula Substitution Display */}
+                  <div className="computation-cards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '16px' }}>
+                    {stationProgress.trials.map((t, i) => {
+                      if (stationId === 'circuits') {
+                        const v = Number(t.measuredV ?? t.vs ?? 4.0);
+                        const iA = Number(t.measuredI_A ?? t.current ?? 0.006);
+                        const r = Number(t.resistance ?? (v / iA));
+                        return (
+                          <div key={i} style={{ padding: '10px 8px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '11px' }}>
+                            <span style={{ color: '#38bdf8', fontWeight: 700 }}>TRIAL #{i + 1}</span>
+                            <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
+                              R_{i + 1} = V_{i + 1} / I_{i + 1}
+                            </div>
+                            <div style={{ color: '#94a3b8' }}>
+                              = {v.toFixed(2)}V / {iA.toFixed(5)}A
+                            </div>
+                            <div style={{ fontWeight: 700, color: '#f8fafc', marginTop: '2px' }}>
+                              = {r.toFixed(1)} Ω
+                            </div>
+                          </div>
+                        );
+                      } else if (stationId === 'optics') {
+                        const u = Number(t.u ?? t.paramA ?? 30);
+                        const v = Number(t.v ?? t.measured ?? 60);
+                        const f = Number(t.f_exp ?? ((u * v) / (u + v)));
+                        return (
+                          <div key={i} style={{ padding: '10px 8px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '11px' }}>
+                            <span style={{ color: '#10b981', fontWeight: 700 }}>TRIAL #{i + 1}</span>
+                            <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
+                              f_{i + 1} = (u·v)/(u+v)
+                            </div>
+                            <div style={{ color: '#94a3b8' }}>
+                              = ({u}·{v.toFixed(1)})/({u}+{v.toFixed(1)})
+                            </div>
+                            <div style={{ fontWeight: 700, color: '#f8fafc', marginTop: '2px' }}>
+                              = {f.toFixed(2)} cm
+                            </div>
+                          </div>
+                        );
+                      } else {
+                        const beta = Number(t.beta ?? 0.1);
+                        const gamma = Number(t.measuredGamma ?? (1 / Math.sqrt(1 - beta * beta)));
+                        return (
+                          <div key={i} style={{ padding: '10px 8px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '11px' }}>
+                            <span style={{ color: '#a855f7', fontWeight: 700 }}>TRIAL #{i + 1}</span>
+                            <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
+                              γ_{i + 1} = 1/√(1-β²)
+                            </div>
+                            <div style={{ color: '#94a3b8' }}>
+                              = 1/√(1-{beta}²)
+                            </div>
+                            <div style={{ fontWeight: 700, color: '#f8fafc', marginTop: '2px' }}>
+                              = {gamma.toFixed(4)}
+                            </div>
+                          </div>
+                        );
+                      }
+                    })}
+                  </div>
+
+                  {/* 2. Statistical Analysis & Error Quantification */}
+                  {stationId === 'circuits' && (
+                    <div className="stats-breakdown-card" style={{ padding: '14px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px', marginBottom: '16px' }}>
+                      <h5 style={{ margin: '0 0 10px', color: '#f8fafc' }}>Statistical Quantification & Error Metrics:</h5>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                        <div>
+                          <b>1. Average Experimental Resistance (Rmean):</b>
+                          <div style={{ fontFamily: 'monospace', color: '#38bdf8', margin: '4px 0' }}>
+                            Rmean = (R1 + R2 + R3 + R4 + R5) / 5 = {circuitMetrics.mean.toFixed(2)} Ω
+                          </div>
+                          <small style={{ color: '#94a3b8' }}>
+                            Substituted: ({circuitMetrics.resistances.map((r) => r.toFixed(1)).join(' + ')}) / 5
+                          </small>
+                        </div>
+                        <div>
+                          <b>2. Sample Standard Deviation (s):</b>
+                          <div style={{ fontFamily: 'monospace', color: '#38bdf8', margin: '4px 0' }}>
+                            s = √[ Σ(Ri - Rmean)² / (5 - 1) ] = {circuitMetrics.stdDev.toFixed(3)} Ω
+                          </div>
+                          <small style={{ color: '#94a3b8' }}>
+                            Standard Error of the Mean: SEM = s / √5 = {circuitMetrics.sem.toFixed(3)} Ω
+                          </small>
+                        </div>
+                        <div>
+                          <b>3. Percentage Error vs. Theoretical Equivalent Resistance (650.0 Ω):</b>
+                          <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
+                            Percentage Error = |Rmean - Req| / Req × 100% = {circuitMetrics.percentError.toFixed(2)}%
+                          </div>
+                          <small style={{ color: '#94a3b8' }}>
+                            |{circuitMetrics.mean.toFixed(2)} - 650.0| / 650.0 × 100% (Within strict ±2% academic threshold)
+                          </small>
+                        </div>
+                        <div>
+                          <b>4. Theoretical Equivalent Resistance (Req):</b>
+                          <div style={{ fontFamily: 'monospace', color: '#a855f7', margin: '4px 0' }}>
+                            Req = R1 + R2 + R3 = 100 Ω + 220 Ω + 330 Ω = 650.0 Ω
+                          </div>
+                          <small style={{ color: '#94a3b8' }}>
+                            Series Kirchhoff addition verified with zero branch leakage
+                          </small>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {stationId === 'optics' && (
+                    <div className="stats-breakdown-card" style={{ padding: '14px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px', marginBottom: '16px' }}>
+                      <h5 style={{ margin: '0 0 10px', color: '#f8fafc' }}>Optics Statistical Quantification:</h5>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                        <div>
+                          <b>Average Experimental Focal Length (fmean):</b>
+                          <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
+                            fmean = Σ fi / 5 = {opticsMetrics.mean.toFixed(2)} cm
+                          </div>
+                        </div>
+                        <div>
+                          <b>Percentage Error vs. Nominal Focal Length (20.0 cm):</b>
+                          <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
+                            Percentage Error = |fmean - 20.0| / 20.0 × 100% = {opticsMetrics.percentError.toFixed(2)}%
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3. Least-Squares Linear Regression Plot & Substituted Formula */}
+                  <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid #334155', paddingBottom: '6px' }}>
+                    <h5 style={{ margin: 0, color: '#38bdf8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                      Section C: Least-Squares Linear Regression Analysis (Slope = Req)
+                    </h5>
+                  </div>
+
                   <Room3Graph stationId={stationId} trials={stationProgress.trials} accentColor={station.accent} />
 
-                  {/* Guided Formative Assessment Questions */}
-                  <div className="guided-questions-container">
+                  {regression && stationId === 'circuits' && (
+                    <div className="regression-substitution-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px', marginTop: '12px' }}>
+                      <b>Step-by-Step Least-Squares Substitution (V vs. I):</b>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', margin: '8px 0', fontSize: '11px', fontFamily: 'monospace' }}>
+                        <div>Σ I = {regression.sumX.toFixed(5)} A</div>
+                        <div>Σ V = {regression.sumY.toFixed(2)} V</div>
+                        <div>Σ (I·V) = {regression.sumXY.toFixed(4)} W</div>
+                        <div>Σ (I²) = {regression.sumX2.toFixed(6)} A²</div>
+                      </div>
+                      <div style={{ fontFamily: 'monospace', color: '#38bdf8', fontSize: '13px' }}>
+                        Slope m = [ N·Σ(I·V) - (ΣI)(ΣV) ] / [ N·Σ(I²) - (ΣI)² ]<br />
+                        m = [ 5·({regression.sumXY.toFixed(4)}) - ({regression.sumX.toFixed(4)})·({regression.sumY.toFixed(2)}) ] / [ 5·({regression.sumX2.toFixed(6)}) - ({regression.sumX.toFixed(4)})² ] = <b>{regression.slope.toFixed(2)} Ω</b>
+                      </div>
+                      <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#94a3b8' }}>
+                        Physical Interpretation: The slope <b>m = {regression.slope.toFixed(2)} Ω</b> directly represents the equivalent resistance Req. With coefficient of determination <b>R² = {regression.rSquared.toFixed(5)}</b>, the empirical data conclusively verifies Ohm&apos;s Law (V = I·R).
+                      </p>
+                    </div>
+                  )}
+
+                  {/* 4. Formative Assessment Questions */}
+                  <div className="guided-questions-container" style={{ marginTop: '18px' }}>
                     <b>Formative Assessment Questions:</b>
                     {ROOM3_GUIDE_QUESTIONS[stationId].map((q, qIdx) => {
                       const userChoice = stationProgress.guideAnswers?.[qIdx] ?? -1;
                       return (
-                        <div key={q.id} className="guide-question-block">
+                        <div key={q.id} className="guide-question-block" style={{ marginTop: '10px' }}>
                           <p className="q-title"><b>Q{qIdx + 1}:</b> {q.question}</p>
                           <div className="q-options-list">
                             {q.options.map((opt, optIdx) => (
@@ -2927,8 +3454,8 @@ export default function Room3Experience() {
                     })}
                   </div>
 
-                  {/* Sources of Uncertainty */}
-                  <div className="errors-checklist">
+                  {/* 5. Identified Sources of Uncertainty */}
+                  <div className="errors-checklist" style={{ marginTop: '16px' }}>
                     <b>Identified Sources of Experimental Uncertainty:</b>
                     {station.errors.map((err) => (
                       <label key={err} className="checkbox-row">
@@ -2942,14 +3469,14 @@ export default function Room3Experience() {
                     ))}
                   </div>
 
-                  {/* Observations Text */}
-                  <div className="text-area-group">
+                  {/* 6. Scientific Observations & Deductions */}
+                  <div className="text-area-group" style={{ marginTop: '16px' }}>
                     <label>
                       <b>Scientific Observations & Deductions:</b>
                       <textarea
                         rows={3}
                         value={stationProgress.analysis}
-                        placeholder="Detail your empirical findings regarding governing laws, slopes, and phase/optical/Lorentz behavior..."
+                        placeholder="Detail your empirical findings regarding governing laws, slopes, and linear circuit behavior..."
                         onChange={(e) => {
                           const val = e.target.value;
                           setProgress((prev) => ({
@@ -2961,36 +3488,8 @@ export default function Room3Experience() {
                     </label>
                   </div>
 
-                  {!allGuideCorrect || !hasUncertainty ? (
-                    <div className="feedback-alert incorrect" style={{ marginTop: '12px' }}>
-                      {!allGuideCorrect
-                        ? '⚠️ Formative Questions Incomplete: Answer all 3 questions correctly to unlock analysis synthesis.'
-                        : '⚠️ Experimental Uncertainty: Select at least one identified source of error above.'}
-                    </div>
-                  ) : null}
-
-                  <div className="button-row" style={{ marginTop: '16px' }}>
-                    <button
-                      type="button"
-                      className="notebook-action"
-                      disabled={stationProgress.completed[6] || !allGuideCorrect || !hasUncertainty}
-                      onClick={() => completeStep(6)}
-                    >
-                      {stationProgress.completed[6] ? '✓ Analysis Complete (10/10 pts)' : 'Submit Analysis & Synthesize (+10 pts)'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 8: REPORT (10 pts) */}
-              {notebookStep === 7 && (
-                <div className="step-content">
-                  <div className="step-badge-row">
-                    <span className="step-points-pill">+10 Points</span>
-                    <h4>Step 8: Certification & Final Report Submission</h4>
-                  </div>
-
-                  <div className="certification-card">
+                  {/* 7. Student Metadata & Certification Card */}
+                  <div className="certification-card" style={{ marginTop: '18px' }}>
                     <div className="cert-header">
                       <span className="cert-seal">🎓</span>
                       <h5>Physics 300 Certified Experimental Record</h5>
@@ -3038,11 +3537,9 @@ export default function Room3Experience() {
                     </div>
                   </div>
 
-                  {!reportReady && (
-                    <div className="feedback-alert incorrect" style={{ marginTop: '14px' }}>
-                      {!steps1to7Done
-                        ? '⚠️ Incomplete Station: Complete Steps 1 through 7 before certifying the final laboratory report.'
-                        : '⚠️ Student Metadata Required: Enter Student Name, ID, and Section above to generate certified report.'}
+                  {calculationFeedback && (
+                    <div className={`feedback-alert ${calculationStatus}`} style={{ marginTop: '14px' }}>
+                      {calculationFeedback}
                     </div>
                   )}
 
@@ -3057,10 +3554,18 @@ export default function Room3Experience() {
                     <button
                       type="button"
                       className="notebook-action"
-                      disabled={stationProgress.completed[7] || !reportReady}
                       onClick={downloadReportPdf}
                     >
-                      {stationProgress.completed[7] ? '✓ Final Report Certified (10/10 pts)' : '📄 Download Certified PDF Report (+10 pts)'}
+                      📄 Download Certified PDF Report
+                    </button>
+                    <button
+                      type="button"
+                      className="notebook-action"
+                      style={{ background: '#059669', borderColor: '#10b981', fontWeight: 700 }}
+                      disabled={stationProgress.completed[7]}
+                      onClick={verifyCalculations}
+                    >
+                      {stationProgress.completed[7] ? '✓ Step 8 Complete (20/20 pts) · Certified' : 'Complete Step 8 & Certify Lab Notebook (+20 pts)'}
                     </button>
                   </div>
                 </div>

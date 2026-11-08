@@ -70,12 +70,12 @@ export type StationCurriculum = {
 
 // -------------------------------------------------------------
 // STATION 01: CIRCUITS GUIDED CURRICULUM
-// Experiment: Measuring Voltage and Current in a DC Series Circuit
+// Experiment: Verification of Ohm's Law Using a Digital Multimeter
 // -------------------------------------------------------------
 const CIRCUITS_CURRICULUM: StationCurriculum = {
-  experimentTitle: 'Measuring Voltage and Current in a DC Series Circuit',
-  experimentSubtitle: 'Introductory Electrical Laboratory · Hands-On Multimeter Operation',
-  learningGoal: 'Learn how to configure a digital multimeter, measure potential differences in parallel, and insert an ammeter in series to verify Ohm\'s Law and Kirchhoff\'s Voltage Law.',
+  experimentTitle: 'Verification of Ohm\'s Law Using a Digital Multimeter',
+  experimentSubtitle: 'Introductory Electrical Laboratory · Hands-On Multimeter Operation & 5-Trial Analysis',
+  learningGoal: 'Learn how to configure a digital multimeter, measure potential differences in parallel, insert an ammeter in series, collect a 5-trial experimental dataset, and verify Ohm\'s Law (V = I·Req).',
   steps: [
     {
       id: 'c-step-1',
@@ -105,7 +105,7 @@ const CIRCUITS_CURRICULUM: StationCurriculum = {
     {
       id: 'c-step-2',
       stepNumber: 2,
-      title: 'Step 2: Prepare the DC Series Circuit',
+      title: 'Step 2: Circuit Assembly & Continuity Inspection',
       action: 'Confirm that the three resistors (R1 = 100 Ω, R2 = 220 Ω, R3 = 330 Ω) are connected in series and the series jumper is closed.',
       why: 'A series circuit provides exactly one continuous, unbroken path for electric current to flow. The equivalent resistance is Req = R1 + R2 + R3 = 650 Ω.',
       expectedResult: 'The circuit breadboard matrix confirms a single series loop with total resistance Req = 650 Ω.',
@@ -149,96 +149,76 @@ const CIRCUITS_CURRICULUM: StationCurriculum = {
     {
       id: 'c-step-3',
       stepNumber: 3,
-      title: 'Step 3: Prepare the Multimeter (DC Voltage Mode)',
-      action: 'Find the rotary selector dial on the Fluke 87V multimeter and turn it to DC Voltage (V⎓).',
-      why: 'DC Voltage (V⎓) configures the meter with a 10 MΩ high input impedance so it does not draw current from the circuit while measuring potential difference.',
-      expectedResult: 'The multimeter LCD screen will illuminate showing "0.00 V" and the annunciator "V_DC · AUTO".',
-      hint: 'Click the "V⎓ (DC V)" button under the Rotary Function Dial controls.',
-      targetApparatusId: 'circuits-multimeter',
-      relevantTool: 'multimeter',
+      title: 'Step 3: Power Supply Setup & Energization',
+      action: 'Configure the DC Power Supply to nominal 24.0 V DC and switch Power ON.',
+      why: 'Establishing steady-state DC electromotive force provides the baseline potential difference necessary to drive current through the resistive network.',
+      expectedResult: 'Power supply displays 24.0 V, power indicator glows green, and circuit is energized.',
+      hint: 'Slide DC Voltage to 24.0 V and toggle Power Switch to ON.',
+      targetApparatusId: 'circuits-power-switch',
+      relevantTool: 'power_supply',
       validate: (state) => {
-        if (state.dmmMode === 'v_dc') {
-          return {
-            isPassed: true,
-            feedback: '✓ Correct! Multimeter dial is set to DC Voltage (V⎓). Meter is in high-impedance voltage sensing mode.',
-          };
+        if (!state.circuits.powerOn) {
+          return { isPassed: false, feedback: 'Power supply is currently OFF. Switch Power ON.', errorType: 'unpowered' };
         }
-        return {
-          isPassed: false,
-          feedback: `Current dial setting is ${state.dmmMode.toUpperCase()}. Turn the rotary dial to V⎓ (DC Voltage).`,
-          errorType: 'wrong_mode',
-        };
+        if (Math.abs(state.circuits.vs - 24.0) > 1.0) {
+          return { isPassed: false, feedback: `Power supply is set to ${state.circuits.vs.toFixed(1)} V. Adjust voltage to 24.0 V.` };
+        }
+        return { isPassed: true, feedback: '✓ Power supply configured and energized at 24.0 V DC.' };
       },
       autoAssist: {
-        label: 'Turn Dial to DC Voltage (V⎓)',
-        apply: () => ({ dmmMode: 'v_dc' }),
+        label: 'Energize Power Supply at 24.0 V',
+        apply: () => ({ circuits: { powerOn: true, vs: 24.0 } }),
       },
     },
     {
       id: 'c-step-4',
       stepNumber: 4,
-      title: 'Step 4: Connect the Multimeter Test Leads',
-      action: 'Verify the black test lead is connected to the COM socket and the red test lead is connected to the V·Ω socket.',
-      why: 'The COM (common) socket is always reference ground. The V·Ω socket routes signals through the internal high-impedance divider. The mA/10A socket is strictly for current!',
-      expectedResult: 'Red lead is plugged into V·Ω jack. The meter displays "V_DC · AUTO · JACK: V_OHM" with zero warning annunciators.',
-      hint: 'Click "V·Ω (Hi-Z Volts/Ohms)" under the RED LEAD INPUT JACK controls.',
+      title: 'Step 4: Multimeter Instrument Preparation',
+      action: 'Turn the Fluke 87V rotary dial to DC Voltage (V⎓) and verify test leads: Black in COM, Red in V·Ω.',
+      why: 'DC Voltage (V⎓) configures the meter with a 10 MΩ high input impedance so it does not draw current from the circuit while measuring potential difference.',
+      expectedResult: 'Multimeter displays "0.00 V" and annunciator shows "V_DC · AUTO · JACK: V_OHM".',
+      hint: 'Click "V⎓ (DC V)" on dial and "V·Ω" for red lead input jack.',
       targetApparatusId: 'circuits-multimeter',
       relevantTool: 'multimeter',
       validate: (state) => {
-        if (state.dmmJack === 'v_ohm') {
-          return {
-            isPassed: true,
-            feedback: '✓ Correct! Red lead is securely inserted into the high-impedance V·Ω jack, and Black lead is in COM.',
-          };
+        if (state.dmmMode !== 'v_dc') {
+          return { isPassed: false, feedback: `Multimeter dial is set to ${state.dmmMode.toUpperCase()}. Turn dial to V⎓ (DC Voltage).`, errorType: 'wrong_mode' };
         }
-        return {
-          isPassed: false,
-          feedback: 'LEAD MISMATCH: The red lead is in the mA/10A current shunt! Move red lead to the V·Ω jack.',
-          errorType: 'wrong_jack',
-          hazardWarning: 'Placing a current lead across voltage nodes can cause a short circuit.',
-        };
+        if (state.dmmJack !== 'v_ohm') {
+          return { isPassed: false, feedback: 'Red lead is plugged into the current shunt! Move red lead to the V·Ω jack.', errorType: 'wrong_jack' };
+        }
+        return { isPassed: true, feedback: '✓ Multimeter prepared: High-impedance DC Voltage mode (V⎓) with leads in COM and V·Ω.' };
       },
       autoAssist: {
-        label: 'Plug Red Lead into V·Ω Jack',
-        apply: () => ({ dmmJack: 'v_ohm' }),
+        label: 'Prepare Multimeter for DC Voltage',
+        apply: () => ({ dmmMode: 'v_dc', dmmJack: 'v_ohm' }),
       },
     },
     {
       id: 'c-step-5',
       stepNumber: 5,
-      title: 'Step 5: Measure Source Voltage (Vs = 24.00 V)',
-      action: 'Turn the Power Supply ON. Connect the Black probe to PSU Negative (-) and the Red probe to PSU Positive (+).',
-      why: 'Voltage is a relative potential difference between two points. To measure total available electromotive force (EMF), probes are placed in parallel across the power supply rails.',
-      expectedResult: 'The multimeter LCD illuminates displaying approximately "24.00 V".',
-      hint: 'Turn Power ON using the power switch, then set Red Probe to "PSU Positive (+)" and Black Probe to "PSU Negative (GND)".',
-      targetApparatusId: 'circuits-power-switch',
-      relevantTool: 'power_supply',
+      title: 'Step 5: Voltage Measurement Procedure (Parallel)',
+      action: 'Connect probes in parallel across the power supply rails (Red to PSU +, Black to PSU -) to measure source voltage (24.00 V) and across resistor R1 (3.69 V).',
+      why: 'Voltage is a relative potential difference between two nodes. Voltmeters have high impedance and must always be placed in parallel without breaking the circuit.',
+      expectedResult: 'Multimeter reads approximately 24.00 V across source and 3.69 V across R1.',
+      hint: 'Connect Red to PSU (+) and Black to PSU (-), then verify drop across R1.',
+      targetApparatusId: 'circuits-multimeter',
+      relevantTool: 'multimeter',
       validate: (state) => {
         if (!state.circuits.powerOn) {
-          return {
-            isPassed: false,
-            feedback: 'Power supply is OFF. Switch Power ON to energize the circuit.',
-            errorType: 'unpowered',
-          };
+          return { isPassed: false, feedback: 'Power supply is OFF. Switch Power ON to measure voltage.', errorType: 'unpowered' };
         }
-        const hasRed = state.redTerminal === 'SRC_POS';
-        const hasBlack = state.blackTerminal === 'SRC_NEG';
-        if (hasRed && hasBlack) {
+        const isPsu = (state.redTerminal === 'SRC_POS' && state.blackTerminal === 'SRC_NEG');
+        const isR1 = (state.redTerminal === 'R1_A' && state.blackTerminal === 'R1_B') || (state.redTerminal === 'R1_B' && state.blackTerminal === 'R1_A');
+        if (isPsu || isR1) {
           return {
             isPassed: true,
-            feedback: `✓ Source Voltage Verified! Fluke 87V reads ${state.dmmReading.displayString} (Theoretical Vs = 24.00 V).`,
-          };
-        }
-        if (state.redTerminal === 'SRC_NEG' && state.blackTerminal === 'SRC_POS') {
-          return {
-            isPassed: false,
-            feedback: 'Polarity Inverted: Meter reads -24.00 V. Swap probes so Red is on (+) and Black is on (-).',
-            errorType: 'wrong_probes',
+            feedback: `✓ Parallel Voltage Successfully Measured: ${state.dmmReading.displayString}. Notice the high-impedance meter did not interrupt circuit current.`,
           };
         }
         return {
           isPassed: false,
-          feedback: 'Probes are not connected across the power supply. Connect Red probe to PSU (+) and Black probe to PSU (-).',
+          feedback: 'Connect Red probe to PSU (+) and Black probe to PSU (-), or connect across Resistor 1 (Node A & B).',
           errorType: 'wrong_probes',
         };
       },
@@ -254,111 +234,39 @@ const CIRCUITS_CURRICULUM: StationCurriculum = {
     {
       id: 'c-step-6',
       stepNumber: 6,
-      title: 'Step 6: Measure Voltage Drops Across Resistors (V1, V2, V3)',
-      action: 'Move the probes across resistor R1 (Red to R1 Node A, Black to R1 Node B). Observe the voltage drop.',
-      why: 'By Ohm\'s Law, each resistor produces a voltage drop V = I × R proportional to its resistance. According to Kirchhoff\'s Voltage Law (KVL), the sum of drops V1 + V2 + V3 must equal Vs (24.0 V).',
-      expectedResult: 'R1 voltage drop measures approximately 3.69 V. (R2 = 8.12 V, R3 = 12.18 V).',
-      hint: 'Select Red Probe: "Resistor 1 Node A" and Black Probe: "Resistor 1 Node B".',
-      relevantTool: 'breadboard',
-      validate: (state) => {
-        if (!state.circuits.powerOn) {
-          return { isPassed: false, feedback: 'Power supply is OFF. Turn power ON to measure voltage drop.', errorType: 'unpowered' };
-        }
-        const isR1 = (state.redTerminal === 'R1_A' && state.blackTerminal === 'R1_B') || (state.redTerminal === 'R1_B' && state.blackTerminal === 'R1_A');
-        const isR2 = (state.redTerminal === 'R2_A' && state.blackTerminal === 'R2_B') || (state.redTerminal === 'R2_B' && state.blackTerminal === 'R2_A');
-        const isR3 = (state.redTerminal === 'R3_A' && state.blackTerminal === 'R3_B') || (state.redTerminal === 'R3_B' && state.blackTerminal === 'R3_A');
-
-        if (isR1) {
-          return {
-            isPassed: true,
-            feedback: `✓ Measured R1 Voltage Drop: ${state.dmmReading.displayString} (Theoretical: 3.69 V). Probes correctly spanning R1 in parallel.`,
-          };
-        }
-        if (isR2 || isR3) {
-          return {
-            isPassed: true,
-            feedback: `✓ Measured Resistor Drop: ${state.dmmReading.displayString}. Notice the voltage drop is directly proportional to resistance!`,
-          };
-        }
-        return {
-          isPassed: false,
-          feedback: 'Connect Red probe to Resistor 1 Node A and Black probe to Resistor 1 Node B.',
-          errorType: 'wrong_probes',
-        };
-      },
-      autoAssist: {
-        label: 'Connect Probes Across R1 (3.69 V drop)',
-        apply: () => ({
-          circuits: { powerOn: true, vs: 24.0 },
-          redTerminal: 'R1_A',
-          blackTerminal: 'R1_B',
-        }),
-      },
-    },
-    {
-      id: 'c-step-7',
-      stepNumber: 7,
-      title: 'Step 7: Measure Series Loop Current (I = 36.92 mA)',
+      title: 'Step 6: Current Measurement Procedure (Series Insertion)',
       action: 'Turn OFF power supply first. Move Red lead to mA/10A jack and turn dial to A⎓. Open series jumper, insert meter into series break terminals A and B, then restore power.',
       why: 'CRITICAL SAFETY RULE: An ammeter has near-zero internal resistance. It MUST be placed in series by breaking the circuit path. Connecting an ammeter in parallel across a voltage source causes a catastrophic short circuit!',
       expectedResult: 'The circuit loop current measures approximately 36.92 mA. All components conduct the exact same current.',
       hint: '1. Power: OFF → 2. Jumper: OPEN → 3. Jack: mA/10A → 4. Dial: A⎓ → 5. Probes: Series Jack A & B → 6. Power: ON.',
       relevantTool: 'multimeter',
       validate: (state) => {
-        // Dangerous short-circuit check
         if (state.dmmReading.tripFuse || state.dmmReading.displayString === 'FUSE') {
           return {
             isPassed: false,
-            feedback: 'BLOWN FUSE HAZARD: You placed the ammeter in parallel across the voltage source! The internal 10A fuse tripped to protect the instrument. Click "Reset Fuse" and connect in series.',
+            feedback: 'BLOWN FUSE HAZARD: You placed the ammeter in parallel across the voltage source! Click "Reset Fuse" and connect in series.',
             errorType: 'short_circuit',
             hazardWarning: 'Ammeters must never be connected in parallel across power nodes.',
           };
         }
-
         if (state.dmmJack !== 'ma_10a') {
-          return {
-            isPassed: false,
-            feedback: 'Move the red test lead to the mA/10A current jack before measuring current.',
-            errorType: 'wrong_jack',
-          };
+          return { isPassed: false, feedback: 'Move red test lead to the mA/10A jack before measuring current.', errorType: 'wrong_jack' };
         }
-
         if (state.dmmMode !== 'a_dc' && state.dmmMode !== 'a_ac') {
-          return {
-            isPassed: false,
-            feedback: 'Turn the rotary dial to DC Current (A⎓).',
-            errorType: 'wrong_mode',
-          };
+          return { isPassed: false, feedback: 'Turn the rotary dial to DC Current (A⎓).', errorType: 'wrong_mode' };
         }
-
         if (state.jumperClosed) {
-          return {
-            isPassed: false,
-            feedback: 'The series jumper is still closed! Click "Jumper: OPEN" to create the break for the ammeter.',
-            errorType: 'jumper_not_open',
-          };
+          return { isPassed: false, feedback: 'The series jumper is closed! Click "Jumper: OPEN" to create the break for the ammeter.', errorType: 'jumper_not_open' };
         }
-
         const isSeriesBreak =
           (state.redTerminal === 'SERIES_JACK_A' && state.blackTerminal === 'SERIES_JACK_B') ||
           (state.redTerminal === 'SERIES_JACK_B' && state.blackTerminal === 'SERIES_JACK_A');
-
         if (!isSeriesBreak) {
-          return {
-            isPassed: false,
-            feedback: 'Connect Red probe to Series Break Terminal A and Black probe to Series Break Terminal B.',
-            errorType: 'wrong_probes',
-          };
+          return { isPassed: false, feedback: 'Connect probes across Series Break Terminals A and B.', errorType: 'wrong_probes' };
         }
-
         if (!state.circuits.powerOn) {
-          return {
-            isPassed: false,
-            feedback: 'Probes and jumper are correctly configured in series! Now turn the Power Supply ON to read current.',
-            errorType: 'unpowered',
-          };
+          return { isPassed: false, feedback: 'Probes and jumper are configured in series! Now turn Power ON to read current.', errorType: 'unpowered' };
         }
-
         return {
           isPassed: true,
           feedback: `✓ Series Current Successfully Measured! Fluke 87V reads ${state.dmmReading.displayString} (Theoretical: 36.92 mA). Notice the ammeter completes the circuit loop!`,
@@ -377,18 +285,34 @@ const CIRCUITS_CURRICULUM: StationCurriculum = {
       },
     },
     {
+      id: 'c-step-7',
+      stepNumber: 7,
+      title: 'Step 7: Five-Trial Experimental Data Collection',
+      action: 'Conduct five measurement trials at assigned voltages: 4 V, 8 V, 12 V, 16 V, and 20 V. Measure voltage and current for each trial and record into the empirical dataset.',
+      why: 'Single measurements can be subject to random fluctuations. Recording a multi-point dataset across multiple operating points allows physicists to confirm linearity and verify Ohm\'s Law.',
+      expectedResult: 'All 5 experimental trials recorded with measured voltage Vi and measured current Ii.',
+      hint: 'Use the dedicated Five-Trial collection card. Set each assigned voltage, measure, and click "Record Trial".',
+      relevantTool: 'multimeter',
+      validate: (state) => {
+        return {
+          isPassed: true,
+          feedback: '✓ Dedicated Five-Trial Data Collection active. Collect all 5 operating points (4 V, 8 V, 12 V, 16 V, 20 V).',
+        };
+      },
+    },
+    {
       id: 'c-step-8',
       stepNumber: 8,
-      title: 'Step 8: Record Empirical Data & Complete Analysis',
-      action: 'Transfer all recorded experimental measurements into your Laboratory Notebook and review theoretical comparisons.',
-      why: 'Scientific rigor requires comparing empirical observations with physical laws. Quantifying percent error validates instrument calibration and experimental accuracy.',
-      expectedResult: 'All measured values align with Ohm\'s Law (I = Vs / Req = 24V / 650Ω = 36.92 mA) within experimental uncertainty.',
-      hint: 'Click "Open Laboratory Notebook" or view the summary table below to record trials.',
+      title: 'Step 8: Experimental Data Computation & Analysis',
+      action: 'Calculate experimental resistance Ri = Vi / Ii for each trial, average resistance Rmean, sample standard deviation s, percentage error vs 650 Ω, and review linear regression fit.',
+      why: 'Quantitative error analysis and linear regression validate that the resistor network obeys Ohm\'s Law with high precision.',
+      expectedResult: 'Linear regression confirms slope m = Req = 650.0 Ω and R² ≥ 0.999.',
+      hint: 'Navigate to Step 8 in the Laboratory Notebook to view complete calculations, regression plot, and certify report.',
       relevantTool: 'breadboard',
       validate: (state) => {
         return {
           isPassed: true,
-          feedback: '✓ Full Guided Electrical Experiment Completed! You have learned proper multimeter setup, parallel voltage measurement, series current insertion, and circuit safety.',
+          feedback: '✓ Full Guided Electrical Experiment Completed! Ohm\'s Law verified with empirical precision.',
         };
       },
     },
@@ -399,18 +323,18 @@ const CIRCUITS_CURRICULUM: StationCurriculum = {
 // STATION 02: OPTICS GUIDED CURRICULUM
 // -------------------------------------------------------------
 const OPTICS_CURRICULUM: StationCurriculum = {
-  experimentTitle: 'Snell\'s Law, Total Internal Reflection & Lens Optics',
+  experimentTitle: 'Verification of Thin Lens Equation (1/f = 1/u + 1/v)',
   experimentSubtitle: 'Geometric & Physical Optics Laboratory · Laser Precision Bench',
-  learningGoal: 'Investigate how light refracts at dielectric interfaces, discover the critical angle for Total Internal Reflection (TIR), and explore thin lens image formation.',
+  learningGoal: 'Investigate thin lens image formation, measure object and image distances across 5 experimental trials, and verify the Gaussian lens equation f = (u·v)/(u+v).',
   steps: [
     {
       id: 'o-step-1',
       stepNumber: 1,
       title: 'Step 1: Inspect Optics Bench Components',
-      action: 'Examine the optical rail. Identify the tunable laser source, goniometer prism mount, lens carrier, and observation screen.',
+      action: 'Examine the optical rail. Identify the tunable laser source, converging lens mount, object fixture, and observation screen.',
       why: 'Precision optics requires all optical axes to be aligned along the central rail to avoid paraxial aberrations.',
       expectedResult: 'Optics bench components verified on checklist.',
-      hint: 'Inspect laser source, prism dial, and observation screen.',
+      hint: 'Inspect laser source, prism/lens carrier, and observation screen.',
       targetApparatusId: 'optics-laser',
       relevantTool: 'laser',
       validate: (state) => {
@@ -425,7 +349,21 @@ const OPTICS_CURRICULUM: StationCurriculum = {
     {
       id: 'o-step-2',
       stepNumber: 2,
-      title: 'Step 2: Energize Tunable Laser Source (λ = 532 nm)',
+      title: 'Step 2: Optical Rail Alignment & Calibration',
+      action: 'Verify paraxial alignment along the central optical axis and zero angular deflection.',
+      why: 'Accurate optical measurement requires the optical axis of all components to be collinear with the central laser track.',
+      expectedResult: 'Central track aligned with zero deflection.',
+      hint: 'Align central rail axis.',
+      targetApparatusId: 'optics-angle-dial',
+      relevantTool: 'goniometer',
+      validate: (state) => {
+        return { isPassed: true, feedback: '✓ Optical rail aligned along central optical axis.' };
+      },
+    },
+    {
+      id: 'o-step-3',
+      stepNumber: 3,
+      title: 'Step 3: Energize Laser Source (λ = 532 nm)',
       action: 'Switch the Laser Source ON and set wavelength to 532 nm (emerald green).',
       why: 'Green laser light at 532 nm provides the standard optical calibration wavelength where human eye sensitivity peaks.',
       expectedResult: 'Coherent green laser beam illuminates the optical track.',
@@ -447,73 +385,84 @@ const OPTICS_CURRICULUM: StationCurriculum = {
       },
     },
     {
-      id: 'o-step-3',
-      stepNumber: 3,
-      title: 'Step 3: Measure Refraction and Snell\'s Law',
-      action: 'Set Sub-Mode to "Refraction & TIR", Medium 1 to Air (n1 = 1.00), Medium 2 to Glass (n2 = 1.52), and Incident Angle to θ1 = 30.0°.',
-      why: 'Snell\'s Law states n1 · sin(θ1) = n2 · sin(θ2). Entering a denser medium slows the wavefront, bending light towards the normal.',
-      expectedResult: 'Refracted beam bends to θ2 = 19.2° (sin(19.2°) = 1.00/1.52 · sin(30°)).',
-      hint: 'Select Refraction & TIR, set θ1 = 30.0°, n1 = 1.00, n2 = 1.52.',
-      targetApparatusId: 'optics-angle-dial',
-      relevantTool: 'goniometer',
-      validate: (state) => {
-        if (state.optics.subMode !== 'refraction') {
-          return { isPassed: false, feedback: 'Select "Refraction & TIR" mode.' };
-        }
-        if (Math.abs(state.optics.theta1 - 30.0) > 1.0) {
-          return { isPassed: false, feedback: `Incident angle is ${state.optics.theta1}°. Set θ1 to 30.0°.` };
-        }
-        return { isPassed: true, feedback: '✓ Snell\'s Law verified! Incident ray at 30.0° refracts to 19.2° in glass.' };
-      },
-      autoAssist: {
-        label: 'Set Snell\'s Law Refraction (30.0° -> 19.2°)',
-        apply: () => ({ optics: { subMode: 'refraction', n1: 1.00, n2: 1.52, theta1: 30.0 } }),
-      },
-    },
-    {
       id: 'o-step-4',
       stepNumber: 4,
-      title: 'Step 4: Discover Total Internal Reflection (TIR)',
-      action: 'Reverse the media: Set Medium 1 to Glass (n1 = 1.52) and Medium 2 to Air (n2 = 1.00). Increase incident angle past the critical angle (θ1 > 41.1°).',
-      why: 'When passing from denser to rarer media, light bends away from normal. At θ1 > θc = arcsin(n2/n1) ≈ 41.1°, no real refracted ray exists and 100% of light reflects internally!',
-      expectedResult: 'The status changes to "TOTAL INTERNAL REFLECTION (TIR)" with zero light escaping into air.',
-      hint: 'Set n1 = 1.52, n2 = 1.00, and θ1 = 50.0°.',
-      targetApparatusId: 'optics-angle-dial',
-      relevantTool: 'goniometer',
-      validate: (state) => {
-        if (state.optics.subMode !== 'refraction') return { isPassed: false, feedback: 'Select Refraction & TIR mode.' };
-        if (state.optics.n1 <= state.optics.n2) {
-          return { isPassed: false, feedback: 'TIR requires n1 > n2! Set Medium 1 to Glass (1.52) and Medium 2 to Air (1.00).' };
-        }
-        if (state.optics.theta1 <= 41.2) {
-          return { isPassed: false, feedback: `Current angle is ${state.optics.theta1}°. Increase θ1 above the critical angle (41.1°).` };
-        }
-        return { isPassed: true, feedback: '✓ Total Internal Reflection Observed! 100% of the light wave is reflected internally.' };
-      },
-      autoAssist: {
-        label: 'Configure Total Internal Reflection (θ1 = 50° > θc)',
-        apply: () => ({ optics: { subMode: 'refraction', n1: 1.52, n2: 1.00, theta1: 50.0 } }),
-      },
-    },
-    {
-      id: 'o-step-5',
-      stepNumber: 5,
-      title: 'Step 5: Thin Lens Imaging & Focal Plane',
-      action: 'Switch Sub-Mode to "Lenses/Mirrors". Set focal length f = +20.0 cm and object distance do = 40.0 cm.',
-      why: 'The Gaussian thin lens equation 1/f = 1/do + 1/di predicts that placing an object at 2f (40 cm) forms a real, inverted image at exactly 2f (40 cm) with magnification M = -1.0×.',
-      expectedResult: 'Image distance di = 40.0 cm, Real Inverted Image.',
-      hint: 'Select Lenses/Mirrors mode, set f = 20 cm, do = 40 cm.',
+      title: 'Step 4: Mount Converging Lens (f = +20.0 cm)',
+      action: 'Switch Sub-Mode to "Lenses/Mirrors" and configure nominal focal length f = +20.0 cm.',
+      why: 'A biconvex glass lens acts as a converging optical element that refracts parallel rays toward a real focal point at f.',
+      expectedResult: 'Converging lens carrier set to nominal f = +20.0 cm.',
+      hint: 'Select Lenses/Mirrors mode and set focal length f = 20.0 cm.',
       targetApparatusId: 'optics-screen',
       relevantTool: 'lens',
       validate: (state) => {
         if (state.optics.subMode !== 'imaging') return { isPassed: false, feedback: 'Select "Lenses/Mirrors" sub-mode.' };
         if (Math.abs(state.optics.focalLength - 20.0) > 1.0) return { isPassed: false, feedback: 'Set focal length f to +20.0 cm.' };
-        if (Math.abs(state.optics.objectDistance - 40.0) > 1.0) return { isPassed: false, feedback: 'Set object distance do to 40.0 cm.' };
-        return { isPassed: true, feedback: '✓ Thin Lens Formula Verified! Object at 2f (40cm) forms real inverted image at di = 40.0 cm (M = -1.0×).' };
+        return { isPassed: true, feedback: '✓ Converging lens mounted with nominal focal length f = +20.0 cm.' };
       },
       autoAssist: {
-        label: 'Set Lens Calibration (f = 20cm, do = 40cm)',
-        apply: () => ({ optics: { subMode: 'imaging', focalLength: 20.0, objectDistance: 40.0 } }),
+        label: 'Configure Lens (f = +20.0 cm)',
+        apply: () => ({ optics: { subMode: 'imaging', focalLength: 20.0 } }),
+      },
+    },
+    {
+      id: 'o-step-5',
+      stepNumber: 5,
+      title: 'Step 5: Real Image Formation Procedure',
+      action: 'Position object lamp at u = 40.0 cm (2f) and observe real inverted image formation at v = 40.0 cm (M = -1.0×).',
+      why: 'According to Gaussian optics, placing an object at twice the focal length (2f) produces a real, inverted image at exactly 2f on the opposite side with identical unit size.',
+      expectedResult: 'Image formed at di = 40.0 cm, Real Inverted Image.',
+      hint: 'Set object distance do = 40.0 cm.',
+      targetApparatusId: 'optics-screen',
+      relevantTool: 'lens',
+      validate: (state) => {
+        if (Math.abs(state.optics.objectDistance - 40.0) > 1.0) return { isPassed: false, feedback: 'Set object distance do to 40.0 cm.' };
+        return { isPassed: true, feedback: '✓ Symmetric 2f Imaging Verified! Object at 40 cm forms real inverted image at 40 cm (M = -1.0×).' };
+      },
+      autoAssist: {
+        label: 'Position Object at 2f (40.0 cm)',
+        apply: () => ({ optics: { objectDistance: 40.0 } }),
+      },
+    },
+    {
+      id: 'o-step-6',
+      stepNumber: 6,
+      title: 'Step 6: Screen Focusing & Sharpness Adjustment',
+      action: 'Slide observation screen along the rail until sharp focus is achieved and confirm image sharpness.',
+      why: 'Accurate focal length measurement requires recording image distance v only when the projected image plane intersects the observation screen sharply.',
+      expectedResult: 'Observation screen positioned at focal plane with maximum sharpness.',
+      hint: 'Verify sharp image focus on screen.',
+      targetApparatusId: 'optics-screen',
+      relevantTool: 'lens',
+      validate: (state) => {
+        return { isPassed: true, feedback: '✓ Image sharpness verified at focal plane.' };
+      },
+    },
+    {
+      id: 'o-step-7',
+      stepNumber: 7,
+      title: 'Step 7: Five-Trial Experimental Data Collection',
+      action: 'Record five experimental trials at assigned object distances u = [30, 35, 40, 50, 60] cm with sharp focus image distances v.',
+      why: 'Varying object distance u across 5 conditions allows precise determination of focal length via the Gaussian lens formula.',
+      expectedResult: 'Five thin-lens trials recorded in dataset.',
+      hint: 'Record trials for u = 30, 35, 40, 50, 60 cm.',
+      targetApparatusId: 'optics-screen',
+      relevantTool: 'lens',
+      validate: (state) => {
+        return { isPassed: true, feedback: '✓ Thin-lens 5-trial collection active.' };
+      },
+    },
+    {
+      id: 'o-step-8',
+      stepNumber: 8,
+      title: 'Step 8: Experimental Data Computation & Analysis',
+      action: 'Compute experimental focal length fi = (u·v)/(u+v) per trial, average fmean, standard deviation, percentage error vs 20.0 cm, and plot 1/v vs 1/u.',
+      why: 'Linear regression of 1/v vs 1/u yields intercept 1/f, providing a rigorous graphical check of the thin lens equation.',
+      expectedResult: 'Regression intercept yields experimental focal length f ≈ 20.0 cm.',
+      hint: 'Navigate to Step 8 in Laboratory Notebook.',
+      targetApparatusId: 'optics-screen',
+      relevantTool: 'lens',
+      validate: (state) => {
+        return { isPassed: true, feedback: '✓ Optics experiment completed and certified!' };
       },
     },
   ],
@@ -523,9 +472,9 @@ const OPTICS_CURRICULUM: StationCurriculum = {
 // STATION 03: RELATIVITY GUIDED CURRICULUM
 // -------------------------------------------------------------
 const RELATIVITY_CURRICULUM: StationCurriculum = {
-  experimentTitle: 'Relativistic Kinematics, Time Dilation & Length Contraction',
+  experimentTitle: 'Special Relativity: Lorentz Transformation & Kinematics',
   experimentSubtitle: 'Special Relativity Laboratory · Dual-Frame Particle Accelerator',
-  learningGoal: 'Explore Einstein\'s postulates: the constancy of the speed of light c, the Lorentz factor γ, and physical consequences of high-velocity motion.',
+  learningGoal: 'Explore Einstein\'s postulates: the constancy of the speed of light c, the Lorentz factor γ = 1/√(1-β²), time dilation, and length contraction across 5 velocity conditions.',
   steps: [
     {
       id: 'r-step-1',
@@ -547,8 +496,22 @@ const RELATIVITY_CURRICULUM: StationCurriculum = {
     {
       id: 'r-step-2',
       stepNumber: 2,
-      title: 'Step 2: Initialize Particle Rest Frame (β = 0.00c)',
-      action: 'Select the Alpha Particle (⁴He²⁺) preset and set velocity ratio β = 0.000c.',
+      title: 'Step 2: Reference Frame Alignment & Proper Calibration',
+      action: 'Calibrate Stationary Frame S against Moving Frame S\'. Confirm proper length L0 = 20.0 m and proper time Δt0 = 10.0 s.',
+      why: 'Proper quantities (L0, Δt0) are invariants measured in the particle\'s co-moving rest frame.',
+      expectedResult: 'Rest frame baseline calibrated: L0 = 20.0 m, Δt0 = 10.0 s.',
+      hint: 'Confirm rest frame baseline.',
+      targetApparatusId: 'relativity-velocity-dial',
+      relevantTool: 'accelerator',
+      validate: (state) => {
+        return { isPassed: true, feedback: '✓ Reference frames calibrated with invariant baseline proper dimensions.' };
+      },
+    },
+    {
+      id: 'r-step-3',
+      stepNumber: 3,
+      title: 'Step 3: Accelerator Power & Baseline Calibration (β = 0.00c)',
+      action: 'Select the Alpha Particle (⁴He²⁺) preset and set velocity ratio β = 0.000c with Accelerator ACTIVE.',
       why: 'At rest (v = 0), the Lorentz factor is exactly γ = 1.000. Time flows at the proper rate (Δt = Δt₀) and tunnel length is uncontracted (L = L₀ = 20.0 m). Rest energy is E₀ = m₀c² = 3727.38 MeV.',
       expectedResult: 'γ = 1.0000, Dilated Time = 10.0 s, Contracted Length = 20.0 m, Kinetic Energy K = 0 MeV.',
       hint: 'Click "Alpha (He²⁺)" preset and slide velocity ratio β to 0.000c.',
@@ -565,33 +528,48 @@ const RELATIVITY_CURRICULUM: StationCurriculum = {
       },
     },
     {
-      id: 'r-step-3',
-      stepNumber: 3,
-      title: 'Step 3: Accelerate to Relativistic Speed (β = 0.600c)',
-      action: 'Turn the particle accelerator ACTIVE and dial velocity ratio to β = 0.600c (60% the speed of light).',
-      why: 'At 0.600c, relativistic effects become significant: γ = 1 / √(1 - 0.600²) = 1 / 0.800 = 1.2500.',
-      expectedResult: 'Speed v = 179.88 × 10⁶ m/s. Lorentz factor γ increases to 1.2500.',
-      hint: 'Toggle "⚡ Particle Accelerator: ACTIVE" and set slider β to 0.600c.',
-      targetApparatusId: 'relativity-velocity-dial',
+      id: 'r-step-4',
+      stepNumber: 4,
+      title: 'Step 4: Relativistic Light Clock Preparation',
+      action: 'Inspect the photon light clock mechanism and observe the vertical photon reflection path.',
+      why: 'Because the speed of light c is invariant, a moving light clock bounces photons along a longer hypotenuse path, causing it to tick slower in the lab frame.',
+      expectedResult: 'Light clock ready for relativistic acceleration.',
+      hint: 'Inspect light clock in 3D.',
+      targetApparatusId: 'relativity-light-clock',
       relevantTool: 'accelerator',
       validate: (state) => {
-        if (state.relativity.powerOn === false) return { isPassed: false, feedback: 'Accelerator is in STANDBY. Switch Particle Accelerator to ACTIVE.', errorType: 'unpowered' };
-        if (Math.abs(state.relativity.beta - 0.600) > 0.01) return { isPassed: false, feedback: `Current speed is ${state.relativity.beta}c. Tune velocity ratio β to 0.600c.` };
-        return { isPassed: true, feedback: '✓ Relativistic Speed Attained! β = 0.600c produces exact Lorentz factor γ = 1.2500.' };
-      },
-      autoAssist: {
-        label: 'Accelerate to β = 0.600c (γ = 1.2500)',
-        apply: () => ({ relativity: { powerOn: true, beta: 0.600 } }),
+        return { isPassed: true, feedback: '✓ Light clock mechanism verified.' };
       },
     },
     {
-      id: 'r-step-4',
-      stepNumber: 4,
-      title: 'Step 4: Observe Relativistic Length Contraction',
-      action: 'Observe the flight tunnel meter-rod in the 3D viewport. Notice that physical dimensions contract along the axis of motion.',
-      why: 'According to Lorentz contraction L = L₀ / γ, moving lengths are measured to be shorter by stationary observers: 20.0 m / 1.250 = 16.0 m (−20% contraction). Transverse dimensions remain invariant!',
-      expectedResult: 'Flight tunnel contracted length reads 16.00 m (down from 20.0 m rest length).',
-      hint: 'Inspect the Contracting Meter-Rod on the workbench.',
+      id: 'r-step-5',
+      stepNumber: 5,
+      title: 'Step 5: Relativistic Time Dilation Procedure',
+      action: 'Accelerate to β = 0.600c and observe dilated time interval Δt = γ Δt0 = 12.50 s.',
+      why: 'At 0.600c, the Lorentz factor is γ = 1 / √(1 - 0.36) = 1.2500, causing a 25% dilation in laboratory measured time.',
+      expectedResult: 'Dilated time Δt = 12.50 s (up from proper 10.0 s).',
+      hint: 'Tune velocity ratio β to 0.600c.',
+      targetApparatusId: 'relativity-velocity-dial',
+      relevantTool: 'accelerator',
+      validate: (state) => {
+        if (Math.abs(state.relativity.beta - 0.600) <= 0.02) {
+          return { isPassed: true, feedback: '✓ Time Dilation Verified! β = 0.600c yields γ = 1.2500 and Δt = 12.50 s.' };
+        }
+        return { isPassed: false, feedback: `Current speed is ${state.relativity.beta}c. Set β to 0.600c.` };
+      },
+      autoAssist: {
+        label: 'Accelerate to β = 0.600c',
+        apply: () => ({ relativity: { beta: 0.600, powerOn: true } }),
+      },
+    },
+    {
+      id: 'r-step-6',
+      stepNumber: 6,
+      title: 'Step 6: Relativistic Length Contraction Procedure',
+      action: 'Observe physical contraction of the flight tunnel and meter rod strictly along the axis of motion (L = L0 / γ = 16.0 m).',
+      why: 'Moving objects appear physically shortened along their direction of motion by factor 1/γ to stationary observers.',
+      expectedResult: 'Contracted length L = 16.00 m (down from 20.0 m).',
+      hint: 'Inspect the contracting rod at β = 0.600c.',
       targetApparatusId: 'relativity-contracting-rod',
       relevantTool: 'accelerator',
       validate: (state) => {
@@ -602,24 +580,31 @@ const RELATIVITY_CURRICULUM: StationCurriculum = {
       },
     },
     {
-      id: 'r-step-5',
-      stepNumber: 5,
-      title: 'Step 5: Witness Relativistic Time Dilation',
-      action: 'Compare the moving light clock with the laboratory clock. Accelerate further to β = 0.800c (γ = 1.667).',
-      why: 'Because the speed of light c is invariant, a photon inside a moving clock travels a longer diagonal path. Moving clocks run slower: Δt = γ Δt₀. At β = 0.80c, proper 10.0 s dilates to 16.67 s!',
-      expectedResult: 'Lab clock measures dilated time Δt = 16.67 s while the particle experiences only 10.0 s of proper time.',
-      hint: 'Tune velocity ratio β to 0.800c.',
-      targetApparatusId: 'relativity-light-clock',
+      id: 'r-step-7',
+      stepNumber: 7,
+      title: 'Step 7: Five-Trial Simulation Data Collection',
+      action: 'Record five simulation trials across assigned velocity ratios β = [0.10, 0.20, 0.30, 0.40, 0.50]c. Log γ, Δt, and L.',
+      why: 'Systematic velocity variation provides the empirical curve needed to demonstrate non-linear relativistic acceleration.',
+      expectedResult: 'Five relativistic velocity trials logged in dataset.',
+      hint: 'Record trials for β = 0.10, 0.20, 0.30, 0.40, 0.50c.',
+      targetApparatusId: 'relativity-velocity-dial',
       relevantTool: 'accelerator',
       validate: (state) => {
-        if (Math.abs(state.relativity.beta - 0.800) <= 0.02) {
-          return { isPassed: true, feedback: '✓ Time Dilation Verified! γ = 1.6667: Moving clock ticks 66.7% slower (Δt = 16.67 s).' };
-        }
-        return { isPassed: false, feedback: `Current speed is ${state.relativity.beta}c. Increase velocity ratio β to 0.800c.` };
+        return { isPassed: true, feedback: '✓ Special relativity 5-trial simulation collection active.' };
       },
-      autoAssist: {
-        label: 'Tune to β = 0.800c (γ = 1.667)',
-        apply: () => ({ relativity: { beta: 0.800 } }),
+    },
+    {
+      id: 'r-step-8',
+      stepNumber: 8,
+      title: 'Step 8: Experimental Data Computation & Analysis',
+      action: 'Compute theoretical Lorentz factors γ, dilated times Δt, sample standard deviation, and plot the relativistic γ vs β curve.',
+      why: 'Validates Einstein\'s kinematic equations against simulation data with zero residual error.',
+      expectedResult: 'Relativistic curve fit completed and report certified.',
+      hint: 'Navigate to Step 8 in Laboratory Notebook.',
+      targetApparatusId: 'relativity-velocity-dial',
+      relevantTool: 'accelerator',
+      validate: (state) => {
+        return { isPassed: true, feedback: '✓ Special relativity experiment completed and certified!' };
       },
     },
   ],
