@@ -1522,15 +1522,16 @@ export function createRoom3Scene(
   // -------------------------------------------------------------
   const circuitsBenchX = STATION_X.circuits;
 
-  // 1. DC Power Supply / AC Function Generator Unit
+  // 1. DC Power Supply / AC Function Generator Unit (Positioned on the rear-left instrument row)
   const psuGroup = new THREE.Group();
-  psuGroup.position.set(circuitsBenchX - 0.52, 0.94 + 0.14, 0.04);
-  psuGroup.rotation.y = 0.28;
+  psuGroup.position.set(circuitsBenchX - 0.65, 0.94, -0.32);
+  psuGroup.rotation.y = 0.08;
 
   const psuHousing = new THREE.Mesh(
-    new THREE.BoxGeometry(0.58, 0.32, 0.42),
+    new THREE.BoxGeometry(0.48, 0.26, 0.38),
     material(0x1e293b, { metalness: 0.8, roughness: 0.3 })
   );
+  psuHousing.position.set(0, 0.13, 0);
   psuGroup.add(psuHousing);
 
   const psuCanvas = document.createElement('canvas');
@@ -1539,33 +1540,33 @@ export function createRoom3Scene(
   const psuCtx = psuCanvas.getContext('2d')!;
   const psuTexture = new THREE.CanvasTexture(psuCanvas);
   const psuDisplay = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.38, 0.18),
+    new THREE.PlaneGeometry(0.32, 0.15),
     new THREE.MeshBasicMaterial({ map: psuTexture })
   );
-  psuDisplay.position.set(0, 0.05, 0.215);
+  psuDisplay.position.set(0, 0.15, 0.195);
   psuGroup.add(psuDisplay);
 
   const powerSwitchMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.08, 0.10, 0.05),
+    new THREE.BoxGeometry(0.07, 0.08, 0.04),
     material(0x0284c7, { emissive: 0x0284c7, emissiveIntensity: 0.9 })
   );
-  powerSwitchMesh.position.set(0.18, -0.08, 0.215);
+  powerSwitchMesh.position.set(0.14, 0.05, 0.195);
   psuGroup.add(powerSwitchMesh);
 
   const voltKnob = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.04, 0.04, 0.04, 24),
+    new THREE.CylinderGeometry(0.035, 0.035, 0.035, 24),
     material(0x94a3b8, { metalness: 0.9, roughness: 0.2 })
   );
   voltKnob.rotation.x = Math.PI / 2;
-  voltKnob.position.set(-0.15, -0.08, 0.215);
+  voltKnob.position.set(-0.12, 0.05, 0.195);
   psuGroup.add(voltKnob);
 
   // Load High-Fidelity DC Power Supply GLB Model (replaces procedural housing, display & knobs)
   gltfLoader.load('/assets/room-3/electrical/dc_power_supply.glb', (gltf) => {
     const model = gltf.scene;
     model.name = 'DC_PSU_GLB';
-    model.scale.setScalar(1.55);
-    model.position.set(0, -0.16, 0.12);
+    model.scale.setScalar(1.35);
+    model.position.set(0, 0, 0);
     model.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         child.castShadow = true;
@@ -2279,10 +2280,10 @@ export function createRoom3Scene(
         out.set(STATION_X.circuits, 3.40, ROOM2_CONFIG.room.backZ + 0.25);
         return true;
       case 'circuits-power-switch':
-        out.set(circuitsBenchX - 0.57, 1.25, -0.08);
+        out.set(circuitsBenchX - 0.58, 1.12, -0.12);
         return true;
       case 'circuits-voltage-knob':
-        out.set(circuitsBenchX - 0.90, 1.25, -0.08);
+        out.set(circuitsBenchX - 0.73, 1.12, -0.12);
         return true;
       case 'circuits-oscilloscope':
         out.set(circuitsBenchX, 1.35, -0.17);
@@ -2462,8 +2463,8 @@ export function createRoom3Scene(
 
   const CLOSEUP_TARGETS: Record<Room3StationId, { pos: THREE.Vector3; lookAt: THREE.Vector3 }> = {
     circuits: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.02, 1.46, 0.92),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.02, 0.98, 0.10),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.48, 0.92),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.05, 0.98, -0.05),
     },
     optics: {
       pos: new THREE.Vector3(STATION_X.optics, 1.34, 0.72),
@@ -2477,8 +2478,8 @@ export function createRoom3Scene(
 
   const CIRCUITS_CLOSEUP_SUBVIEWS = {
     station: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.02, 1.46, 0.92),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.02, 0.98, 0.10),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.48, 0.92),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.05, 0.98, -0.05),
     },
     board: {
       pos: new THREE.Vector3(STATION_X.circuits - 0.12, 1.28, 0.44),
@@ -2489,8 +2490,8 @@ export function createRoom3Scene(
       lookAt: new THREE.Vector3(STATION_X.circuits + 0.44, 0.97, 0.16),
     },
     psu: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.52, 1.22, 0.35),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.52, 1.05, 0.04),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.65, 1.25, 0.15),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.65, 1.05, -0.32),
     },
   };
 

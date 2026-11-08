@@ -681,17 +681,17 @@ export class Multimeter3D {
     // Red Probe
     const redMesh = createProbeMesh(0xef4444, 'Probe_Red');
     this.redProbeGroup.add(redMesh);
-    // Resting position in front of meter
-    this.redProbeGroup.position.set(this.benchX + 0.36, 0.95, 0.30);
-    this.redProbeGroup.rotation.x = Math.PI / 2; // Flat on table
+    // Resting position neatly in the staging area between board and multimeter
+    this.redProbeGroup.position.set(this.benchX + 0.26, 0.948, 0.28);
+    this.redProbeGroup.rotation.set(Math.PI / 2, 0, -Math.PI / 6); // Flat on table
     this.root.add(this.redProbeGroup);
 
     // Black Probe
     const blackMesh = createProbeMesh(0x18181b, 'Probe_Black');
     this.blackProbeGroup.add(blackMesh);
-    // Resting position in front of meter
-    this.blackProbeGroup.position.set(this.benchX + 0.48, 0.95, 0.30);
-    this.blackProbeGroup.rotation.x = Math.PI / 2; // Flat on table
+    // Resting position neatly in the staging area between board and multimeter
+    this.blackProbeGroup.position.set(this.benchX + 0.33, 0.948, 0.28);
+    this.blackProbeGroup.rotation.set(Math.PI / 2, 0, -Math.PI / 6); // Flat on table
     this.root.add(this.blackProbeGroup);
 
     this.updateCables();
@@ -701,27 +701,35 @@ export class Multimeter3D {
   // BUILD POWER FEED HOOKUP WIRES FROM DC PSU TO TRAINER BOARD
   // -------------------------------------------------------------
   private buildPsuFeedWires() {
-    const psuPos = new THREE.Vector3(this.benchX - 0.52, 1.02, 0.04);
+    // PSU binding posts at rear-left (x = benchX - 0.65, z = -0.32, front face z ~ -0.11)
+    const psuRedPostPos = new THREE.Vector3(this.benchX - 0.745, 0.98, -0.11);
+    const psuBlackPostPos = new THREE.Vector3(this.benchX - 0.691, 0.98, -0.11);
     const posPos = this.terminalPositions.SRC_POS;
     const negPos = this.terminalPositions.SRC_NEG;
 
-    // Heavy Red Wire (+24V)
+    // Heavy Red Wire (+24V): Drops from PSU binding post to bench, curves smoothly, plugs into board SRC_POS
     const redCurve = new THREE.CatmullRomCurve3([
-      psuPos.clone().add(new THREE.Vector3(0.12, -0.04, 0.08)),
-      new THREE.Vector3(this.benchX - 0.44, 0.97, 0.02),
-      posPos.clone().add(new THREE.Vector3(0, 0.02, 0)),
+      psuRedPostPos,
+      new THREE.Vector3(this.benchX - 0.745, 0.97, -0.06),
+      new THREE.Vector3(this.benchX - 0.62, 0.946, -0.03),
+      new THREE.Vector3(this.benchX - 0.48, 0.946, 0.00),
+      new THREE.Vector3(this.benchX - 0.38, 0.955, 0.03),
+      posPos.clone().add(new THREE.Vector3(0, 0.015, 0)),
     ]);
-    const redGeo = new THREE.TubeGeometry(redCurve, 20, 0.005, 8, false);
+    const redGeo = new THREE.TubeGeometry(redCurve, 24, 0.005, 8, false);
     this.psuRedWire = new THREE.Mesh(redGeo, new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.4 }));
     this.root.add(this.psuRedWire);
 
-    // Heavy Black Wire (GND)
+    // Heavy Black Wire (0V GND): Drops from PSU binding post to bench, curves smoothly, plugs into board SRC_NEG
     const blackCurve = new THREE.CatmullRomCurve3([
-      psuPos.clone().add(new THREE.Vector3(0.06, -0.04, 0.08)),
-      new THREE.Vector3(this.benchX - 0.44, 0.97, 0.16),
-      negPos.clone().add(new THREE.Vector3(0, 0.02, 0)),
+      psuBlackPostPos,
+      new THREE.Vector3(this.benchX - 0.691, 0.97, -0.06),
+      new THREE.Vector3(this.benchX - 0.58, 0.946, 0.04),
+      new THREE.Vector3(this.benchX - 0.46, 0.946, 0.12),
+      new THREE.Vector3(this.benchX - 0.38, 0.955, 0.18),
+      negPos.clone().add(new THREE.Vector3(0, 0.015, 0)),
     ]);
-    const blackGeo = new THREE.TubeGeometry(blackCurve, 20, 0.005, 8, false);
+    const blackGeo = new THREE.TubeGeometry(blackCurve, 24, 0.005, 8, false);
     this.psuBlackWire = new THREE.Mesh(blackGeo, new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.4 }));
     this.root.add(this.psuBlackWire);
   }
@@ -733,25 +741,32 @@ export class Multimeter3D {
     if (this.redCableMesh) this.root.remove(this.redCableMesh);
     if (this.blackCableMesh) this.root.remove(this.blackCableMesh);
 
-    // Multimeter world origin: benchX + 0.44, 0.965, 0.14
-    const meterWorldPos = new THREE.Vector3(this.benchX + 0.44, 0.965, 0.14);
-
-    // Exact Jack World Positions
-    const redJackOffset = this.dmmState.redJack === 'v_ohm'
-      ? new THREE.Vector3(0.045, 0.06, 0.12)
-      : new THREE.Vector3(-0.045, 0.06, 0.12);
-    const dmmJackRedPos = meterWorldPos.clone().add(redJackOffset);
-    const dmmJackBlackPos = meterWorldPos.clone().add(new THREE.Vector3(0.015, 0.06, 0.12));
+    // Exact Jack World Positions using getWorldPosition
+    const dmmJackRedPos = new THREE.Vector3();
+    const dmmJackBlackPos = new THREE.Vector3();
+    const activeRedJack = this.dmmState.redJack === 'v_ohm' ? this.redLeadJackMesh : this.maJackMesh;
+    if (activeRedJack) {
+      activeRedJack.getWorldPosition(dmmJackRedPos);
+      dmmJackRedPos.y += 0.008;
+    } else {
+      dmmJackRedPos.set(this.benchX + 0.44 + 0.045, 0.965 + 0.06, 0.14 + 0.12);
+    }
+    if (this.comJackMesh) {
+      this.comJackMesh.getWorldPosition(dmmJackBlackPos);
+      dmmJackBlackPos.y += 0.008;
+    } else {
+      dmmJackBlackPos.set(this.benchX + 0.44 + 0.015, 0.965 + 0.06, 0.14 + 0.12);
+    }
 
     // Probe Rear Boot Positions
     const redBootPos = this.redProbeGroup.localToWorld(new THREE.Vector3(0, 0.16, 0));
     const blackBootPos = this.blackProbeGroup.localToWorld(new THREE.Vector3(0, 0.16, 0));
 
     // --- Red Cable Curve (Smooth 5-point spline) ---
-    const redJackArch = dmmJackRedPos.clone().add(new THREE.Vector3(0, 0.05, 0.08));
+    const redJackArch = dmmJackRedPos.clone().add(new THREE.Vector3(0, 0.05, 0.06));
     const redMid = dmmJackRedPos.clone().lerp(redBootPos, 0.5);
-    redMid.y = this.dmmState.redProbeTerminal ? 1.04 : 0.96; // Arcs in air if probing, rests on bench if stowed
-    const redProbeArch = redBootPos.clone().add(new THREE.Vector3(0, 0.08, 0));
+    redMid.y = this.dmmState.redProbeTerminal ? 1.04 : 0.952; // Arcs in air if probing, rests on bench if stowed
+    const redProbeArch = redBootPos.clone().add(new THREE.Vector3(0, this.dmmState.redProbeTerminal ? 0.08 : 0.03, 0));
 
     const redCurve = new THREE.CatmullRomCurve3([
       dmmJackRedPos,
@@ -768,10 +783,10 @@ export class Multimeter3D {
     this.root.add(this.redCableMesh);
 
     // --- Black Cable Curve (Smooth 5-point spline) ---
-    const blackJackArch = dmmJackBlackPos.clone().add(new THREE.Vector3(0, 0.05, 0.08));
+    const blackJackArch = dmmJackBlackPos.clone().add(new THREE.Vector3(0, 0.05, 0.06));
     const blackMid = dmmJackBlackPos.clone().lerp(blackBootPos, 0.5);
-    blackMid.y = this.dmmState.blackProbeTerminal ? 1.04 : 0.96;
-    const blackProbeArch = blackBootPos.clone().add(new THREE.Vector3(0, 0.08, 0));
+    blackMid.y = this.dmmState.blackProbeTerminal ? 1.04 : 0.952;
+    const blackProbeArch = blackBootPos.clone().add(new THREE.Vector3(0, this.dmmState.blackProbeTerminal ? 0.08 : 0.03, 0));
 
     const blackCurve = new THREE.CatmullRomCurve3([
       dmmJackBlackPos,
@@ -880,7 +895,7 @@ export class Multimeter3D {
         this.redProbeGroup.rotation.set(0.25, 0, -0.15); // Authentic 15-deg backward lean
       } else {
         // Return to resting position on table
-        this.redProbeGroup.position.set(this.benchX + 0.36, 0.95, 0.30);
+        this.redProbeGroup.position.set(this.benchX + 0.26, 0.948, 0.28);
         this.redProbeGroup.rotation.set(Math.PI / 2, 0, -Math.PI / 6);
       }
     } else {
@@ -890,7 +905,7 @@ export class Multimeter3D {
         this.blackProbeGroup.position.set(p.x, p.y + 0.015, p.z);
         this.blackProbeGroup.rotation.set(0.25, 0, 0.15);
       } else {
-        this.blackProbeGroup.position.set(this.benchX + 0.48, 0.95, 0.30);
+        this.blackProbeGroup.position.set(this.benchX + 0.33, 0.948, 0.28);
         this.blackProbeGroup.rotation.set(Math.PI / 2, 0, -Math.PI / 6);
       }
     }
