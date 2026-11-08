@@ -209,8 +209,8 @@ export function createRoom3Scene(
     beta: 0.600,
     properTime: 10.0,
     properLength: 20.0,
-    massPreset: 'probe',
-    restMass: 1.00,
+    massPreset: 'alpha',
+    restMass: 6.644657e-27,
   };
 
   // -------------------------------------------------------------

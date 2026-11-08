@@ -34,6 +34,7 @@ import {
   type TrialRecord,
 } from './room3Model';
 import { Room3Graph, computeRoom3Regression } from './Room3Graph';
+import { Room3Schematic2D } from './Room3Schematic2D';
 import {
   createRoom3Scene,
   type EquipmentInteraction,
@@ -164,6 +165,7 @@ function safeProgress(input: unknown): Room3Progress {
       recommendations: typeof saved.recommendations === 'string' ? saved.recommendations : '',
       errors: Array.isArray(saved.errors) ? saved.errors.filter((entry): entry is string => typeof entry === 'string') : [],
       guideAnswers: Array.isArray(saved.guideAnswers) ? saved.guideAnswers.slice(0, 3).map((v) => Number(v)) : [-1, -1, -1],
+      predictionAnswer: typeof saved.predictionAnswer === 'number' ? saved.predictionAnswer : null,
     };
   });
   return fallback;
@@ -217,11 +219,10 @@ export default function Room3Experience() {
     }
     return 0;
   });
-  const [predictionSelection, setPredictionSelection] = useState<number | null>(null);
-  const [predictionStatus, setPredictionStatus] = useState<'idle' | 'correct' | 'incorrect'>('idle');
-  const [predictionFeedback, setPredictionFeedback] = useState('');
   const [calculationFeedback, setCalculationFeedback] = useState('');
   const [calculationStatus, setCalculationStatus] = useState<'idle' | 'correct' | 'incorrect'>('idle');
+  const [showCalcHint, setShowCalcHint] = useState(false);
+  const [measurementWarning, setMeasurementWarning] = useState('');
   const [studentName, setStudentName] = useState('Student Physicist');
   const [studentId, setStudentId] = useState('PHY-300-2026');
   const [studentSection, setStudentSection] = useState('Physics Core III');
@@ -260,6 +261,77 @@ export default function Room3Experience() {
   const circuitResult = useMemo(() => calculateCircuit(circuits), [circuits]);
   const opticsResult = useMemo(() => calculateOptics(optics), [optics]);
   const relativityResult = useMemo(() => calculateRelativity(relativity), [relativity]);
+
+  // Derived Prediction State per Station (Eliminates Cross-Station State Leaks & Caps)
+  const currentPredictionAnswer = stationProgress.predictionAnswer ?? null;
+  const predictionStatus: 'idle' | 'correct' | 'incorrect' =
+    currentPredictionAnswer === null
+      ? 'idle'
+      : currentPredictionAnswer === station.prediction.answer
+      ? 'correct'
+      : 'incorrect';
+  const predictionFeedback =
+    currentPredictionAnswer === null
+      ? ''
+      : currentPredictionAnswer === station.prediction.answer
+      ? `Correct! ${station.prediction.explanation}`
+      : 'Not quite. Review the physical principles and try selecting the accurate relationship.';
+
+  // Step 1 Explore Gating
+  const allInspected = useMemo(() => {
+    const targets = INSPECTION_TARGETS[stationId] ?? [];
+    return targets.every((tgt) => stationProgress.inspected.includes(tgt));
+  }, [stationId, stationProgress.inspected]);
+
+  // Step 3 Setup Baseline Mismatches Check
+  const setupMismatches = useMemo(() => {
+    const mismatches: string[] = [];
+    if (stationId === 'circuits') {
+      if (Math.abs(circuits.vs - 24.0) >= 0.5) mismatches.push(`Vs = ${circuits.vs.toFixed(1)} V (target: 24.0 V)`);
+      if (circuits.r1 !== 100) mismatches.push(`R1 = ${circuits.r1} Ω (target: 100 Ω)`);
+      if (circuits.r2 !== 220) mismatches.push(`R2 = ${circuits.r2} Ω (target: 220 Ω)`);
+      if (circuits.r3 !== 330) mismatches.push(`R3 = ${circuits.r3} Ω (target: 330 Ω)`);
+      if (circuits.mode !== 'dc') mismatches.push(`Regime = ${circuits.mode.toUpperCase()} (target: DC)`);
+      if (circuits.topology !== 'series') mismatches.push(`Topology = ${circuits.topology} (target: Series)`);
+    } else if (stationId === 'optics') {
+      if (optics.wavelength !== 532) mismatches.push(`Laser λ = ${optics.wavelength} nm (target: 532 nm)`);
+      if (optics.subMode === 'refraction') {
+        if (Math.abs(optics.n1 - 1.00) > 0.01) mismatches.push(`n1 = ${optics.n1.toFixed(2)} (target: 1.00)`);
+        if (Math.abs(optics.n2 - 1.52) > 0.01) mismatches.push(`n2 = ${optics.n2.toFixed(2)} (target: 1.52)`);
+        if (Math.abs(optics.theta1 - 30.0) >= 0.5) mismatches.push(`θ1 = ${optics.theta1.toFixed(1)}° (target: 30.0°)`);
+      } else if (optics.subMode === 'imaging') {
+        if (Math.abs(optics.focalLength - 20.0) >= 0.5) mismatches.push(`f = ${optics.focalLength.toFixed(1)} cm (target: 20.0 cm)`);
+        if (Math.abs(optics.objectDistance - 40.0) >= 0.5) mismatches.push(`do = ${optics.objectDistance.toFixed(1)} cm (target: 40.0 cm)`);
+      } else {
+        if (Math.abs(optics.slitSeparation - 0.25) > 0.01) mismatches.push(`d = ${optics.slitSeparation.toFixed(2)} mm (target: 0.25 mm)`);
+        if (Math.abs(optics.screenDistance - 1.00) > 0.05) mismatches.push(`L = ${optics.screenDistance.toFixed(2)} m (target: 1.00 m)`);
+      }
+    } else {
+      if (Math.abs(relativity.beta - 0.600) >= 0.005) mismatches.push(`β = ${relativity.beta.toFixed(3)}c (target: 0.600c)`);
+      if (Math.abs(relativity.properTime - 10.0) >= 0.1) mismatches.push(`Proper Time Δt₀ = ${relativity.properTime.toFixed(1)} s (target: 10.0 s)`);
+      if (Math.abs(relativity.properLength - 20.0) >= 0.1) mismatches.push(`Proper Length L₀ = ${relativity.properLength.toFixed(1)} m (target: 20.0 m)`);
+    }
+    return mismatches;
+  }, [stationId, circuits, optics, relativity]);
+
+  // Step 4 Run Power Gating
+  const isStationEnergized = useMemo(() => {
+    if (stationId === 'circuits') return circuits.powerOn && jumperClosed;
+    if (stationId === 'optics') return optics.powerOn !== false;
+    return relativity.powerOn !== false;
+  }, [stationId, circuits.powerOn, jumperClosed, optics.powerOn, relativity.powerOn]);
+
+  // Step 7 Analysis Gating
+  const allGuideCorrect = useMemo(() => {
+    return ROOM3_GUIDE_QUESTIONS[stationId]?.every((q, idx) => stationProgress.guideAnswers?.[idx] === q.correctIndex) ?? false;
+  }, [stationId, stationProgress.guideAnswers]);
+  const hasUncertainty = stationProgress.errors.length > 0;
+
+  // Step 8 Certification Gating
+  const steps1to7Done = useMemo(() => {
+    return stationProgress.completed.slice(0, 7).every(Boolean);
+  }, [stationProgress.completed]);
+  const reportReady = steps1to7Done && studentName.trim().length > 0 && studentId.trim().length > 0 && studentSection.trim().length > 0;
 
   // Scoring
   const currentScore = stationScore(stationProgress);
@@ -626,15 +698,68 @@ export default function Room3Experience() {
     sceneApi.current?.setMoveVector(0, 0);
   };
 
-  // Trial Logging Helper
+  const markInspected = (targetId: string) => {
+    setProgress((prev) => {
+      const st = { ...prev[stationId] };
+      if (!st.inspected.includes(targetId)) {
+        playTone(520, 'sine', 0.08, 0.15);
+        return {
+          ...prev,
+          [stationId]: { ...st, inspected: [...st.inspected, targetId] },
+        };
+      }
+      return prev;
+    });
+  };
+
+  // Trial Logging Helper with Duplicate Rejection & Experimental Noise
   const recordCurrentTrial = () => {
     if (stationProgress.trials.length >= TOTAL_TRIALS) return;
+
+    // Check duplicate against existing trials
+    let isDuplicate = false;
+    if (stationId === 'circuits') {
+      isDuplicate = stationProgress.trials.some(
+        (t) =>
+          Math.abs(Number(t.vs) - circuits.vs) < 1.0 &&
+          t.mode === circuits.mode.toUpperCase() &&
+          t.topology === circuits.topology &&
+          Math.abs(Number(t.freq) - (circuits.mode === 'ac' ? circuits.freq : 0)) < 1.0
+      );
+    } else if (stationId === 'optics') {
+      isDuplicate = stationProgress.trials.some((t) => {
+        if (t.subMode !== optics.subMode || t.wavelength !== optics.wavelength) return false;
+        if (optics.subMode === 'refraction') {
+          return Math.abs(Number(t.paramA) - optics.theta1) < 2.0 && Math.abs(Number(t.paramB) - opticsResult.effectiveN2) < 0.02;
+        } else if (optics.subMode === 'imaging') {
+          return Math.abs(Number(t.paramA) - optics.objectDistance) < 5.0 && Math.abs(Number(t.paramB) - optics.focalLength) < 1.0;
+        } else {
+          return Math.abs(Number(t.paramA) - optics.slitSeparation) < 0.05 && Math.abs(Number(t.paramB) - optics.screenDistance) < 0.1;
+        }
+      });
+    } else {
+      isDuplicate = stationProgress.trials.some(
+        (t) => Math.abs(Number(t.beta) - relativity.beta) < 0.05 && t.preset === relativity.massPreset
+      );
+    }
+
+    if (isDuplicate) {
+      setMeasurementWarning('Duplicate Measurement Rejected: Vary your input parameter (ΔVs ≥ 1 V, Δθ₁ ≥ 2°, Δdo ≥ 5 cm, or Δβ ≥ 0.05c) to record a distinct experimental data point.');
+      playTone(220, 'sawtooth', 0.2, 0.25);
+      return;
+    }
+
+    setMeasurementWarning('');
     playTone(600, 'square', 0.1, 0.2);
 
     let newTrial: TrialRecord;
     const trialNum = stationProgress.trials.length + 1;
 
     if (stationId === 'circuits') {
+      const adcNoise = 1 + (Math.sin(trialNum * 13.7) * 0.003); // ±0.3% ADC display fluctuation
+      const measuredCurrent = circuitResult.current * (circuitResult.current > 0 ? adcNoise : 1);
+      const measuredPower = circuitResult.realPower * (circuitResult.realPower > 0 ? adcNoise : 1);
+
       newTrial = {
         trial: trialNum,
         mode: circuits.mode.toUpperCase(),
@@ -642,30 +767,34 @@ export default function Room3Experience() {
         vs: circuits.vs,
         freq: circuits.mode === 'ac' ? circuits.freq : 0,
         impedance: circuitResult.impedance,
-        current: circuitResult.current,
+        current: measuredCurrent,
         powerFactor: circuitResult.powerFactor,
-        realPower: circuitResult.realPower,
+        realPower: measuredPower,
       };
     } else if (stationId === 'optics') {
-      let paramA = circuits.vs;
-      let measured = 0;
+      let paramA = 0;
+      let paramB = 0;
       let theoretical = 0;
+      let measured = 0;
       let classification = '';
 
       if (optics.subMode === 'refraction') {
         paramA = optics.theta1;
+        paramB = opticsResult.effectiveN2;
         theoretical = opticsResult.theta2Deg ?? 0;
-        measured = theoretical * (1 + (Math.sin(trialNum * 1.5) * 0.015)); // +/- 1.5% measurement noise
+        measured = theoretical * (1 + (Math.sin(trialNum * 11.3) * 0.015)); // +/- 1.5% measurement noise
         classification = opticsResult.isTIR ? 'TIR' : 'Refracted';
       } else if (optics.subMode === 'imaging') {
         paramA = optics.objectDistance;
+        paramB = optics.focalLength;
         theoretical = opticsResult.imageDistanceCm ?? 0;
-        measured = theoretical * (1 + (Math.sin(trialNum * 1.5) * 0.015));
+        measured = theoretical !== 0 ? theoretical * (1 + (Math.sin(trialNum * 11.3) * 0.015)) : 0;
         classification = `${opticsResult.imageType} · ${opticsResult.imageOrientation}`;
       } else {
         paramA = optics.slitSeparation;
+        paramB = optics.screenDistance;
         theoretical = opticsResult.fringeSpacingMm;
-        measured = theoretical * (1 + (Math.sin(trialNum * 1.5) * 0.015));
+        measured = theoretical * (1 + (Math.sin(trialNum * 11.3) * 0.015));
         classification = `λ=${optics.wavelength}nm`;
       }
 
@@ -676,20 +805,23 @@ export default function Room3Experience() {
         subMode: optics.subMode,
         wavelength: optics.wavelength,
         paramA,
-        paramB: optics.subMode === 'refraction' ? optics.n2 : optics.focalLength,
+        paramB,
         theoretical,
         measured,
         percentError,
         classification,
       };
     } else {
+      const jitter = 1 + (Math.sin(trialNum * 7.9) * 0.004); // ±0.4% detector jitter
       newTrial = {
         trial: trialNum,
+        preset: relativity.massPreset,
         beta: relativity.beta,
         speed: relativityResult.speedMps,
         gamma: relativityResult.gamma,
-        dilatedTime: relativityResult.dilatedTime,
-        contractedLength: relativityResult.contractedLength,
+        measuredGamma: relativityResult.gamma * jitter,
+        dilatedTime: relativityResult.dilatedTime * jitter,
+        contractedLength: relativityResult.contractedLength * jitter,
         kineticEnergy: relativityResult.kineticEnergyMeV,
         totalEnergy: relativityResult.totalEnergyMeV,
       };
@@ -716,32 +848,45 @@ export default function Room3Experience() {
     });
   };
 
-  // Prediction verification (Step 1)
+  // Prediction verification (Step 2 - Predict)
   const verifyPrediction = (choice: number) => {
-    setPredictionSelection(choice);
     const isCorrect = choice === station.prediction.answer;
+    setProgress((prev) => {
+      const st = { ...prev[stationId] };
+      return {
+        ...prev,
+        [stationId]: {
+          ...st,
+          predictionAnswer: choice,
+        },
+      };
+    });
+
     if (isCorrect) {
-      setPredictionStatus('correct');
-      setPredictionFeedback(`Correct! ${station.prediction.explanation}`);
       completeStep(1);
     } else {
-      setPredictionStatus('incorrect');
-      setPredictionFeedback('Not quite. Review the physical principles and try selecting the accurate relationship.');
       playTone(180, 'sawtooth', 0.2, 0.2);
     }
   };
 
-  // Step 5 Calculations verification
+  // Step 6 Theoretical Calculations verification (Strict ±2% tolerance)
   const verifyCalculations = () => {
     const trials = stationProgress.trials;
-    if (!trials.length) {
-      setCalculationFeedback('Please log trials in Step 5 before verifying theoretical calculations.');
+    if (trials.length < TOTAL_TRIALS) {
+      setCalculationFeedback('Please record all 5 trials in Step 5 before verifying theoretical calculations.');
       setCalculationStatus('incorrect');
       return;
     }
 
-    let allPass = true;
-    trials.forEach((t, i) => {
+    const hasEmpty = stationProgress.calculations.some((c) => !c || c.trim() === '');
+    if (hasEmpty) {
+      setCalculationFeedback('Please enter calculated values for all 5 trials before submitting verification.');
+      setCalculationStatus('incorrect');
+      return;
+    }
+
+    for (let i = 0; i < trials.length; i++) {
+      const t = trials[i];
       const userVal = parseFloat(stationProgress.calculations[i]);
       let expected = 0;
       if (stationId === 'circuits') {
@@ -752,39 +897,27 @@ export default function Room3Experience() {
         expected = Number(t.gamma);
       }
 
-      if (isNaN(userVal) || Math.abs((userVal - expected) / expected) > 0.03) {
-        allPass = false;
+      if (isNaN(userVal)) {
+        setCalculationStatus('incorrect');
+        setCalculationFeedback(`Trial #${i + 1} contains an invalid numeric entry. Please enter a valid number.`);
+        playTone(200, 'sawtooth', 0.2, 0.2);
+        return;
       }
-    });
 
-    if (allPass) {
-      setCalculationStatus('correct');
-      setCalculationFeedback('Verification Passed! All values match theoretical laws within ±2% tolerance.');
-      completeStep(5);
-    } else {
-      setCalculationStatus('incorrect');
-      setCalculationFeedback('One or more calculations deviate by more than 2% from theoretical prediction. Review your formulas and recalculate.');
-      playTone(200, 'sawtooth', 0.2, 0.2);
+      const diff = Math.abs((userVal - expected) / Math.max(0.001, expected));
+      if (diff > 0.02) {
+        setCalculationStatus('incorrect');
+        setCalculationFeedback(
+          `Calculation Error in Trial #${i + 1}: entered ${userVal.toFixed(2)}, but expected ${expected.toFixed(2)} (deviation ${(diff * 100).toFixed(1)}% > 2% tolerance). Review physical formulas and recalculate.`
+        );
+        playTone(200, 'sawtooth', 0.2, 0.2);
+        return;
+      }
     }
-  };
 
-  // Auto-fill calculations assistant
-  const autoFillCalculations = () => {
-    const newCalcs = stationProgress.trials.map((t) => {
-      if (stationId === 'circuits') return Number(t.impedance).toFixed(2);
-      if (stationId === 'optics') return Number(t.theoretical).toFixed(2);
-      return Number(t.gamma).toFixed(3);
-    });
-    while (newCalcs.length < TOTAL_TRIALS) newCalcs.push('');
-
-    setProgress((prev) => ({
-      ...prev,
-      [stationId]: {
-        ...prev[stationId],
-        calculations: newCalcs,
-      },
-    }));
-    playTone(440, 'sine', 0.1, 0.15);
+    setCalculationStatus('correct');
+    setCalculationFeedback('Verification Passed! All 5 calculations match physical theoretical laws within ±2% tolerance.');
+    completeStep(5);
   };
 
   // Step 6 Guide Questions Handler
@@ -912,7 +1045,22 @@ export default function Room3Experience() {
         ref={sceneContainer}
         className="scene"
         aria-label={`Interactive 3D ${station.shortName} laboratory`}
-      />
+      >
+        {sceneError && (
+          <Room3Schematic2D
+            stationId={stationId}
+            circuits={circuits}
+            optics={optics}
+            relativity={relativity}
+            circuitResult={circuitResult}
+            opticsResult={opticsResult}
+            relativityResult={relativityResult}
+            dmmReading={dmmReading}
+            jumperClosed={jumperClosed}
+            onToggleJumper={handleToggleJumper}
+          />
+        )}
+      </div>
       <div className="vignette" aria-hidden="true" />
 
       {/* Loading overlay */}
@@ -959,7 +1107,7 @@ export default function Room3Experience() {
         </div>
       )}
 
-      {!pointerLocked && !notebookOpen && cameraMode === 'walk' && (
+      {!pointerLocked && !notebookOpen && cameraMode === 'walk' && !sceneError && (
         <button className="enter-walk-mode" onClick={() => sceneApi.current?.requestPointerLock()}>
           <b>ENTER WALK MODE</b><span>Click to capture the mouse · ESC releases it</span>
         </button>
@@ -1545,6 +1693,15 @@ export default function Room3Experience() {
         {/* STATION 02: OPTICS CONTROLS */}
         {stationId === 'optics' && (
           <>
+            <button
+              type="button"
+              className={`dmm-btn ${optics.powerOn !== false ? 'active' : ''}`}
+              style={{ width: '100%', padding: '8px', marginBottom: '8px', color: optics.powerOn !== false ? '#34d399' : '#ef4444' }}
+              onClick={() => setOptics((o) => ({ ...o, powerOn: o.powerOn === false ? true : false }))}
+            >
+              <span>{optics.powerOn !== false ? '⚡ Laser Source: ON' : '⏻ Laser Source: OFF'}</span>
+            </button>
+
             <div className="segment-control" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }} role="group" aria-label="Bench Sub-Mode">
               {(['refraction', 'imaging', 'diffraction'] as const).map((m) => (
                 <button
@@ -1577,6 +1734,9 @@ export default function Room3Experience() {
 
             {optics.subMode === 'refraction' && (
               <>
+                <div style={{ fontSize: '11px', color: '#38bdf8', fontFamily: 'monospace', padding: '6px 10px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '6px', margin: '4px 0 8px' }}>
+                  Cauchy Effective n₂(λ): <b>{opticsResult.effectiveN2.toFixed(4)}</b> (Base: {optics.n2.toFixed(2)})
+                </div>
                 <RangeControl
                   label="Medium 1 Index n1"
                   value={optics.n1}
@@ -1682,7 +1842,7 @@ export default function Room3Experience() {
                 {optics.subMode === 'refraction'
                   ? (opticsResult.isTIR ? 'TIR Active' : `${opticsResult.theta2Deg?.toFixed(1)}°`)
                   : optics.subMode === 'imaging'
-                    ? (opticsResult.imageDistanceCm ? `${opticsResult.imageDistanceCm.toFixed(1)} cm` : 'Infinity')
+                    ? (opticsResult.imageDistanceCm ? `${opticsResult.imageDistanceCm.toFixed(1)} cm` : '∞ (Collimated Beam)')
                     : `${opticsResult.fringeSpacingMm.toFixed(2)} mm`}
               </strong>
               <dl>
@@ -1707,7 +1867,7 @@ export default function Room3Experience() {
                   <>
                     <Metric
                       label="Image Distance di"
-                      value={opticsResult.imageDistanceCm ? `${opticsResult.imageDistanceCm.toFixed(1)} cm` : 'Infinity'}
+                      value={opticsResult.imageDistanceCm ? `${opticsResult.imageDistanceCm.toFixed(1)} cm` : '∞ (Collimated Beam)'}
                     />
                     <Metric
                       label="Magnification M"
@@ -1734,6 +1894,15 @@ export default function Room3Experience() {
         {/* STATION 03: SPECIAL RELATIVITY CONTROLS */}
         {stationId === 'relativity' && (
           <>
+            <button
+              type="button"
+              className={`dmm-btn ${relativity.powerOn !== false ? 'active' : ''}`}
+              style={{ width: '100%', padding: '8px', marginBottom: '8px', color: relativity.powerOn !== false ? '#34d399' : '#ef4444' }}
+              onClick={() => setRelativity((r) => ({ ...r, powerOn: r.powerOn === false ? true : false }))}
+            >
+              <span>{relativity.powerOn !== false ? '⚡ Particle Accelerator: ACTIVE' : '⏻ Accelerator: STANDBY'}</span>
+            </button>
+
             <RangeControl
               label="Velocity Ratio β = v/c"
               value={relativity.beta}
@@ -1746,7 +1915,7 @@ export default function Room3Experience() {
             />
 
             <RangeControl
-              label="Proper Time Interval Δt₀"
+              label="Proper Time Interval Δt₀ (Detector Lifetime)"
               value={relativity.properTime}
               unit="s"
               min={1.0}
@@ -1757,7 +1926,7 @@ export default function Room3Experience() {
             />
 
             <RangeControl
-              label="Proper Length L₀"
+              label="Flight Tunnel Baseline L₀"
               value={relativity.properLength}
               unit="m"
               min={1.0}
@@ -1768,7 +1937,7 @@ export default function Room3Experience() {
             />
 
             <div className="segment-control" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }} role="group" aria-label="Rest Mass Preset">
-              {(['electron', 'proton', 'muon', 'probe'] as const).map((m) => (
+              {(['alpha', 'electron', 'proton', 'muon'] as const).map((m) => (
                 <button
                   key={m}
                   type="button"
@@ -1781,7 +1950,7 @@ export default function Room3Experience() {
                     }))
                   }
                 >
-                  {m.charAt(0).toUpperCase() + m.slice(1)}
+                  {m === 'alpha' ? 'Alpha (He²⁺)' : m.charAt(0).toUpperCase() + m.slice(1)}
                 </button>
               ))}
             </div>
@@ -1791,8 +1960,8 @@ export default function Room3Experience() {
               <strong>γ = {relativityResult.gamma.toFixed(4)}</strong>
               <dl>
                 <Metric label="Velocity v" value={`${(relativityResult.speedMps / 1e6).toFixed(2)} × 10⁶ m/s`} />
-                <Metric label="Dilated Time Δt" value={`${relativityResult.dilatedTime.toFixed(2)} s`} />
-                <Metric label="Contracted Length L" value={`${relativityResult.contractedLength.toFixed(2)} m`} />
+                <Metric label="Dilated Lab Time Δt" value={`${relativityResult.dilatedTime.toFixed(2)} s`} />
+                <Metric label="Contracted Tunnel L" value={`${relativityResult.contractedLength.toFixed(2)} m`} />
                 <Metric label="Total Energy E" value={`${formatValue(relativityResult.totalEnergyMeV)} MeV`} />
               </dl>
               <details className="telemetry-details">
@@ -2030,18 +2199,40 @@ export default function Room3Experience() {
                   <p className="step-prompt">{station.steps[0].prompt}</p>
 
                   <div className="equipment-checklist">
-                    <b>Station Component Inspection:</b>
-                    <ul>
+                    <b>Station Component Inspection (Click item or inspect in 3D):</b>
+                    <ul style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px', padding: 0 }}>
                       {INSPECTION_TARGETS[stationId].map((tgt) => {
                         const isInspected = stationProgress.inspected.includes(tgt);
                         return (
-                          <li key={tgt} className={isInspected ? 'done' : ''}>
-                            <span>{isInspected ? '✅' : '⬜'} {tgt.replace(`${stationId}-`, '').toUpperCase()}</span>
+                          <li
+                            key={tgt}
+                            className={isInspected ? 'done' : ''}
+                            style={{
+                              cursor: isInspected ? 'default' : 'pointer',
+                              padding: '8px 12px',
+                              background: isInspected ? 'rgba(16, 185, 129, 0.12)' : '#0f172a',
+                              border: isInspected ? '1px solid #10b981' : '1px solid #334155',
+                              borderRadius: '6px',
+                              listStyle: 'none',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                            }}
+                            onClick={() => !isInspected && markInspected(tgt)}
+                          >
+                            <span>{isInspected ? '✅' : '🔍'}</span>
+                            <span style={{ fontSize: '12px', fontWeight: 600 }}>{tgt.replace(`${stationId}-`, '').replace(/-/g, ' ').toUpperCase()}</span>
                           </li>
                         );
                       })}
                     </ul>
                   </div>
+
+                  {!allInspected && (
+                    <div className="feedback-alert incorrect" style={{ marginTop: '14px' }}>
+                      ⚠️ Inspection Incomplete: Walk up to and interact with all station instruments in 3D (or click any remaining uninspected item above) to unlock confirmation.
+                    </div>
+                  )}
 
                   <div className="button-row" style={{ marginTop: '16px' }}>
                     <button
@@ -2054,7 +2245,7 @@ export default function Room3Experience() {
                     <button
                       type="button"
                       className="notebook-action"
-                      disabled={stationProgress.completed[0]}
+                      disabled={stationProgress.completed[0] || !allInspected}
                       onClick={() => completeStep(0)}
                     >
                       {stationProgress.completed[0] ? '✓ Step 1 Complete (10/10 pts)' : 'Confirm Inspection Complete (+10 pts)'}
@@ -2074,11 +2265,11 @@ export default function Room3Experience() {
 
                   <div className="prediction-options">
                     {station.prediction.options.map((opt, i) => (
-                      <label key={opt} className={predictionSelection === i ? 'selected' : ''}>
+                      <label key={opt} className={currentPredictionAnswer === i ? 'selected' : ''}>
                         <input
                           type="radio"
                           name="prediction"
-                          checked={predictionSelection === i}
+                          checked={currentPredictionAnswer === i}
                           onChange={() => verifyPrediction(i)}
                         />
                         <span>{String.fromCharCode(65 + i)}</span>
@@ -2107,7 +2298,7 @@ export default function Room3Experience() {
                   <div className="calibration-box">
                     <b>Baseline Reference Parameters:</b>
                     {stationId === 'circuits' && (
-                      <p>Vs = 24.0 V · R1 = 100 Ω · R2 = 220 Ω · R3 = 330 Ω · L = 150 mH · C = 47 μF</p>
+                      <p>Vs = 24.0 V · R1 = 100 Ω · R2 = 220 Ω · R3 = 330 Ω · Mode = DC · Topology = Series</p>
                     )}
                     {stationId === 'optics' && (
                       <p>λ = 532 nm (emerald) · n1 = 1.00 · n2 = 1.52 · θ1 = 30.0° · f = +20 cm · do = 40 cm</p>
@@ -2116,6 +2307,22 @@ export default function Room3Experience() {
                       <p>β = 0.600c (γ = 1.250) · Proper Time Δt₀ = 10.0 s · Proper Length L₀ = 20.0 m</p>
                     )}
                   </div>
+
+                  {setupMismatches.length > 0 ? (
+                    <div className="feedback-alert incorrect" style={{ marginTop: '14px' }}>
+                      ⚠️ Calibration Warning ({setupMismatches.length} parameter{setupMismatches.length > 1 ? 's' : ''} out of spec):
+                      <ul style={{ margin: '6px 0 0 16px' }}>
+                        {setupMismatches.map((m) => (
+                          <li key={m}>{m}</li>
+                        ))}
+                      </ul>
+                      Adjust live controls on the right or click &quot;Reset to Exact Baseline&quot; below.
+                    </div>
+                  ) : (
+                    <div className="feedback-alert correct" style={{ marginTop: '14px' }}>
+                      ✓ Calibration Verified: Live controls match all required physical baseline parameters!
+                    </div>
+                  )}
 
                   <div className="button-row" style={{ marginTop: '16px' }}>
                     <button
@@ -2128,12 +2335,12 @@ export default function Room3Experience() {
                         playTone(520, 'sine', 0.1, 0.2);
                       }}
                     >
-                      Reset to Exact Baseline
+                      Reset Controls to Baseline Calibration
                     </button>
                     <button
                       type="button"
                       className="notebook-action"
-                      disabled={stationProgress.completed[2]}
+                      disabled={stationProgress.completed[2] || setupMismatches.length > 0}
                       onClick={() => completeStep(2)}
                     >
                       {stationProgress.completed[2] ? '✓ Calibration Confirmed (10/10 pts)' : 'Confirm Calibration Baseline (+10 pts)'}
@@ -2159,6 +2366,17 @@ export default function Room3Experience() {
                       </div>
                     ) : (
                       <div className="ready-state">
+                        {!isStationEnergized ? (
+                          <div className="feedback-alert incorrect" style={{ marginBottom: '14px' }}>
+                            {stationId === 'circuits' && '⚠️ Power Supply is OFF or Series Jumper is OPEN! Turn ON power supply and close jumper in workbench controls to run.'}
+                            {stationId === 'optics' && '⚠️ Laser Diode Source is powered OFF! Turn ON laser source in live controls to observe beam refraction.'}
+                            {stationId === 'relativity' && '⚠️ Particle Beam Accelerator is in STANDBY! Set accelerator beam to ACTIVE to observe relativistic dilation.'}
+                          </div>
+                        ) : (
+                          <div className="feedback-alert correct" style={{ marginBottom: '14px' }}>
+                            ✓ Apparatus is fully energized and calibrated. Ready to lock in steady-state telemetry.
+                          </div>
+                        )}
                         <p>Apparatus is energized. Observe the real-time oscilloscope phase, refracted beam, or contracting photon clock in the 3D viewport.</p>
                         <div className="button-row" style={{ marginTop: '14px' }}>
                           <button
@@ -2171,6 +2389,7 @@ export default function Room3Experience() {
                           <button
                             type="button"
                             className="notebook-action"
+                            disabled={stationProgress.completed[3] || !isStationEnergized || runSettling}
                             onClick={() => {
                               setRunSettling(true);
                               playTone(400, 'square', 0.1, 0.2);
@@ -2198,23 +2417,43 @@ export default function Room3Experience() {
                   </div>
                   <p className="step-prompt">{station.steps[4].prompt}</p>
 
+                  {measurementWarning && (
+                    <div className="feedback-alert incorrect" style={{ marginBottom: '14px' }}>
+                      {measurementWarning}
+                    </div>
+                  )}
+
                   <div className="table-scroll">
                     <table className="trial-table">
                       <thead>
                         <tr>
                           {stationId === 'circuits' && (
                             <>
-                              <th>#</th><th>Mode</th><th>Vs (V)</th><th>f (Hz)</th><th>Z (Ω)</th><th>I (A)</th><th>cos φ</th><th>P (W)</th>
+                              <th>#</th><th>Mode</th><th>Topology</th><th>Vs (V)</th><th>f (Hz)</th><th>Z (Ω)</th><th>I (A)</th><th>P (W)</th>
                             </>
                           )}
                           {stationId === 'optics' && (
                             <>
-                              <th>#</th><th>Sub-Mode</th><th>λ (nm)</th><th>Input 1</th><th>Input 2</th><th>Theory</th><th>Measured</th><th>Tag</th>
+                              {optics.subMode === 'refraction' && (
+                                <>
+                                  <th>#</th><th>Sub-Mode</th><th>λ (nm)</th><th>θ₁ (°)</th><th>Effective n₂</th><th>θ₂ Theory (°)</th><th>θ₂ Meas (°)</th><th>Status</th>
+                                </>
+                              )}
+                              {optics.subMode === 'imaging' && (
+                                <>
+                                  <th>#</th><th>Sub-Mode</th><th>λ (nm)</th><th>do (cm)</th><th>f (cm)</th><th>di Theory (cm)</th><th>di Meas (cm)</th><th>Image Type</th>
+                                </>
+                              )}
+                              {optics.subMode === 'diffraction' && (
+                                <>
+                                  <th>#</th><th>Sub-Mode</th><th>λ (nm)</th><th>d (mm)</th><th>L (m)</th><th>Δy Theory (mm)</th><th>Δy Meas (mm)</th><th>Tag</th>
+                                </>
+                              )}
                             </>
                           )}
                           {stationId === 'relativity' && (
                             <>
-                              <th>#</th><th>β (v/c)</th><th>Speed (m/s)</th><th>γ (Lorentz)</th><th>Δt (s)</th><th>L (m)</th><th>K (MeV)</th><th>E (MeV)</th>
+                              <th>#</th><th>Particle</th><th>β (v/c)</th><th>Speed (m/s)</th><th>γ (Theory)</th><th>γ (Detector)</th><th>Δt (s)</th><th>Contracted L (m)</th>
                             </>
                           )}
                         </tr>
@@ -2225,7 +2464,7 @@ export default function Room3Experience() {
                             <td>{t.trial}</td>
                             {stationId === 'circuits' && (
                               <>
-                                <td>{t.mode}</td><td>{formatValue(t.vs)}</td><td>{formatValue(t.freq)}</td><td>{formatValue(t.impedance)}</td><td>{formatValue(t.current)}</td><td>{formatValue(t.powerFactor)}</td><td>{formatValue(t.realPower)}</td>
+                                <td>{t.mode}</td><td>{String(t.topology).toUpperCase()}</td><td>{formatValue(t.vs)}</td><td>{formatValue(t.freq)}</td><td>{formatValue(t.impedance)}</td><td>{formatValue(t.current)}</td><td>{formatValue(t.realPower)}</td>
                               </>
                             )}
                             {stationId === 'optics' && (
@@ -2235,7 +2474,7 @@ export default function Room3Experience() {
                             )}
                             {stationId === 'relativity' && (
                               <>
-                                <td>{formatValue(t.beta)}</td><td>{formatValue(t.speed)}</td><td>{formatValue(t.gamma)}</td><td>{formatValue(t.dilatedTime)}</td><td>{formatValue(t.contractedLength)}</td><td>{formatValue(t.kineticEnergy)}</td><td>{formatValue(t.totalEnergy)}</td>
+                                <td>{String(t.preset ?? 'alpha').toUpperCase()}</td><td>{formatValue(t.beta)}</td><td>{formatValue(t.speed)}</td><td>{formatValue(t.gamma)}</td><td>{formatValue(t.measuredGamma ?? t.gamma)}</td><td>{formatValue(t.dilatedTime)}</td><td>{formatValue(t.contractedLength)}</td>
                               </>
                             )}
                           </tr>
@@ -2292,6 +2531,54 @@ export default function Room3Experience() {
                   </div>
                   <p className="step-prompt">{station.steps[5].prompt}</p>
 
+                  {/* Formula and Worked Hint Toggle Box */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <button
+                      type="button"
+                      className="notebook-action"
+                      style={{ background: showCalcHint ? '#1e293b' : '#0f172a', borderColor: '#38bdf8', fontSize: '12px' }}
+                      onClick={() => setShowCalcHint((v) => !v)}
+                    >
+                      {showCalcHint ? '▲ Hide Formula & Worked Hint' : '💡 Show Formula & Worked Hint (Trial #1 Guide)'}
+                    </button>
+
+                    {showCalcHint && (
+                      <div className="calibration-box" style={{ marginTop: '10px', borderLeft: '4px solid #38bdf8' }}>
+                        <b>Physics Theory & Worked Calculation:</b>
+                        {stationId === 'circuits' && (
+                          <div>
+                            <p style={{ margin: '4px 0' }}><b>Formula:</b> DC: Z = Req = R1 + R2 + R3 (Series) | AC: Z = √(Req² + (XL − XC)²)</p>
+                            {stationProgress.trials.length > 0 && (
+                              <p style={{ margin: '4px 0', color: '#38bdf8' }}>
+                                <b>Trial #1 Worked Hint:</b> For Vs = {stationProgress.trials[0].vs} V ({stationProgress.trials[0].mode}): Theoretical Impedance Z = {Number(stationProgress.trials[0].impedance).toFixed(2)} Ω. (Enter within ±2%).
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {stationId === 'optics' && (
+                          <div>
+                            <p style={{ margin: '4px 0' }}><b>Formula:</b> Refraction: θ₂ = arcsin((n₁/n₂) · sin θ₁) | Imaging: 1/di = 1/f − 1/do | Diffraction: Δy = (λ·L)/d</p>
+                            {stationProgress.trials.length > 0 && (
+                              <p style={{ margin: '4px 0', color: '#38bdf8' }}>
+                                <b>Trial #1 Worked Hint:</b> Theoretical Value = {Number(stationProgress.trials[0].theoretical).toFixed(2)}. (Enter within ±2%).
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {stationId === 'relativity' && (
+                          <div>
+                            <p style={{ margin: '4px 0' }}><b>Formula:</b> Lorentz Factor γ = 1 / √(1 − β²)</p>
+                            {stationProgress.trials.length > 0 && (
+                              <p style={{ margin: '4px 0', color: '#38bdf8' }}>
+                                <b>Trial #1 Worked Hint:</b> For β = {stationProgress.trials[0].beta}c: γ = 1 / √(1 − {Number(stationProgress.trials[0].beta).toFixed(3)}²) = {Number(stationProgress.trials[0].gamma).toFixed(3)}. (Enter within ±2%).
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="calc-inputs-table">
                     {stationProgress.trials.map((t, i) => (
                       <div key={i} className="calc-row calculation-entry" style={{ display: 'grid', gridTemplateColumns: '1fr 140px', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
@@ -2316,6 +2603,11 @@ export default function Room3Experience() {
                         </div>
                       </div>
                     ))}
+                    {stationProgress.trials.length === 0 && (
+                      <p style={{ color: '#94a3b8', fontStyle: 'italic', margin: '12px 0' }}>
+                        Log 5 experimental trials in Step 5 before performing calculations.
+                      </p>
+                    )}
                   </div>
 
                   {calculationFeedback && (
@@ -2325,13 +2617,6 @@ export default function Room3Experience() {
                   )}
 
                   <div className="button-row" style={{ marginTop: '16px' }}>
-                    <button
-                      type="button"
-                      className="notebook-action"
-                      onClick={autoFillCalculations}
-                    >
-                      Calculate for Me (Check Work)
-                    </button>
                     <button
                       type="button"
                       className="notebook-action"
@@ -2417,11 +2702,19 @@ export default function Room3Experience() {
                     </label>
                   </div>
 
+                  {!allGuideCorrect || !hasUncertainty ? (
+                    <div className="feedback-alert incorrect" style={{ marginTop: '12px' }}>
+                      {!allGuideCorrect
+                        ? '⚠️ Formative Questions Incomplete: Answer all 3 questions correctly to unlock analysis synthesis.'
+                        : '⚠️ Experimental Uncertainty: Select at least one identified source of error above.'}
+                    </div>
+                  ) : null}
+
                   <div className="button-row" style={{ marginTop: '16px' }}>
                     <button
                       type="button"
                       className="notebook-action"
-                      disabled={stationProgress.completed[6]}
+                      disabled={stationProgress.completed[6] || !allGuideCorrect || !hasUncertainty}
                       onClick={() => completeStep(6)}
                     >
                       {stationProgress.completed[6] ? '✓ Analysis Complete (10/10 pts)' : 'Submit Analysis & Synthesize (+10 pts)'}
@@ -2486,6 +2779,14 @@ export default function Room3Experience() {
                     </div>
                   </div>
 
+                  {!reportReady && (
+                    <div className="feedback-alert incorrect" style={{ marginTop: '14px' }}>
+                      {!steps1to7Done
+                        ? '⚠️ Incomplete Station: Complete Steps 1 through 7 before certifying the final laboratory report.'
+                        : '⚠️ Student Metadata Required: Enter Student Name, ID, and Section above to generate certified report.'}
+                    </div>
+                  )}
+
                   <div className="button-row" style={{ marginTop: '16px' }}>
                     <button
                       type="button"
@@ -2497,9 +2798,10 @@ export default function Room3Experience() {
                     <button
                       type="button"
                       className="notebook-action"
+                      disabled={stationProgress.completed[7] || !reportReady}
                       onClick={downloadReportPdf}
                     >
-                      📄 Download Certified PDF Report (+10 pts)
+                      {stationProgress.completed[7] ? '✓ Final Report Certified (10/10 pts)' : '📄 Download Certified PDF Report (+10 pts)'}
                     </button>
                   </div>
                 </div>

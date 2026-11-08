@@ -29,14 +29,16 @@ export type OpticsSettings = {
   slitWidth: number; // mm (0.01 to 0.50 mm)
   slitSeparation: number; // mm (0.05 to 2.00 mm)
   screenDistance: number; // m (0.50 to 5.00 m)
+  powerOn?: boolean;
 };
 
 export type RelativitySettings = {
   beta: number; // v/c (0.000 to 0.999)
   properTime: number; // s (1.00 to 100.0 s)
   properLength: number; // m (1.00 to 100.0 m)
-  massPreset: 'electron' | 'proton' | 'muon' | 'probe';
+  massPreset: 'electron' | 'proton' | 'muon' | 'alpha';
   restMass: number; // kg
+  powerOn?: boolean;
 };
 
 // -------------------------------------------------------------
@@ -50,14 +52,14 @@ export const MASS_PRESETS: Record<RelativitySettings['massPreset'], { name: stri
   electron: { name: 'Electron (e⁻)', massKg: 9.1093837e-31, restEnergyMeV: 0.5109989 },
   proton: { name: 'Proton (p⁺)', massKg: 1.6726219e-27, restEnergyMeV: 938.272 },
   muon: { name: 'Muon (μ⁻)', massKg: 1.8835316e-28, restEnergyMeV: 105.658 },
-  probe: { name: 'Macroscopic 1.00 kg Probe', massKg: 1.00, restEnergyMeV: (1.00 * C_LIGHT * C_LIGHT) / MEV_TO_JOULE },
+  alpha: { name: 'Alpha Particle (⁴He²⁺)', massKg: 6.644657e-27, restEnergyMeV: 3727.379 },
 };
 
 export const INITIAL_CIRCUITS: CircuitSettings = {
   mode: 'dc',
   topology: 'series',
   vs: 24.0,
-  freq: 60.0,
+  freq: 120.0, // 120 Hz: off-resonance (f0 ≈ 60 Hz) so XL and XC are unmasked
   r1: 100.0,
   r2: 220.0,
   r3: 330.0,
@@ -70,21 +72,23 @@ export const INITIAL_OPTICS: OpticsSettings = {
   subMode: 'refraction',
   wavelength: 532, // 532 nm Emerald Green
   n1: 1.00, // Air
-  n2: 1.52, // Crown Glass
+  n2: 1.52, // Crown Glass baseline
   theta1: 30.0, // 30 degrees
   focalLength: 20.0, // +20 cm Converging Lens
   objectDistance: 40.0, // 40 cm
   slitWidth: 0.08, // 0.08 mm
   slitSeparation: 0.25, // 0.25 mm
   screenDistance: 2.00, // 2.00 m
+  powerOn: true,
 };
 
 export const INITIAL_RELATIVITY: RelativitySettings = {
-  beta: 0.600, // 0.60c (gamma = 1.25)
+  beta: 0.600, // 0.60c (gamma = 1.250)
   properTime: 10.0, // 10.0 s
-  properLength: 20.0, // 20.0 m
-  massPreset: 'probe',
-  restMass: 1.00,
+  properLength: 20.0, // 20.0 m (Tunnel Baseline)
+  massPreset: 'alpha',
+  restMass: 6.644657e-27,
+  powerOn: true,
 };
 
 // -------------------------------------------------------------
@@ -204,6 +208,7 @@ export function calculateCircuit(settings: CircuitSettings): CircuitResult {
 
 export type OpticsResult = {
   laserHex: string;
+  effectiveN2: number;
   theta1Rad: number;
   theta1Deg: number;
   criticalAngleDeg: number | null;
@@ -264,17 +269,23 @@ export function calculateOptics(settings: OpticsSettings): OpticsResult {
   const { wavelength, n1, n2, theta1, focalLength, objectDistance, slitWidth, slitSeparation, screenDistance } = settings;
   const laserHex = wavelengthToRGB(wavelength);
 
+  // Cauchy Chromatic Dispersion: n₂(λ) = n_base + B * (1/λ² - 1/532²) with B = 4500 nm²
+  const B_CAUCHY = 4500; // nm^2
+  const invLambdaSq = 1 / (wavelength * wavelength);
+  const invRefSq = 1 / (532 * 532);
+  const effectiveN2 = Number((n2 + B_CAUCHY * (invLambdaSq - invRefSq)).toFixed(4));
+
   const theta1Rad = (theta1 * Math.PI) / 180;
   const reflectAngleDeg = theta1;
 
-  // 1. Refraction & TIR
+  // 1. Refraction & TIR using effectiveN2
   let criticalAngleDeg: number | null = null;
   let isTIR = false;
   let theta2Deg: number | null = null;
   let theta2Rad: number | null = null;
 
-  if (n1 > n2) {
-    const sinCrit = n2 / n1;
+  if (n1 > effectiveN2) {
+    const sinCrit = effectiveN2 / n1;
     criticalAngleDeg = Math.asin(sinCrit) * (180 / Math.PI);
     if (theta1 > criticalAngleDeg) {
       isTIR = true;
@@ -282,7 +293,7 @@ export function calculateOptics(settings: OpticsSettings): OpticsResult {
   }
 
   if (!isTIR) {
-    const sinTheta2 = (n1 / n2) * Math.sin(theta1Rad);
+    const sinTheta2 = (n1 / effectiveN2) * Math.sin(theta1Rad);
     if (sinTheta2 <= 1.0 && sinTheta2 >= -1.0) {
       theta2Rad = Math.asin(sinTheta2);
       theta2Deg = theta2Rad * (180 / Math.PI);
@@ -299,10 +310,13 @@ export function calculateOptics(settings: OpticsSettings): OpticsResult {
   let imageScale: 'Magnified' | 'Diminished' | 'Same size' | 'Infinite' = 'Same size';
 
   const denom = objectDistance - focalLength;
-  if (Math.abs(denom) < 0.01) {
+  if (Math.abs(denom) < 0.1) {
+    // Exact focal point placement: do = f -> di = ∞
     imageType = 'At Infinity';
     imageOrientation = 'None';
     imageScale = 'Infinite';
+    imageDistanceCm = null;
+    magnification = null;
   } else {
     imageDistanceCm = (focalLength * objectDistance) / denom;
     magnification = -imageDistanceCm / objectDistance;
@@ -326,6 +340,7 @@ export function calculateOptics(settings: OpticsSettings): OpticsResult {
 
   return {
     laserHex,
+    effectiveN2,
     theta1Rad,
     theta1Deg: theta1,
     criticalAngleDeg,
@@ -374,7 +389,7 @@ export function calculateRelativity(settings: RelativitySettings): RelativityRes
   const contractedLength = properLength / gamma;
   const lengthContractionPercent = (1 - 1 / gamma) * 100;
 
-  const presetInfo = MASS_PRESETS[massPreset] || MASS_PRESETS.probe;
+  const presetInfo = MASS_PRESETS[massPreset] || MASS_PRESETS.alpha;
   const m0 = presetInfo.massKg;
 
   const restEnergyJ = m0 * C_LIGHT * C_LIGHT;
@@ -428,6 +443,7 @@ export type StationProgress = {
   recommendations: string;
   errors: string[];
   guideAnswers?: number[];
+  predictionAnswer?: number | null;
 };
 
 export type Room3Progress = Record<Room3StationId, StationProgress>;
@@ -449,6 +465,7 @@ export function createDefaultRoom3Progress(): Room3Progress {
     recommendations: '',
     errors: [],
     guideAnswers: [-1, -1, -1],
+    predictionAnswer: null,
   });
   return { circuits: station(), optics: station(), relativity: station() };
 }
@@ -550,12 +567,13 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
     prediction: {
       question: 'When light travels from an optically denser medium to a less dense medium (n₁ > n₂) at an incident angle exceeding the critical angle (θ₁ > θ_c), what optical phenomenon occurs?',
       options: [
-        'Total Internal Reflection (TIR), where 100% of the light reflects back into medium 1 with zero refraction.',
+        'The refracted beam travels along the normal at exactly 0° with zero deflection.',
+        'Total Internal Reflection (TIR), where 100% of incident light reflects internally because sin θ₂ > 1 has no real solution in Snell\'s Law.',
         'Complete absorption of the light wave within the boundary interface.',
-        'The refracted beam travels along the normal at exactly 0°.',
+        'Frequency doubling where light re-radiates at half its incident wavelength.',
       ],
-      answer: 0,
-      explanation: 'When n₁ > n₂ and θ₁ > θ_c = arcsin(n₂/n₁), Snell\'s law predicts sin(θ₂) > 1, which has no real solution. Consequently, no light penetrates medium 2 and total internal reflection occurs, perfectly conserving optical energy.',
+      answer: 1,
+      explanation: 'According to Snell\'s Law (n₁ sin θ₁ = n₂ sin θ₂), when light propagates from a denser medium into a less dense medium (n₁ > n₂) and incident angle θ₁ exceeds the critical angle θ_c = arcsin(n₂/n₁), the required value for sin θ₂ exceeds 1.0. Because sin θ₂ > 1 has no real solution, refraction cannot occur and 100% of incident light undergoes Total Internal Reflection (TIR), perfectly conserving optical energy.',
     },
     errors: [
       'Diffraction spreading and finite beam divergence of the laser diode',
@@ -579,7 +597,7 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
     steps: [
       { title: 'Inspect the dual-frame observation deck', prompt: 'Compare Stationary Frame S (lab clock, calorimeter) with Moving Frame S\' (relativistic spacecraft, photon light clock, contracting meter rod).', target: 'Observe how inertial reference frames compare according to Einstein\'s postulates.' },
       { title: 'Predict relativistic clock rates', prompt: 'Choose how moving clock ticks compare to stationary laboratory clocks as velocity approaches c.', target: 'Apply the invariance of the speed of light to the geometric photon clock.' },
-      { title: 'Calibrate relativistic baseline state', prompt: 'Initialize baseline: β = 0.600c (where γ = 1.250), proper time Δt₀ = 10.0 s, proper length L₀ = 20.0 m, rest mass m₀ = 1.00 kg.', target: 'Verify resting time synchronization and proper length calibration.' },
+      { title: 'Calibrate relativistic baseline state', prompt: 'Initialize baseline: β = 0.600c (where γ = 1.250), proper time Δt₀ = 10.0 s, proper length L₀ = 20.0 m, Alpha Particle (⁴He²⁺) preset.', target: 'Verify resting time synchronization and proper length calibration.' },
       { title: 'Accelerate frame and trigger photon clock', prompt: 'Increase velocity ratio β toward 0.999c, watching the animated photon bounce along its hypotenuse path and the meter rod contract.', target: 'Visually witness physical length contraction strictly along the axis of motion.' },
       { title: 'Record five relativistic trials', prompt: 'Vary velocity ratio β (e.g. 0.00c, 0.60c, 0.80c, 0.866c, 0.99c) or particle rest masses to record five complete datasets.', target: 'Record Lorentz factor γ, dilated time Δt, contracted length L, and relativistic kinetic energy K.' },
       { title: 'Verify theoretical Lorentz calculations', prompt: 'Calculate Lorentz factor γ = 1/√(1 - β²), dilated time Δt = γ Δt₀, and total relativistic energy E = γ m₀ c² for all five trials.', target: 'Verify calculations within ±2% relative tolerance.' },
@@ -587,14 +605,15 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
       { title: 'Submit certified relativity report', prompt: 'Review Lorentz transformation data, energy-momentum metrics, and download certified laboratory PDF and CSV files.', target: 'Certify all 3 stations and celebrate 300/300 points mastery.' },
     ],
     prediction: {
-      question: 'As a spacecraft approaches relativistic speeds near the speed of light (v -> c), what occurs to elapsed time inside the ship as measured by a stationary Earth observer?',
+      question: 'As an inertial frame moves at relativistic velocity v relative to an observer, how does the elapsed time interval Δt measured by the stationary observer compare to the proper time interval Δt₀ measured in the moving frame?',
       options: [
-        'Time dilates (expands); clocks on the moving spacecraft appear to tick much slower according to Δt = γ Δt₀.',
-        'Time contracts; clocks on the moving spacecraft appear to tick faster than Earth clocks.',
-        'Time stays strictly identical because light speed varies with source velocity.',
+        'Time contracts; clocks in the moving frame appear to tick faster according to Δt = Δt₀ / γ.',
+        'Time remains invariant because light speed adjusts to match source frame velocity.',
+        'Time dilates (expands); clocks moving at velocity v tick slower by the Lorentz factor γ = (1 - v²/c²)⁻¹/², yielding dilated time interval Δt = γ Δt₀.',
+        'Time reverses direction whenever velocity exceeds 0.50c.',
       ],
-      answer: 0,
-      explanation: 'Because the speed of light c is invariant in all inertial reference frames, the diagonal path of light in a moving photon clock requires more time in the stationary frame: Δt = γ Δt₀, where γ = 1/√(1 - v²/c²) ≥ 1.',
+      answer: 2,
+      explanation: 'Under the Lorentz transformation, because the speed of light c is an invariant constant in all inertial reference frames, an observer at rest observes light traveling along a longer diagonal path inside a moving clock. Consequently, the moving clock ticks slower by the Lorentz factor γ = (1 - v²/c²)⁻¹/², producing relativistic time dilation: Δt = γ Δt₀.',
     },
     errors: [
       'Non-inertial acceleration phases required to attain relativistic velocity',
@@ -625,12 +644,12 @@ export const TRIAL_COLUMNS: Record<Room3StationId, Array<{ key: string; label: s
     { key: 'trial', label: '#' },
     { key: 'subMode', label: 'Sub-Mode' },
     { key: 'wavelength', label: 'λ (nm)' },
-    { key: 'paramA', label: 'Input 1' },
-    { key: 'paramB', label: 'Input 2' },
-    { key: 'theoretical', label: 'Theory' },
+    { key: 'paramA', label: 'θ₁ (°) / dₒ (cm) / d (mm)' },
+    { key: 'paramB', label: 'n₂(λ) / f (cm) / a (mm)' },
+    { key: 'theoretical', label: 'Theory (θ₂ / dᵢ / Δy)' },
     { key: 'measured', label: 'Measured' },
     { key: 'percentError', label: '% error' },
-    { key: 'classification', label: 'Result Tag' },
+    { key: 'classification', label: 'Result Classification' },
   ],
   relativity: [
     { key: 'trial', label: '#' },
@@ -661,12 +680,12 @@ export const ROOM3_GUIDE_QUESTIONS: Record<Room3StationId, GuideQuestion[]> = {
       id: 'c-q1',
       question: 'In an AC series RLC circuit with R = 100 Ω, XL = 250 Ω, and XC = 150 Ω driven by Vs = 141.4 V (rms), what is the total circuit impedance Z and phase angle φ?',
       options: [
-        'Z = 141.4 Ω and φ = +45.0° (inductive, current lags voltage)',
         'Z = 100.0 Ω and φ = 0.0° (purely resistive resonance)',
+        'Z = 141.4 Ω and φ = +45.0° (inductive, current lags voltage)',
         'Z = 500.0 Ω and φ = -45.0° (capacitive, current leads voltage)',
         'Z = 200.0 Ω and φ = +90.0° (purely inductive)',
       ],
-      correctIndex: 0,
+      correctIndex: 1,
       explanation: 'Net reactance X = XL - XC = 250 - 150 = 100 Ω. Impedance Z = √(R² + X²) = √(100² + 100²) = √20000 ≈ 141.4 Ω. The phase angle is φ = arctan(100/100) = +45.0°. Because XL > XC, the circuit is inductive and current lags voltage.',
     },
     {
@@ -685,12 +704,12 @@ export const ROOM3_GUIDE_QUESTIONS: Record<Room3StationId, GuideQuestion[]> = {
       id: 'c-q3',
       question: 'Why is a high power factor (cos φ close to 1.0) desirable in electrical power distribution systems?',
       options: [
-        'It maximizes the proportion of real power delivered while minimizing reactive current losses in transmission lines.',
         'It eliminates the need for alternating current by converting AC directly to DC.',
         'It reduces the operating frequency from 60 Hz to 0 Hz.',
+        'It maximizes the proportion of real power delivered while minimizing reactive current losses in transmission lines.',
         'It prevents circuit breakers from ever tripping under short-circuit faults.',
       ],
-      correctIndex: 0,
+      correctIndex: 2,
       explanation: 'Real power P = Vrms * Irms * cos φ performs useful work. If cos φ is low, much higher Irms must flow to deliver the same real power, causing large resistive I²R transmission heating losses in conductors and transformers.',
     },
   ],
@@ -699,12 +718,12 @@ export const ROOM3_GUIDE_QUESTIONS: Record<Room3StationId, GuideQuestion[]> = {
       id: 'o-q1',
       question: 'A beam of emerald laser light (λ = 532 nm) in air (n₁ = 1.00) strikes crown glass (n₂ = 1.52) at an angle of incidence θ₁ = 45.0°. What is the angle of refraction θ₂?',
       options: [
-        'θ₂ = 27.7° (bends toward the normal)',
         'θ₂ = 45.0° (passes straight through with no deflection)',
         'θ₂ = 68.3° (bends away from the normal)',
+        'θ₂ = 27.7° (bends toward the normal)',
         'Total internal reflection occurs with no refracted beam',
       ],
-      correctIndex: 0,
+      correctIndex: 2,
       explanation: 'By Snell\'s law: sin θ₂ = (n₁ / n₂) * sin θ₁ = (1.00 / 1.52) * sin(45.0°) = 0.6579 * 0.7071 = 0.4652. Thus θ₂ = arcsin(0.4652) = 27.72°. Entering a denser medium slows the wave and bends the ray toward the normal.',
     },
     {
@@ -723,12 +742,12 @@ export const ROOM3_GUIDE_QUESTIONS: Record<Room3StationId, GuideQuestion[]> = {
       id: 'o-q3',
       question: 'In Young\'s double-slit experiment, what happens to the spatial fringe spacing Δy if the slit separation d is halved (d\' = d/2)?',
       options: [
-        'The fringe spacing doubles (2×) according to Δy = λL / d',
         'The fringe spacing is halved (0.5×)',
+        'The fringe spacing doubles (2×) according to Δy = λL / d',
         'The fringes disappear into a uniform blur',
         'Only the central fringe changes; others stay at fixed positions',
       ],
-      correctIndex: 0,
+      correctIndex: 1,
       explanation: 'Fringe spacing Δy = (λ L) / d is inversely proportional to slit separation d. Halving d in the denominator doubles the angular separation of interference maxima, spreading the interference pattern twice as wide.',
     },
   ],
@@ -737,12 +756,12 @@ export const ROOM3_GUIDE_QUESTIONS: Record<Room3StationId, GuideQuestion[]> = {
       id: 'r-q1',
       question: 'If a relativistic spaceship travels at speed v = 0.80c relative to Earth, what are the Lorentz factor γ and the length L of a meter rod (L₀ = 1.00 m) oriented along the flight path?',
       options: [
-        'γ = 1.667 and L = 0.60 m (contracted by 40%)',
         'γ = 1.250 and L = 0.80 m (contracted by 20%)',
+        'γ = 1.667 and L = 0.60 m (contracted by 40%)',
         'γ = 2.000 and L = 0.50 m (contracted by 50%)',
         'γ = 1.000 and L = 1.00 m (no contraction)',
       ],
-      correctIndex: 0,
+      correctIndex: 1,
       explanation: 'Lorentz factor γ = 1 / √(1 - 0.80²) = 1 / √(1 - 0.64) = 1 / √0.36 = 1 / 0.60 ≈ 1.667. Length contraction along the motion axis is L = L₀ / γ = 1.00 m * 0.60 = 0.60 m (contracted to 60% of rest length).',
     },
     {
@@ -761,12 +780,12 @@ export const ROOM3_GUIDE_QUESTIONS: Record<Room3StationId, GuideQuestion[]> = {
       id: 'r-q3',
       question: 'What is the relationship between rest mass m₀, relativistic kinetic energy K, and total relativistic energy E?',
       options: [
-        'E = γ m₀ c² = m₀ c² + K, where kinetic energy is K = (γ - 1) m₀ c²',
         'E = 1/2 m₀ v² regardless of speed',
         'E = m₀ c² and kinetic energy is purely imaginary',
         'K = γ m₀ v and rest energy is zero',
+        'E = γ m₀ c² = m₀ c² + K, where kinetic energy is K = (γ - 1) m₀ c²',
       ],
-      correctIndex: 0,
+      correctIndex: 3,
       explanation: 'Total relativistic energy is E = γ m₀ c². When the object is at rest (γ = 1), its rest energy is E₀ = m₀ c². The difference between total energy and rest energy is the relativistic kinetic energy: K = E - E₀ = (γ - 1) m₀ c².',
     },
   ],

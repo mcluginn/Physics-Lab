@@ -374,7 +374,13 @@ export class Multimeter3D {
   // UPDATE MULTIMETER LCD CANVAS TEXTURE
   // -------------------------------------------------------------
   public updateDisplay(): MultimeterReading {
-    const reading = readMultimeter(this.circuitState, this.dmmState);
+    let reading = readMultimeter(this.circuitState, this.dmmState);
+    if (reading.tripFuse && !this.dmmState.fuseBlown) {
+      this.dmmState.fuseBlown = true;
+      this.callbacks.playTone?.(140, 'sawtooth', 0.4, 0.3);
+      // Re-read with blown fuse state
+      reading = readMultimeter(this.circuitState, this.dmmState);
+    }
 
     this.lcdCtx.fillStyle = '#0f172a';
     this.lcdCtx.fillRect(0, 0, 512, 256);
@@ -397,7 +403,13 @@ export class Multimeter3D {
 
     // Main 7-Segment Readout
     this.lcdCtx.font = 'bold 72px monospace';
-    this.lcdCtx.fillStyle = reading.isValidMeasurement ? '#38bdf8' : reading.isContinuityBeep ? '#10b981' : '#f59e0b';
+    this.lcdCtx.fillStyle = this.dmmState.fuseBlown || reading.displayString === 'LEAd'
+      ? '#ef4444'
+      : reading.isValidMeasurement
+      ? '#38bdf8'
+      : reading.isContinuityBeep
+      ? '#10b981'
+      : '#f59e0b';
     this.lcdCtx.fillText(reading.displayString, 24, 160);
 
     // Status annunciator badges

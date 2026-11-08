@@ -53,11 +53,12 @@ export type MultimeterState = {
 
 export type MultimeterReading = {
   value: number | null;     // Numeric reading, or null if OL
-  displayString: string;    // Formatted text e.g. "24.00 V", "36.92 mA", "100.0 Ω", "O.L"
+  displayString: string;    // Formatted text e.g. "24.00 V", "36.92 mA", "100.0 Ω", "O.L", "LEAd", "FUSE"
   unit: string;             // "V", "mV", "A", "mA", "Ω", "kΩ"
   isContinuityBeep: boolean;
   warning: string | null;   // Educational feedback message
   isValidMeasurement: boolean;
+  tripFuse?: boolean;       // Set true when overcurrent trips internal 10A fuse
 };
 
 export type CircuitSolution = {
@@ -287,10 +288,10 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
     if (redJack !== 'v_ohm') {
       return {
         value: null,
-        displayString: 'Err Jk',
+        displayString: 'LEAd',
         unit: 'V',
         isContinuityBeep: false,
-        warning: 'WRONG JACK! For voltage measurement, move red lead to VΩ jack.',
+        warning: 'LEAD WARNING: Red lead is in current shunt jack (mA/10A) while dial is set to Voltage! Move red lead to V·Ω jack.',
         isValidMeasurement: false,
       };
     }
@@ -300,10 +301,14 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
     const vBlack = solution.nodeVoltages[blackProbeTerminal] ?? 0;
     const diff = vRed - vBlack;
 
+    // Realistic ADC reading fluctuation (±0.25%)
+    const adcNoise = 1 + (Math.sin(diff * 11.7 + 1.3) * 0.0025);
+
     if (mode === 'v_dc') {
+      const noisyDiff = diff * (diff !== 0 ? adcNoise : 1);
       return {
         value: diff,
-        displayString: `${diff >= 0 ? '' : '-'}${Math.abs(diff).toFixed(2)} V`,
+        displayString: `${diff >= 0 ? '' : '-'}${Math.abs(noisyDiff).toFixed(2)} V`,
         unit: 'V',
         isContinuityBeep: false,
         warning: diff < 0 ? 'Negative potential: Probes connected with reversed polarity.' : null,
@@ -312,9 +317,10 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
     } else {
       // AC RMS Voltage
       const vRms = Math.abs(diff) / Math.SQRT2;
+      const noisyVRms = vRms * (vRms !== 0 ? adcNoise : 1);
       return {
         value: vRms,
-        displayString: `${vRms.toFixed(2)} V~`,
+        displayString: `${noisyVRms.toFixed(2)} V~`,
         unit: 'V',
         isContinuityBeep: false,
         warning: state.mode !== 'ac' ? 'Measuring DC circuit in AC Voltage mode. Reading indicates AC ripple only.' : null,
@@ -330,27 +336,34 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
     if (redJack !== 'ma_10a') {
       return {
         value: null,
-        displayString: 'Err Jk',
+        displayString: 'LEAd',
         unit: 'A',
         isContinuityBeep: false,
-        warning: 'WRONG JACK! For current measurement, move red lead to mA/10A jack.',
+        warning: 'LEAD WARNING: Red lead is in V·Ω jack while dial is set to Current (A)! Move red lead to mA/10A jack.',
         isValidMeasurement: false,
       };
     }
 
-    // Dangerous parallel current check: Probes placed across voltage source while energized
+    // Dangerous parallel current check: Probes placed across voltage source or un-isolated branch while energized
     if (
       state.powerOn &&
       ((redProbeTerminal === 'SRC_POS' && blackProbeTerminal === 'SRC_NEG') ||
-       (redProbeTerminal === 'SRC_NEG' && blackProbeTerminal === 'SRC_POS'))
+       (redProbeTerminal === 'SRC_NEG' && blackProbeTerminal === 'SRC_POS') ||
+       (state.seriesJumperConnected && (
+         (redProbeTerminal === 'SRC_POS' && blackProbeTerminal === 'R1_B') ||
+         (redProbeTerminal === 'R1_B' && blackProbeTerminal === 'SRC_POS') ||
+         (redProbeTerminal === 'SERIES_JACK_A' && blackProbeTerminal === 'SRC_NEG') ||
+         (redProbeTerminal === 'SRC_NEG' && blackProbeTerminal === 'SERIES_JACK_A')
+       )))
     ) {
       return {
         value: 99.9,
-        displayString: 'OVERLOAD',
-        unit: 'A',
+        displayString: 'FUSE',
+        unit: '',
         isContinuityBeep: false,
-        warning: 'DANGER: Ammeter connected in PARALLEL across voltage source! Zero-resistance short circuit detected. Virtual fuse tripped!',
+        warning: 'DANGER: Ammeter connected in PARALLEL across voltage source! Zero-resistance current shunt caused massive overcurrent (> 10 A). Virtual fuse blown! Press Reset Fuse and insert ammeter in series.',
         isValidMeasurement: false,
+        tripFuse: true,
       };
     }
 
@@ -376,9 +389,13 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
     const isReverse = redProbeTerminal === 'SERIES_JACK_B';
     const signedI = isReverse ? -iTotal : iTotal;
 
-    if (Math.abs(signedI) < 1.0) {
+    // Realistic ADC reading fluctuation (±0.3%)
+    const adcNoise = 1 + (Math.sin(signedI * 53.1 + 0.7) * 0.003);
+    const noisyI = signedI * (signedI !== 0 ? adcNoise : 1);
+
+    if (Math.abs(noisyI) < 1.0) {
       // Display in mA
-      const mA = signedI * 1000;
+      const mA = noisyI * 1000;
       return {
         value: signedI,
         displayString: `${mA.toFixed(2)} mA`,
@@ -391,7 +408,7 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
 
     return {
       value: signedI,
-      displayString: `${signedI.toFixed(3)} A`,
+      displayString: `${noisyI.toFixed(3)} A`,
       unit: 'A',
       isContinuityBeep: false,
       warning: isReverse ? 'Negative current: Ammeter probe leads reversed.' : null,
@@ -406,10 +423,10 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
     if (redJack !== 'v_ohm') {
       return {
         value: null,
-        displayString: 'Err Jk',
+        displayString: 'LEAd',
         unit: 'Ω',
         isContinuityBeep: false,
-        warning: 'WRONG JACK! For resistance measurement, move red lead to VΩ jack.',
+        warning: 'LEAD WARNING: Red lead is in mA/10A current jack while dial is set to Resistance (Ω)! Move red lead to V·Ω jack.',
         isValidMeasurement: false,
       };
     }
@@ -474,6 +491,17 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
   // CONTINUITY TESTING (Beep if R < 30 Ohms)
   // -------------------------------------------------------------
   if (mode === 'cont') {
+    if (redJack !== 'v_ohm') {
+      return {
+        value: null,
+        displayString: 'LEAd',
+        unit: 'Ω',
+        isContinuityBeep: false,
+        warning: 'LEAD WARNING: Red lead is in mA/10A jack while dial is set to Continuity! Move red lead to V·Ω jack.',
+        isValidMeasurement: false,
+      };
+    }
+
     if (state.powerOn) {
       return {
         value: null,
