@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
   type CircuitSettings,
   type OpticsSettings,
@@ -1462,6 +1463,8 @@ export function createRoom3Scene(
   createClipboard('optics', STATION_X.optics + 1.1, 0.35, 'optics-clipboard', 'Optics Trials Clipboard');
   createClipboard('relativity', STATION_X.relativity + 1.1, 0.35, 'relativity-clipboard', 'Relativity Trials Clipboard');
 
+  const gltfLoader = new GLTFLoader();
+
   // -------------------------------------------------------------
   // 12. Station 01 3D Apparatus: Circuits Bench (x = -6.0m)
   // -------------------------------------------------------------
@@ -1476,6 +1479,25 @@ export function createRoom3Scene(
     material(0x1e293b, { metalness: 0.8, roughness: 0.3 })
   );
   psuGroup.add(psuHousing);
+
+  // Load High-Fidelity DC Power Supply GLB Model
+  gltfLoader.load('/assets/room-3/electrical/dc_power_supply.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'DC_PSU_GLB';
+    model.scale.setScalar(1.55);
+    model.position.set(0, -0.16, 0.12);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        if (child.name === 'DC_PSU_Digital_Display') {
+          (child as THREE.Mesh).material = new THREE.MeshBasicMaterial({ map: psuTexture });
+        }
+      }
+    });
+    psuHousing.visible = false;
+    psuGroup.add(model);
+  }, undefined, (err) => console.warn('DC PSU GLB load note:', err));
 
   const psuCanvas = document.createElement('canvas');
   psuCanvas.width = 512;
@@ -1630,6 +1652,25 @@ export function createRoom3Scene(
   };
   updateOscilloscope(0);
 
+  // Load High-Fidelity Tektronix Oscilloscope GLB Model
+  gltfLoader.load('/assets/room-3/electrical/oscilloscope.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'Oscilloscope_GLB';
+    model.scale.setScalar(1.50);
+    model.position.set(0, -0.22, 0.16);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        if (child.name === 'Oscilloscope_Screen_Display') {
+          (child as THREE.Mesh).material = new THREE.MeshBasicMaterial({ map: oscTexture });
+        }
+      }
+    });
+    oscHousing.visible = false;
+    oscGroup.add(model);
+  }, undefined, (err) => console.warn('Oscilloscope GLB load note:', err));
+
   scene.add(oscGroup);
 
   registerInteractable(oscHousing, {
@@ -1709,6 +1750,73 @@ export function createRoom3Scene(
 
   scene.add(breadboardGroup);
 
+  // Load High-Fidelity Breadboard Circuit GLB Model
+  gltfLoader.load('/assets/room-3/electrical/breadboard_circuit.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'Breadboard_GLB';
+    model.scale.setScalar(1.25);
+    model.position.set(0, 0.015, 0);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    breadboardPlate.visible = false;
+    breadboardGroup.add(model);
+  }, undefined, (err) => console.warn('Breadboard GLB load note:', err));
+
+  // 4. Rigol DDS Arbitrary Function Generator Unit
+  const fgenGroup = new THREE.Group();
+  fgenGroup.position.set(circuitsBenchX + 0.85, 0.94 + 0.12, -0.32);
+  gltfLoader.load('/assets/room-3/electrical/function_generator.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'FunctionGenerator_GLB';
+    model.scale.setScalar(1.4);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    fgenGroup.add(model);
+  }, undefined, (err) => console.warn('Function Gen GLB load note:', err));
+  scene.add(fgenGroup);
+
+  // 5. Fluke True-RMS Digital Multimeter with Safety Leads
+  const dmmGroup = new THREE.Group();
+  dmmGroup.position.set(circuitsBenchX + 1.15, 0.94 + 0.04, 0.12);
+  dmmGroup.rotation.y = -Math.PI / 5;
+  const dmmHousing = new THREE.Mesh(
+    new THREE.BoxGeometry(0.18, 0.08, 0.32),
+    material(0xf59e0b, { roughness: 0.4 })
+  );
+  dmmGroup.add(dmmHousing);
+  gltfLoader.load('/assets/room-3/electrical/digital_multimeter.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'DigitalMultimeter_GLB';
+    model.scale.setScalar(1.35);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    dmmHousing.visible = false;
+    dmmGroup.add(model);
+  }, undefined, (err) => console.warn('DMM GLB load note:', err));
+  scene.add(dmmGroup);
+
+  registerInteractable(dmmHousing, {
+    id: 'circuits-multimeter',
+    stationId: 'circuits',
+    category: 'METROLOGY',
+    name: 'Fluke True-RMS Digital Multimeter',
+    description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-multimeter'],
+    action: 'Measure Loop Voltage and Branch Current',
+    readout: `DMM Probe Readout: V = ${currentCircuits.vs.toFixed(1)} V · I = ${calculateCircuit(currentCircuits).current.toFixed(3)} A`,
+  });
+
   registerInteractable(breadboardPlate, {
     id: 'circuits-topology-selector',
     stationId: 'circuits',
@@ -1733,6 +1841,22 @@ export function createRoom3Scene(
   );
   railGroup.add(rail);
 
+  // Load High-Fidelity Optical Rail System GLB Model
+  gltfLoader.load('/assets/room-3/optics/optical_rail_system.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'OpticalRail_GLB';
+    model.scale.setScalar(1.2);
+    model.position.set(0, 0, 0);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    rail.visible = false;
+    railGroup.add(model);
+  }, undefined, (err) => console.warn('Optical Rail GLB load note:', err));
+
   // Laser Diode Emitter
   const laserHousing = new THREE.Mesh(
     new THREE.CylinderGeometry(0.04, 0.04, 0.22, 24),
@@ -1741,6 +1865,22 @@ export function createRoom3Scene(
   laserHousing.rotation.z = Math.PI / 2;
   laserHousing.position.set(-1.0, 0.12, 0);
   railGroup.add(laserHousing);
+
+  // Load High-Fidelity Diode Laser Collimator GLB Model
+  gltfLoader.load('/assets/room-3/optics/laser_source.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'LaserSource_GLB';
+    model.scale.setScalar(1.3);
+    model.position.set(-1.0, 0.12, 0);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    laserHousing.visible = false;
+    railGroup.add(model);
+  }, undefined, (err) => console.warn('Laser Source GLB load note:', err));
 
   const beamMat = new THREE.MeshBasicMaterial({
     color: wavelengthToRGB(currentOptics.wavelength),
@@ -1782,11 +1922,42 @@ export function createRoom3Scene(
   slitPlate.visible = false;
   opticalElementGroup.add(slitPlate);
 
+  // Load High-Fidelity Goniometer Prism Stage GLB Model
+  gltfLoader.load('/assets/room-3/optics/goniometer_prism.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'GoniometerPrism_GLB';
+    model.scale.setScalar(1.25);
+    model.position.set(0, -0.06, 0);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    opticalElementGroup.add(model);
+  }, undefined, (err) => console.warn('Goniometer Prism GLB load note:', err));
+
   railGroup.add(opticalElementGroup);
 
   // Observation Screen with Dynamic Interference Fringes
   const screenGroup = new THREE.Group();
   screenGroup.position.set(1.0, 0.2, 0);
+
+  // Load High-Fidelity Micrometric Diffraction Screen GLB Model
+  gltfLoader.load('/assets/room-3/optics/diffraction_screen.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'DiffractionScreen_GLB';
+    model.scale.setScalar(1.2);
+    model.position.set(0, -0.10, 0);
+    model.rotation.y = -Math.PI / 2;
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    screenGroup.add(model);
+  }, undefined, (err) => console.warn('Diffraction Screen GLB load note:', err));
 
   const screenCanvas = document.createElement('canvas');
   screenCanvas.width = 512;
@@ -1884,6 +2055,22 @@ export function createRoom3Scene(
   );
   relativityGroup.add(track);
 
+  // Load High-Fidelity Maglev Beamline GLB Model
+  gltfLoader.load('/assets/room-3/relativity/maglev_beamline.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'MaglevBeamline_GLB';
+    model.scale.setScalar(1.0);
+    model.position.set(0, 0, 0);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    track.visible = false;
+    relativityGroup.add(model);
+  }, undefined, (err) => console.warn('Maglev Beamline GLB load note:', err));
+
   // Quadrupole magnetic coils along track
   [-0.9, -0.45, 0, 0.45, 0.9].forEach((qx) => {
     const coil = new THREE.Mesh(
@@ -1928,6 +2115,21 @@ export function createRoom3Scene(
   photonPulse.position.set(0, 0.2, -0.05);
   sledGroup.add(photonPulse);
 
+  // Load High-Fidelity Photon Clock GLB Model
+  gltfLoader.load('/assets/room-3/relativity/photon_clock.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'PhotonClock_GLB';
+    model.scale.setScalar(1.0);
+    model.position.set(0, 0.04, -0.05);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    sledGroup.add(model);
+  }, undefined, (err) => console.warn('Photon Clock GLB load note:', err));
+
   relativityGroup.add(sledGroup);
 
   // Dual Synchronized Digital Atomic Clocks (Frame S vs Frame S')
@@ -1943,6 +2145,21 @@ export function createRoom3Scene(
   );
   atomicClock.position.set(-0.6, 0.25, -0.35);
   relativityGroup.add(atomicClock);
+
+  // Load High-Fidelity Reference Frame Telemetry Console GLB Model
+  gltfLoader.load('/assets/room-3/relativity/reference_frame_display.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'ReferenceFrameDisplay_GLB';
+    model.scale.setScalar(1.15);
+    model.position.set(-0.6, 0.12, -0.36);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    relativityGroup.add(model);
+  }, undefined, (err) => console.warn('Ref Frame Display GLB load note:', err));
 
   let photonY = 0.05;
   let photonDirection = 1;
@@ -2099,6 +2316,77 @@ export function createRoom3Scene(
       }
     }
   };
+
+  // -------------------------------------------------------------
+  // 15B. In-World Characters: Lab Assistant Carla & Senior Professor
+  // -------------------------------------------------------------
+  const assistantGroup = new THREE.Group();
+  assistantGroup.name = 'LabAssistant_Carla';
+  assistantGroup.position.set(8.50, 0, -4.50);
+  assistantGroup.rotation.y = -Math.PI / 4;
+  scene.add(assistantGroup);
+
+  const assistantSpot = new THREE.SpotLight(0xfff8ee, 3.8, 7.5, Math.PI / 4, 0.5, 1.2);
+  assistantSpot.position.set(8.50, 4.1, -4.50);
+  assistantSpot.target = assistantGroup;
+  scene.add(assistantSpot);
+
+  gltfLoader.load('/assets/character_student.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'Carla_Assistant_Model';
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        if ((child as THREE.Mesh).material) {
+          const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+          mat.roughness = 0.65;
+          mat.metalness = 0.05;
+        }
+      }
+    });
+    const box = new THREE.Box3().setFromObject(model);
+    const rawHeight = Math.max(0.1, box.max.y - box.min.y);
+    const scale = 1.76 / rawHeight;
+    model.scale.setScalar(scale);
+    const scaledBox = new THREE.Box3().setFromObject(model);
+    model.position.set(0, -scaledBox.min.y, 0);
+    assistantGroup.add(model);
+  }, undefined, (err) => console.warn('Assistant model load note:', err));
+
+  const professorGroup = new THREE.Group();
+  professorGroup.name = 'Senior_Professor';
+  professorGroup.position.set(-8.50, 0, -4.50);
+  professorGroup.rotation.y = Math.PI / 4;
+  scene.add(professorGroup);
+
+  const professorSpot = new THREE.SpotLight(0xfff8ee, 3.8, 7.5, Math.PI / 4, 0.5, 1.2);
+  professorSpot.position.set(-8.50, 4.1, -4.50);
+  professorSpot.target = professorGroup;
+  scene.add(professorSpot);
+
+  gltfLoader.load('/assets/character_professor.glb', (gltf) => {
+    const model = gltf.scene;
+    model.name = 'Professor_Model';
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        if ((child as THREE.Mesh).material) {
+          const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+          mat.roughness = 0.70;
+          mat.metalness = 0.05;
+        }
+      }
+    });
+    const box = new THREE.Box3().setFromObject(model);
+    const rawHeight = Math.max(0.1, box.max.y - box.min.y);
+    const scale = 1.82 / rawHeight;
+    model.scale.setScalar(scale);
+    const scaledBox = new THREE.Box3().setFromObject(model);
+    model.position.set(0, -scaledBox.min.y, 0);
+    professorGroup.add(model);
+  }, undefined, (err) => console.warn('Professor model load note:', err));
 
   // -------------------------------------------------------------
   // 16. Collision Detection & Walking Bounds
@@ -2297,6 +2585,9 @@ export function createRoom3Scene(
       character.update(delta, playerPosition, dir, yaw, pitch, camera, false);
       updateOscilloscope(delta);
       updateRelativityApparatus(delta);
+
+      assistantGroup.position.y = Math.sin(elapsed * 1.5) * 0.003;
+      professorGroup.position.y = Math.sin(elapsed * 1.2) * 0.003;
 
       // Station beacon lamp pulsing
       stationLamps[activeStation].emissiveIntensity = 2.4 + Math.sin(elapsed * 2.5) * 0.5;
