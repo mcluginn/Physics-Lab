@@ -20,6 +20,11 @@ import {
   type TerminalId,
   type MultimeterReading,
 } from './circuitSolver';
+import {
+  type GraphicsSettings,
+  DEFAULT_GRAPHICS_SETTINGS,
+  detectGpuRenderer,
+} from './graphicsSettings';
 
 export type Room3SceneApi = {
   dispose: () => void;
@@ -49,6 +54,9 @@ export type Room3SceneApi = {
   getDmmReading: () => MultimeterReading;
   setCloseupFocus?: (focus: 'station' | 'board' | 'multimeter' | 'psu') => void;
   setCameraYawPitch?: (targetYaw: number, targetPitch?: number) => void;
+  setGraphicsSettings: (settings: GraphicsSettings) => void;
+  getGraphicsSettings: () => GraphicsSettings;
+  getGpuInfo: () => string;
 };
 
 export type EquipmentInteraction = {
@@ -73,6 +81,7 @@ export type Room3SceneCallbacks = {
   onProbePlaced?: (probe: 'red' | 'black', terminal: TerminalId) => void;
   onCloseupHover?: (text: string | null) => void;
   onStationProximityChange?: (station: Room3StationId | null) => void;
+  onPerfStatsChange?: (fps: number, frameTimeMs: number) => void;
 };
 
 export const ROOM3_EQUIPMENT_DESCRIPTIONS: Record<string, string> = {
@@ -178,15 +187,69 @@ export function createRoom3Scene(
   };
   updateCamera();
 
+  const sconceLights: THREE.PointLight[] = [];
+  const downlights: THREE.PointLight[] = [];
+  let currentGraphicsSettings: GraphicsSettings = { ...DEFAULT_GRAPHICS_SETTINGS };
+
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setSize(container.clientWidth, container.clientHeight, false);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, currentGraphicsSettings.resolutionScale));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
+
+  const applyGraphicsSettings = (newSettings: GraphicsSettings) => {
+    currentGraphicsSettings = { ...newSettings };
+
+    // 1. Resolution / Pixel Ratio
+    const pixelRatio = Math.min(window.devicePixelRatio, currentGraphicsSettings.resolutionScale);
+    renderer.setPixelRatio(pixelRatio);
+    renderer.setSize(container.clientWidth, container.clientHeight, false);
+
+    // 2. Shadows Quality
+    if (currentGraphicsSettings.shadows === 'off') {
+      renderer.shadowMap.enabled = false;
+      keyLight.castShadow = false;
+    } else {
+      renderer.shadowMap.enabled = true;
+      keyLight.castShadow = true;
+      if (currentGraphicsSettings.shadows === 'low') {
+        renderer.shadowMap.type = THREE.BasicShadowMap;
+        keyLight.shadow.mapSize.set(512, 512);
+      } else if (currentGraphicsSettings.shadows === 'medium') {
+        renderer.shadowMap.type = THREE.PCFShadowMap;
+        keyLight.shadow.mapSize.set(1024, 1024);
+      } else {
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        keyLight.shadow.mapSize.set(2048, 2048);
+      }
+      keyLight.shadow.map?.dispose();
+      keyLight.shadow.map = null;
+    }
+
+    // 3. Lighting Quality
+    sconceLights.forEach((light) => {
+      light.visible = currentGraphicsSettings.lightingQuality !== 'simple';
+      light.intensity = currentGraphicsSettings.lightingQuality === 'medium' ? 0.7 : 1.2;
+    });
+    downlights.forEach((light) => {
+      light.visible = currentGraphicsSettings.lightingQuality === 'full';
+    });
+
+    // 4. Force shader recompilation on material properties change
+    scene.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.material) {
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach((m) => (m.needsUpdate = true));
+        } else {
+          obj.material.needsUpdate = true;
+        }
+      }
+    });
+  };
 
   // Simulation parameters
   let currentCircuits: CircuitSettings = {
@@ -936,7 +999,8 @@ export function createRoom3Scene(
   keyLight.castShadow = true;
   keyLight.shadow.mapSize.width = 2048;
   keyLight.shadow.mapSize.height = 2048;
-  keyLight.shadow.bias = -0.0005;
+  keyLight.shadow.bias = -0.00008;
+  keyLight.shadow.normalBias = 0.02;
   scene.add(keyLight);
 
   const stationLight = new THREE.PointLight(STATION_COLOR.circuits, 16, 12, 1.8);
@@ -1295,21 +1359,23 @@ export function createRoom3Scene(
       scene.add(pier);
 
       if (p.hasPilaster) {
-        // Architectural Mahogany Pilaster Pier
+        // Architectural Mahogany Pilaster Pier (elevated cleanly above pier to prevent z-fighting)
+        const pilasterX = isEast ? x - 0.18 : x + 0.18;
         const pilaster = new THREE.Mesh(new THREE.BoxGeometry(0.04, 2.50, 1.80), mahoganyDeskMaterial);
-        pilaster.position.set(innerX, 2.40, p.centerZ);
+        pilaster.position.set(pilasterX, 2.40, p.centerZ);
+        pilaster.receiveShadow = true;
         scene.add(pilaster);
 
         // Antique Brass Side Edges on Pilaster
         [-0.90, 0.90].forEach((ez) => {
           const edge = new THREE.Mesh(new THREE.BoxGeometry(0.02, 2.50, 0.04), brassTrimMaterial);
-          edge.position.set(isEast ? x - 0.19 : x + 0.19, 2.40, p.centerZ + ez);
+          edge.position.set(isEast ? x - 0.20 : x + 0.20, 2.40, p.centerZ + ez);
           scene.add(edge);
         });
 
         // Wall Sconce on Pilaster
         const sconceGroup = new THREE.Group();
-        sconceGroup.position.set(isEast ? x - 0.22 : x + 0.22, 2.40, p.centerZ);
+        sconceGroup.position.set(isEast ? x - 0.25 : x + 0.25, 2.40, p.centerZ);
 
         const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 0.14), brassTrimMaterial);
         sconceGroup.add(bracket);
@@ -1329,6 +1395,7 @@ export function createRoom3Scene(
         const sLight = new THREE.PointLight(0xffb766, 1.2, 5.5, 1.8);
         sLight.position.set(0, 0.12, 0);
         sconceGroup.add(sLight);
+        sconceLights.push(sLight);
 
         scene.add(sconceGroup);
       }
@@ -1707,6 +1774,7 @@ export function createRoom3Scene(
     const downlight = new THREE.PointLight(0xffecd1, 1.45, 11, 1.8);
     downlight.position.set(lx, ly - 0.15, lz);
     scene.add(downlight);
+    downlights.push(downlight);
   });
 
   // -------------------------------------------------------------
@@ -3566,7 +3634,8 @@ export function createRoom3Scene(
       if (width > 0 && height > 0) {
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        const pixelRatio = Math.min(window.devicePixelRatio, currentGraphicsSettings.resolutionScale);
+        renderer.setPixelRatio(pixelRatio);
         renderer.setSize(width, height, false);
       }
     }
@@ -3603,18 +3672,44 @@ export function createRoom3Scene(
   const clock = new THREE.Clock();
   let animationFrameId: number;
   let lastProximateStation: Room3StationId | null = null;
+  let frameCount = 0;
+  let lastFpsUpdate = performance.now();
+  let lastRenderTime = performance.now();
 
   const animate = () => {
     animationFrameId = requestAnimationFrame(animate);
+
+    const now = performance.now();
+
+    // Frame rate limiting / battery saver
+    if (currentGraphicsSettings.frameRateLimit > 0) {
+      const minInterval = 1000 / currentGraphicsSettings.frameRateLimit;
+      if (now - lastRenderTime < minInterval - 1.5) {
+        return;
+      }
+    }
+    lastRenderTime = now;
+
+    // Real-time FPS & frame-time measurement
+    frameCount++;
+    if (now - lastFpsUpdate >= 500) {
+      const fps = Math.round((frameCount * 1000) / (now - lastFpsUpdate));
+      const ms = parseFloat(((now - lastFpsUpdate) / frameCount).toFixed(1));
+      frameCount = 0;
+      lastFpsUpdate = now;
+      callbacks.onPerfStatsChange?.(fps, ms);
+    }
+
     const delta = Math.min(0.08, clock.getDelta());
     const elapsed = clock.getElapsedTime();
 
     // Twinkling landmark stars
-    const now = performance.now();
-    landmarkStars.forEach((star) => {
-      const twinkle = 1 + Math.sin(now * 0.001 * star.twinkleSpeed + star.phase) * 0.32;
-      star.sprite.scale.set(star.baseScale * twinkle, star.baseScale * twinkle, 1);
-    });
+    if (currentGraphicsSettings.bloomAndAtmosphere) {
+      landmarkStars.forEach((star) => {
+        const twinkle = 1 + Math.sin(now * 0.001 * star.twinkleSpeed + star.phase) * 0.32;
+        star.sprite.scale.set(star.baseScale * twinkle, star.baseScale * twinkle, 1);
+      });
+    }
 
     // Smooth keyboard turning
     const turnSpeed = 2.4;
@@ -3892,5 +3987,8 @@ export function createRoom3Scene(
       pitch = targetPitch;
       updateCamera();
     },
+    setGraphicsSettings: applyGraphicsSettings,
+    getGraphicsSettings: () => ({ ...currentGraphicsSettings }),
+    getGpuInfo: () => detectGpuRenderer(renderer.getContext()),
   };
 }

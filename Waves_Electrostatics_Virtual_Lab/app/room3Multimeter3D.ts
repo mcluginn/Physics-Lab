@@ -109,8 +109,8 @@ export class Multimeter3D {
     this.terminalPositions = {
       SRC_POS: new THREE.Vector3(bbX - 0.1476, bbY, bbZ - 0.0771), // Top Red Rail at Col 10 (+24V DC input)
       SRC_NEG: new THREE.Vector3(bbX + 0.1260, bbY, bbZ - 0.0638), // Top Blue Rail at Col 48 (0V GND return)
-      SERIES_JACK_A: new THREE.Vector3(bbX - 0.1476, bbY, bbZ - 0.0356), // Col 10 Row B (Upstream +24V ammeter jack)
-      SERIES_JACK_B: new THREE.Vector3(bbX - 0.1188, bbY, bbZ - 0.0356), // Col 14 Row B (Downstream ammeter jack to R1)
+      SERIES_JACK_A: new THREE.Vector3(bbX - 0.1476, bbY, bbZ - 0.0439), // Col 10 Row A (Upstream +24V ammeter jack)
+      SERIES_JACK_B: new THREE.Vector3(bbX - 0.1188, bbY, bbZ - 0.0439), // Col 14 Row A (Downstream ammeter jack to R1)
       R1_A: new THREE.Vector3(bbX - 0.1188, bbY, bbZ - 0.0273), // Col 14 Row C (+24V input side of 100 Ω resistor)
       R1_B: new THREE.Vector3(bbX - 0.0180, bbY, bbZ - 0.0273), // Col 28 Row C (+20.31V output of 100 Ω resistor)
       R2_A: new THREE.Vector3(bbX - 0.0180, bbY, bbZ - 0.0189), // Col 28 Row D (+20.31V input side of 220 Ω resistor)
@@ -561,31 +561,44 @@ export class Multimeter3D {
 
   // -------------------------------------------------------------
   // BUILD SERIES CURRENT JUMPER PLUG
-  // Molded emerald green U-link bridging Ammeter Sockets at Cols 10 & 14
+  // Authentic solid-core arched U-jumper bridging Ammeter Sockets at Cols 10 & 14 Row A
   // -------------------------------------------------------------
   private buildSeriesJumper(boardGroup: THREE.Group) {
     this.seriesJumperMesh = new THREE.Group();
     this.seriesJumperMesh.name = 'Series_Loop_Jumper_Assembly';
-    this.seriesJumperMesh.position.set(-0.1332, 0.021, -0.0356);
+    this.seriesJumperMesh.position.set(-0.1332, 0.016, -0.0439);
 
-    // Emerald green molded jumper bar
-    const handleMat = new THREE.MeshStandardMaterial({
-      color: 0x059669,
+    // Realistic solid-core arched U-jumper wire (with sleek central grab-tab) bridging Cols 10 & 14
+    const jumperCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.0144, 0, 0),
+      new THREE.Vector3(-0.0144, 0.007, 0),
+      new THREE.Vector3(0, 0.011, 0),
+      new THREE.Vector3(0.0144, 0.007, 0),
+      new THREE.Vector3(0.0144, 0, 0),
+    ]);
+    const wireMat = new THREE.MeshStandardMaterial({
+      color: 0x0284c7, // Distinctive blue lab jumper wire
       roughness: 0.35,
       metalness: 0.1,
     });
-    this.seriesJumperPlugMesh = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.012, 0.010), handleMat);
+    this.seriesJumperPlugMesh = new THREE.Mesh(new THREE.TubeGeometry(jumperCurve, 16, 0.0020, 8, false), wireMat);
     this.seriesJumperPlugMesh.castShadow = true;
     this.seriesJumperMesh.add(this.seriesJumperPlugMesh);
 
+    // Molded pull-tab at top center of jumper for realistic handling
+    const tabMat = new THREE.MeshStandardMaterial({ color: 0x0369a1, roughness: 0.4 });
+    const tab = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.006, 0.004), tabMat);
+    tab.position.set(0, 0.010, 0);
+    this.seriesJumperMesh.add(tab);
+
     // Gold banana pins plunging into board sockets (Cols 10 and 14)
     const pinMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.95, roughness: 0.15 });
-    const pin1 = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 0.014, 12), pinMat);
-    pin1.position.set(-0.0144, -0.008, 0);
+    const pin1 = new THREE.Mesh(new THREE.CylinderGeometry(0.0016, 0.0016, 0.012, 12), pinMat);
+    pin1.position.set(-0.0144, -0.005, 0);
     this.seriesJumperMesh.add(pin1);
 
-    const pin2 = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 0.014, 12), pinMat);
-    pin2.position.set(0.0144, -0.008, 0);
+    const pin2 = new THREE.Mesh(new THREE.CylinderGeometry(0.0016, 0.0016, 0.012, 12), pinMat);
+    pin2.position.set(0.0144, -0.005, 0);
     this.seriesJumperMesh.add(pin2);
 
     // Raycast Click Hitbox
@@ -1161,12 +1174,14 @@ export class Multimeter3D {
 
   public toggleSeriesJumper() {
     this.circuitState.seriesJumperConnected = !this.circuitState.seriesJumperConnected;
-    if (this.seriesJumperPlugMesh) {
-      // When opened, the jumper lifts up and shifts to parked state beside socket
+    if (this.seriesJumperMesh) {
       if (this.circuitState.seriesJumperConnected) {
-        this.seriesJumperPlugMesh.position.set(0, 0, 0);
+        this.seriesJumperMesh.position.set(-0.1332, 0.016, -0.0439);
+        this.seriesJumperMesh.rotation.set(0, 0, 0);
       } else {
-        this.seriesJumperPlugMesh.position.set(0, 0.025, 0.025);
+        // When disconnected / opened: lifted 22mm above board and tilted back 25 degrees
+        this.seriesJumperMesh.position.set(-0.1332, 0.038, -0.052);
+        this.seriesJumperMesh.rotation.set(-0.45, 0, 0);
       }
     }
     this.updateDisplay();

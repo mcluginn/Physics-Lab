@@ -60,6 +60,12 @@ import {
   type StepValidationResult,
   STATION_CURRICULUM,
 } from './room3GuidedCurriculum';
+import {
+  type GraphicsSettings,
+  loadGraphicsSettings,
+  saveGraphicsSettings,
+} from './graphicsSettings';
+import { Room3GraphicsModal } from './Room3GraphicsModal';
 
 const STORAGE_KEY = 'physics_lab_room_3_progress';
 
@@ -272,6 +278,19 @@ export default function Room3Experience() {
   const [jumperClosed, setJumperClosed] = useState(true);
   const [closeupHoverText, setCloseupHoverText] = useState<string | null>(null);
   const [closeupFocus, setCloseupFocus] = useState<'station' | 'board' | 'multimeter' | 'psu'>('station');
+
+  // 3D Graphics & Visual Performance Settings
+  const [graphicsSettings, setGraphicsSettingsState] = useState<GraphicsSettings>(() => {
+    return loadGraphicsSettings();
+  });
+  const [graphicsModalOpen, setGraphicsModalOpen] = useState(false);
+  const [perfStats, setPerfStats] = useState({ fps: 60, frameTimeMs: 16.6 });
+
+  const handleApplyGraphicsSettings = (newSettings: GraphicsSettings) => {
+    setGraphicsSettingsState(newSettings);
+    saveGraphicsSettings(newSettings);
+    sceneApi.current?.setGraphicsSettings(newSettings);
+  };
 
   const handleSetCloseupFocus = (focus: 'station' | 'board' | 'multimeter' | 'psu') => {
     setCloseupFocus(focus);
@@ -527,8 +546,10 @@ export default function Room3Experience() {
         onCloseupHover: (text) => setCloseupHoverText(text),
         onPointerLockChange: setPointerLocked,
         onStationProximityChange: (st) => setProximateStation(st),
+        onPerfStatsChange: (fps, frameTimeMs) => setPerfStats({ fps, frameTimeMs }),
       });
       sceneApi.current = api;
+      api.setGraphicsSettings(graphicsSettings);
       if (redTerminal) api.setProbeTerminal('red', redTerminal);
       if (blackTerminal) api.setProbeTerminal('black', blackTerminal);
       if (typeof window !== 'undefined') {
@@ -711,6 +732,8 @@ export default function Room3Experience() {
       } else if (e.key.toLowerCase() === 'c') {
         const next = sceneApi.current?.switchCharacter();
         if (next) setActiveCharacter(next);
+      } else if (e.key.toLowerCase() === 'g') {
+        setGraphicsModalOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyNav);
@@ -1287,6 +1310,21 @@ export default function Room3Experience() {
         )}
       </div>
 
+      {/* Real-time WebGL Performance HUD Badge */}
+      {graphicsSettings.showFpsCounter && (
+        <div className="room3-fps-badge" aria-live="off" title="Real-time WebGL Rendering Performance">
+          <div
+            className="fps-indicator"
+            style={{
+              backgroundColor: perfStats.fps >= 50 ? '#10b981' : perfStats.fps >= 30 ? '#f59e0b' : '#ef4444',
+            }}
+          />
+          <span className="fps-num">{perfStats.fps}</span>
+          <span className="fps-unit">FPS</span>
+          <span className="fps-ms">{perfStats.frameTimeMs}ms</span>
+        </div>
+      )}
+
       {/* VIEW B: INTERACTIVE CIRCUIT WORKSPACE (DCACLab Concept) */}
       {stationId === 'circuits' && activeWorkspaceView === 'circuit_workspace' && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 12 }}>
@@ -1396,6 +1434,14 @@ export default function Room3Experience() {
                 >
                   ⚡ Breadboard 3D (DCACLab)
                 </button>
+                <button
+                  type="button"
+                  className="cam-focus-btn"
+                  onClick={() => setGraphicsModalOpen(true)}
+                  title="3D Graphics & Visual Settings [Key G]"
+                >
+                  ⚙️ Graphics
+                </button>
               </div>
             )}
             <button
@@ -1450,6 +1496,16 @@ export default function Room3Experience() {
             <span>🎥</span>
             <b>{isThirdPerson ? '3rd Person' : '1st Person'}</b>
             <kbd>V</kbd>
+          </button>
+          <button
+            type="button"
+            className="room3-dock-btn"
+            onClick={() => setGraphicsModalOpen(true)}
+            title="3D Graphics & Performance Settings [Key G]"
+          >
+            <span>⚙️</span>
+            <b>Graphics</b>
+            <kbd>G</kbd>
           </button>
         </div>
       )}
@@ -1568,6 +1624,16 @@ export default function Room3Experience() {
               </button>
             );
           })}
+          <button
+            type="button"
+            className="room3-graphics-btn"
+            onClick={() => setGraphicsModalOpen(true)}
+            title="3D Graphics & Performance Settings [Key G]"
+          >
+            <span className="btn-icon">⚙️</span>
+            <span className="btn-label">Graphics</span>
+            <kbd>G</kbd>
+          </button>
         </nav>
       </header>
 
@@ -3695,6 +3761,16 @@ export default function Room3Experience() {
           </section>
         </div>
       )}
+
+      {/* 3D Graphics & Visual Settings Modal */}
+      <Room3GraphicsModal
+        isOpen={graphicsModalOpen}
+        onClose={() => setGraphicsModalOpen(false)}
+        settings={graphicsSettings}
+        onApply={handleApplyGraphicsSettings}
+        perfStats={perfStats}
+        playTone={playTone}
+      />
     </main>
   );
 }
