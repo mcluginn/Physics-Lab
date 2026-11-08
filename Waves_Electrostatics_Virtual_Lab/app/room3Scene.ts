@@ -12,6 +12,13 @@ import {
 } from './room3Model';
 import { CharacterController, type CharacterType } from './characterController';
 import { ROOM2_CONFIG } from './labSceneConfig';
+import { Multimeter3D } from './room3Multimeter3D';
+import {
+  type MultimeterMode,
+  type MultimeterJack,
+  type TerminalId,
+  type MultimeterReading,
+} from './circuitSolver';
 
 export type Room3SceneApi = {
   dispose: () => void;
@@ -31,6 +38,14 @@ export type Room3SceneApi = {
   setStation: (station: Room3StationId) => void;
   setGuidance: (interactionId: string | null) => void;
   setPaused: (paused: boolean) => void;
+  setCameraMode: (mode: 'walk' | 'closeup', targetStation?: Room3StationId) => void;
+  getCameraMode: () => 'walk' | 'closeup';
+  setDmmMode: (mode: MultimeterMode) => void;
+  setDmmJack: (jack: MultimeterJack) => void;
+  setProbeTerminal: (probe: 'red' | 'black', terminal: TerminalId | null) => void;
+  toggleSeriesJumper: () => void;
+  resetDmmFuse: () => void;
+  getDmmReading: () => MultimeterReading;
 };
 
 export type EquipmentInteraction = {
@@ -50,6 +65,8 @@ export type Room3SceneCallbacks = {
   onFootstep?: () => void;
   onInteractionChange?: (interaction: EquipmentInteraction | null) => void;
   onPointerLockChange?: (locked: boolean) => void;
+  onCameraModeChange?: (mode: 'walk' | 'closeup') => void;
+  onDmmReadingChange?: (reading: MultimeterReading) => void;
 };
 
 export const ROOM3_EQUIPMENT_DESCRIPTIONS: Record<string, string> = {
@@ -268,6 +285,27 @@ export function createRoom3Scene(
     roughness: 0.45,
     metalness: 0.82,
   });
+
+  // Clean synthesized audio tone generator for multimeter beeps and mechanical clicks
+  const playTone = (freq: number, type: OscillatorType = 'sine', duration = 0.1, vol = 0.15) => {
+    try {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + duration);
+    } catch {
+      // Audio context might be restricted before user gesture
+    }
+  };
 
   // Sound synthesis for mechanical door click and heavy mahogany swing
   const playDoorSound = (isOpen: boolean) => {
@@ -1783,38 +1821,31 @@ export function createRoom3Scene(
   }, undefined, (err) => console.warn('Function Gen GLB load note:', err));
   scene.add(fgenGroup);
 
-  // 5. Fluke True-RMS Digital Multimeter with Safety Leads
-  const dmmGroup = new THREE.Group();
-  dmmGroup.position.set(circuitsBenchX + 1.15, 0.94 + 0.04, 0.12);
-  dmmGroup.rotation.y = -Math.PI / 5;
-  const dmmHousing = new THREE.Mesh(
-    new THREE.BoxGeometry(0.18, 0.08, 0.32),
-    material(0xf59e0b, { roughness: 0.4 })
-  );
-  dmmGroup.add(dmmHousing);
-  gltfLoader.load('/assets/room-3/electrical/digital_multimeter.glb', (gltf) => {
-    const model = gltf.scene;
-    model.name = 'DigitalMultimeter_GLB';
-    model.scale.setScalar(1.35);
-    model.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-    dmmHousing.visible = false;
-    dmmGroup.add(model);
-  }, undefined, (err) => console.warn('DMM GLB load note:', err));
-  scene.add(dmmGroup);
+  // 5. Functional Fluke True-RMS Digital Multimeter with Dynamic LCD & 3D Probes
+  const multimeter3d = new Multimeter3D(circuitsBenchX, {
+    onReadingChange: (reading) => {
+      callbacks.onDmmReadingChange?.(reading);
+    },
+    onProbePlaced: () => {
+      playTone(520, 'sine', 0.08, 0.15);
+    },
+    onFuseTripped: () => {
+      playTone(220, 'sawtooth', 0.4, 0.25);
+    },
+    playTone: (freq, type, duration, vol) => {
+      playTone(freq, type, duration, vol);
+    },
+  });
+  scene.add(multimeter3d.root);
 
-  registerInteractable(dmmHousing, {
+  registerInteractable(multimeter3d.root, {
     id: 'circuits-multimeter',
     stationId: 'circuits',
     category: 'METROLOGY',
     name: 'Fluke True-RMS Digital Multimeter',
     description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-multimeter'],
-    action: 'Measure Loop Voltage and Branch Current',
-    readout: `DMM Probe Readout: V = ${currentCircuits.vs.toFixed(1)} V · I = ${calculateCircuit(currentCircuits).current.toFixed(3)} A`,
+    action: 'Operate Multimeter (Mode Dial, Jacks, Probes & Terminals)',
+    readout: 'DMM: DC VOLTAGE · AUTO-RANGE',
   });
 
   registerInteractable(breadboardPlate, {
@@ -2409,18 +2440,67 @@ export function createRoom3Scene(
   };
 
   // -------------------------------------------------------------
-  // 17. Interaction Raycasting & Hover Check
+  // 17. Centralized Interaction Manager & Dual Mode System
+  // Mode A: Exploration (First-Person Laboratory Walk)
+  // Mode B: Instrument Close-up (Direct Hands-on Workbench Controls)
   // -------------------------------------------------------------
   const raycaster = new THREE.Raycaster();
   const screenCenter = new THREE.Vector2(0, 0);
   let currentHoveredInteraction: EquipmentInteraction | null = null;
 
+  let cameraMode: 'walk' | 'closeup' = 'walk';
+  const savedPlayerPos = new THREE.Vector3();
+  let savedYaw = 0;
+  let savedPitch = 0;
+  const targetCloseupCamPos = new THREE.Vector3();
+  const targetCloseupCamLookAt = new THREE.Vector3();
+  const currentCamLookAt = new THREE.Vector3(0, 1.2, 0);
+
+  const CLOSEUP_TARGETS: Record<Room3StationId, { pos: THREE.Vector3; lookAt: THREE.Vector3 }> = {
+    circuits: {
+      pos: new THREE.Vector3(STATION_X.circuits, 1.34, 0.72),
+      lookAt: new THREE.Vector3(STATION_X.circuits, 0.98, 0.08),
+    },
+    optics: {
+      pos: new THREE.Vector3(STATION_X.optics, 1.34, 0.72),
+      lookAt: new THREE.Vector3(STATION_X.optics, 0.98, 0.08),
+    },
+    relativity: {
+      pos: new THREE.Vector3(STATION_X.relativity, 1.34, 0.72),
+      lookAt: new THREE.Vector3(STATION_X.relativity, 0.98, 0.08),
+    },
+  };
+
+  const setCameraMode = (mode: 'walk' | 'closeup', targetStation: Room3StationId = activeStation) => {
+    if (mode === cameraMode) return;
+    cameraMode = mode;
+    if (mode === 'closeup') {
+      if (document.pointerLockElement) {
+        document.exitPointerLock();
+      }
+      savedPlayerPos.copy(playerPosition);
+      savedYaw = yaw;
+      savedPitch = pitch;
+      const t = CLOSEUP_TARGETS[targetStation] || CLOSEUP_TARGETS.circuits;
+      targetCloseupCamPos.copy(t.pos);
+      targetCloseupCamLookAt.copy(t.lookAt);
+      currentCamLookAt.copy(camera.position).add(camera.getWorldDirection(new THREE.Vector3()));
+    } else {
+      playerPosition.copy(savedPlayerPos);
+      yaw = savedYaw;
+      pitch = savedPitch;
+      updateCamera();
+    }
+    callbacks.onCameraModeChange?.(mode);
+  };
+
   const checkInteractions = () => {
+    if (cameraMode === 'closeup') return;
     raycaster.setFromCamera(screenCenter, camera);
     const intersects = raycaster.intersectObjects(interactableObjects, true);
 
     let foundInteraction: EquipmentInteraction | null = null;
-    if (intersects.length > 0 && intersects[0].distance < 4.2) {
+    if (intersects.length > 0 && intersects[0].distance < 4.5) {
       let currentObj: THREE.Object3D | null = intersects[0].object;
       while (currentObj && !foundInteraction) {
         if (objectToInteractionMap.has(currentObj)) {
@@ -2437,13 +2517,24 @@ export function createRoom3Scene(
   };
 
   const interact = () => {
+    if (cameraMode === 'closeup') {
+      setCameraMode('walk');
+      return;
+    }
     if (currentHoveredInteraction) {
       callbacks.onEquipmentInteract?.(currentHoveredInteraction.id);
+      if (['circuits-multimeter', 'circuits-power-switch', 'circuits-topology-selector', 'circuits-oscilloscope'].includes(currentHoveredInteraction.id)) {
+        setCameraMode('closeup', 'circuits');
+      } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen'].includes(currentHoveredInteraction.id)) {
+        setCameraMode('closeup', 'optics');
+      } else if (['relativity-velocity-dial', 'relativity-contracting-rod', 'relativity-light-clock'].includes(currentHoveredInteraction.id)) {
+        setCameraMode('closeup', 'relativity');
+      }
     }
   };
 
   // -------------------------------------------------------------
-  // 18. Pointer Controls & Keyboard Listeners
+  // 18. Pointer Controls, Mouse Click Raycasting & Keyboard Listeners
   // -------------------------------------------------------------
   let isPointerDown = false;
   let prevMouseX = 0;
@@ -2457,6 +2548,7 @@ export function createRoom3Scene(
   };
 
   const onPointerMove = (e: PointerEvent) => {
+    if (cameraMode === 'closeup') return;
     if (document.pointerLockElement === renderer.domElement || document.pointerLockElement === container) {
       yaw -= e.movementX * 0.0022;
       pitch = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, pitch - e.movementY * 0.0022));
@@ -2476,11 +2568,81 @@ export function createRoom3Scene(
     isPointerDown = false;
   };
 
+  const onCanvasClick = (e: MouseEvent) => {
+    if (!container || !renderer.domElement) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), camera);
+
+    if (cameraMode === 'closeup') {
+      if (activeStation === 'circuits') {
+        const hits = raycaster.intersectObjects(multimeter3d.interactableMeshes, true);
+        if (hits.length > 0) {
+          const hitObj = hits[0].object;
+          if (hitObj.userData.action === 'cycle_mode') {
+            multimeter3d.cycleMode();
+            playTone(800, 'square', 0.05, 0.12);
+            return;
+          }
+          if (hitObj.userData.action === 'toggle_red_jack') {
+            const next = multimeter3d.dmmState.redJack === 'v_ohm' ? 'ma_10a' : 'v_ohm';
+            multimeter3d.setRedJack(next);
+            playTone(600, 'sine', 0.06, 0.12);
+            return;
+          }
+          if (hitObj.userData.action === 'toggle_jumper') {
+            multimeter3d.toggleSeriesJumper();
+            playTone(550, 'triangle', 0.08, 0.15);
+            return;
+          }
+          if (hitObj.userData.terminalId) {
+            const term = hitObj.userData.terminalId as TerminalId;
+            if (!multimeter3d.dmmState.redProbeTerminal) {
+              multimeter3d.setProbeTerminal('red', term);
+            } else if (!multimeter3d.dmmState.blackProbeTerminal && multimeter3d.dmmState.redProbeTerminal !== term) {
+              multimeter3d.setProbeTerminal('black', term);
+            } else {
+              multimeter3d.setProbeTerminal('red', term);
+            }
+            playTone(720, 'sine', 0.05, 0.15);
+            return;
+          }
+        }
+      }
+    } else {
+      const intersects = raycaster.intersectObjects(interactableObjects, true);
+      if (intersects.length > 0 && intersects[0].distance < 4.5) {
+        let currentObj: THREE.Object3D | null = intersects[0].object;
+        while (currentObj) {
+          if (objectToInteractionMap.has(currentObj)) {
+            const inter = objectToInteractionMap.get(currentObj)!;
+            callbacks.onEquipmentInteract?.(inter.id);
+            if (['circuits-multimeter', 'circuits-power-switch', 'circuits-topology-selector', 'circuits-oscilloscope'].includes(inter.id)) {
+              setCameraMode('closeup', 'circuits');
+            } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen'].includes(inter.id)) {
+              setCameraMode('closeup', 'optics');
+            } else if (['relativity-velocity-dial', 'relativity-contracting-rod', 'relativity-light-clock'].includes(inter.id)) {
+              setCameraMode('closeup', 'relativity');
+            }
+            break;
+          }
+          currentObj = currentObj.parent;
+        }
+      }
+    }
+  };
+
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
+  renderer.domElement.addEventListener('click', onCanvasClick);
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
 
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && cameraMode === 'closeup') {
+      setCameraMode('walk');
+      return;
+    }
     const key = e.key.toLowerCase();
     if (['w', 'arrowup'].includes(key)) movement.forward = true;
     else if (['s', 'arrowdown'].includes(key)) movement.backward = true;
@@ -2509,19 +2671,28 @@ export function createRoom3Scene(
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
 
-  const onResize = () => {
-    if (!container) return;
-    camera.aspect = container.clientWidth / container.clientHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(container.clientWidth, container.clientHeight);
-  };
-  window.addEventListener('resize', onResize);
+  // ResizeObserver for zero-stretching across all device orientations & panel toggles
+  const resizeObserver = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const width = entry.contentRect.width || container.clientWidth;
+      const height = entry.contentRect.height || container.clientHeight;
+      if (width > 0 && height > 0) {
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height, false);
+      }
+    }
+  });
+  resizeObserver.observe(container);
 
   // -------------------------------------------------------------
   // 19. Set Station Function (Framing Workbench Matching Room 02)
   // -------------------------------------------------------------
   const setStation = (station: Room3StationId) => {
     activeStation = station;
+    if (cameraMode === 'closeup') {
+      setCameraMode('walk');
+    }
     playerPosition.set(STATION_X[station], eyeHeight, 4.55);
     yaw = 0;
     pitch = -0.08;
@@ -2559,30 +2730,37 @@ export function createRoom3Scene(
     }
 
     if (!isPaused) {
-      // Player Movement
-      const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-      const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-      const dir = new THREE.Vector3();
-      if (movement.forward) dir.add(forward);
-      if (movement.backward) dir.sub(forward);
-      if (movement.right) dir.add(right);
-      if (movement.left) dir.sub(right);
-      dir.addScaledVector(right, analogMovement.x);
-      dir.addScaledVector(forward, analogMovement.y);
+      if (cameraMode === 'closeup') {
+        camera.position.lerp(targetCloseupCamPos, delta * 6.0);
+        currentCamLookAt.lerp(targetCloseupCamLookAt, delta * 6.0);
+        camera.lookAt(currentCamLookAt);
+      } else {
+        // Player Movement in walk mode
+        const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+        const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+        const dir = new THREE.Vector3();
+        if (movement.forward) dir.add(forward);
+        if (movement.backward) dir.sub(forward);
+        if (movement.right) dir.add(right);
+        if (movement.left) dir.sub(right);
+        dir.addScaledVector(right, analogMovement.x);
+        dir.addScaledVector(forward, analogMovement.y);
 
-      if (dir.lengthSq() > 0) {
-        const moveDist = Math.min(1, dir.length());
-        dir.normalize().multiplyScalar(3.2 * delta * moveDist);
-        const candX = playerPosition.x + dir.x;
-        if (!checkCollision(candX, playerPosition.z)) playerPosition.x = candX;
-        const candZ = playerPosition.z + dir.z;
-        if (!checkCollision(playerPosition.x, candZ)) playerPosition.z = candZ;
-        character.root.position.x = playerPosition.x;
-        character.root.position.z = playerPosition.z;
-        updateCamera();
+        if (dir.lengthSq() > 0) {
+          const moveDist = Math.min(1, dir.length());
+          dir.normalize().multiplyScalar(3.2 * delta * moveDist);
+          const candX = playerPosition.x + dir.x;
+          if (!checkCollision(candX, playerPosition.z)) playerPosition.x = candX;
+          const candZ = playerPosition.z + dir.z;
+          if (!checkCollision(playerPosition.x, candZ)) playerPosition.z = candZ;
+          character.root.position.x = playerPosition.x;
+          character.root.position.z = playerPosition.z;
+          updateCamera();
+        }
+
+        character.update(delta, playerPosition, dir, yaw, pitch, camera, false);
       }
 
-      character.update(delta, playerPosition, dir, yaw, pitch, camera, false);
       updateOscilloscope(delta);
       updateRelativityApparatus(delta);
 
@@ -2621,8 +2799,9 @@ export function createRoom3Scene(
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('resize', onResize);
+      resizeObserver.disconnect();
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('click', onCanvasClick);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       character.dispose();
@@ -2658,7 +2837,9 @@ export function createRoom3Scene(
       playDoorSound(true);
     },
     requestPointerLock: () => {
-      renderer.domElement.requestPointerLock?.();
+      if (cameraMode === 'walk') {
+        renderer.domElement.requestPointerLock?.();
+      }
     },
     resetView: () => setStation(activeStation),
     toggleView: () => {
@@ -2685,6 +2866,19 @@ export function createRoom3Scene(
     setCircuits: (settings) => {
       currentCircuits = { ...settings };
       updatePsuTexture(currentCircuits.vs, currentCircuits.freq, currentCircuits.mode === 'ac');
+      multimeter3d.updateCircuitParameters({
+        mode: currentCircuits.mode,
+        topology: currentCircuits.topology,
+        powerOn: currentCircuits.powerOn ?? true,
+        sourceVoltage: currentCircuits.vs,
+        frequency: currentCircuits.freq,
+        waveType: 'sine',
+        r1: currentCircuits.r1,
+        r2: currentCircuits.r2,
+        r3: currentCircuits.r3,
+        inductanceMh: currentCircuits.inductance,
+        capacitanceUf: currentCircuits.capacitance,
+      });
     },
     setOptics: (settings) => {
       currentOptics = { ...settings };
@@ -2716,5 +2910,13 @@ export function createRoom3Scene(
     setPaused: (paused) => {
       isPaused = paused;
     },
+    setCameraMode,
+    getCameraMode: () => cameraMode,
+    setDmmMode: (mode) => multimeter3d.setMode(mode),
+    setDmmJack: (jack) => multimeter3d.setRedJack(jack),
+    setProbeTerminal: (probe, term) => multimeter3d.setProbeTerminal(probe, term),
+    toggleSeriesJumper: () => multimeter3d.toggleSeriesJumper(),
+    resetDmmFuse: () => multimeter3d.resetFuse(),
+    getDmmReading: () => multimeter3d.updateDisplay(),
   };
 }

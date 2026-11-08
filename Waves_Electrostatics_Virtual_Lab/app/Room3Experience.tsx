@@ -41,6 +41,12 @@ import {
 } from './room3Scene';
 import { createLaboratoryPdf } from './pdfReport';
 import { type CharacterType } from './characterController';
+import {
+  type MultimeterMode,
+  type MultimeterJack,
+  type TerminalId,
+  type MultimeterReading,
+} from './circuitSolver';
 
 const STORAGE_KEY = 'physics_lab_room_3_progress';
 
@@ -212,6 +218,22 @@ export default function Room3Experience() {
   const [soundVolume, setSoundVolume] = useState(0.5);
   const [pointerLocked, setPointerLocked] = useState(false);
 
+  // Multimeter & Workbench Instrument States
+  const [cameraMode, setCameraMode] = useState<'walk' | 'closeup'>('walk');
+  const [dmmReading, setDmmReading] = useState<MultimeterReading>({
+    value: 24.0,
+    displayString: '24.00 V',
+    unit: 'V',
+    isContinuityBeep: false,
+    warning: null,
+    isValidMeasurement: true,
+  });
+  const [dmmMode, setDmmModeState] = useState<MultimeterMode>('v_dc');
+  const [dmmJack, setDmmJackState] = useState<MultimeterJack>('v_ohm');
+  const [redTerminal, setRedTerminalState] = useState<TerminalId | null>('SRC_POS');
+  const [blackTerminal, setBlackTerminalState] = useState<TerminalId | null>('SRC_NEG');
+  const [jumperClosed, setJumperClosed] = useState(true);
+
   // Station Definitions & Telemetry Derived States
   const station = ROOM3_STATIONS[stationId];
   const stationProgress = progress[stationId];
@@ -335,6 +357,8 @@ export default function Room3Experience() {
         onEquipmentInteract: (id) => equipmentActionRef.current(id),
         onInteractionChange: (inter) => setInteraction(inter),
         onFootstep: () => playTone(80, 'sine', 0.05, 0.1),
+        onCameraModeChange: (mode) => setCameraMode(mode),
+        onDmmReadingChange: (reading) => setDmmReading(reading),
       });
       sceneApi.current = api;
       if (typeof window !== 'undefined') {
@@ -368,6 +392,77 @@ export default function Room3Experience() {
   useEffect(() => { sceneApi.current?.setCircuits(circuits); }, [circuits]);
   useEffect(() => { sceneApi.current?.setOptics(optics); }, [optics]);
   useEffect(() => { sceneApi.current?.setRelativity(relativity); }, [relativity]);
+
+  // Multimeter & Workbench Operations Handlers
+  const handleSetDmmMode = (mode: MultimeterMode) => {
+    setDmmModeState(mode);
+    sceneApi.current?.setDmmMode(mode);
+    playTone(750, 'square', 0.05, 0.12);
+  };
+
+  const handleSetDmmJack = (jack: MultimeterJack) => {
+    setDmmJackState(jack);
+    sceneApi.current?.setDmmJack(jack);
+    playTone(620, 'sine', 0.06, 0.12);
+  };
+
+  const handleSetProbe = (probe: 'red' | 'black', term: TerminalId | null) => {
+    if (probe === 'red') setRedTerminalState(term);
+    else setBlackTerminalState(term);
+    sceneApi.current?.setProbeTerminal(probe, term);
+    playTone(550, 'sine', 0.06, 0.12);
+  };
+
+  const handleToggleJumper = () => {
+    setJumperClosed((prev) => !prev);
+    sceneApi.current?.toggleSeriesJumper();
+    playTone(480, 'triangle', 0.08, 0.15);
+  };
+
+  const handleResetFuse = () => {
+    sceneApi.current?.resetDmmFuse();
+    playTone(880, 'sine', 0.1, 0.2);
+  };
+
+  const handleSetCloseup = (mode: 'walk' | 'closeup') => {
+    setCameraMode(mode);
+    sceneApi.current?.setCameraMode(mode, stationId);
+    playTone(mode === 'closeup' ? 660 : 440, 'triangle', 0.08, 0.15);
+  };
+
+  const applyPreset = (preset: 'source_v' | 'r1_v' | 'series_i' | 'r1_ohm' | 'continuity') => {
+    if (preset === 'source_v') {
+      handleSetDmmMode('v_dc');
+      handleSetDmmJack('v_ohm');
+      handleSetProbe('red', 'SRC_POS');
+      handleSetProbe('black', 'SRC_NEG');
+      setCircuits((c) => ({ ...c, powerOn: true, vs: 24.0 }));
+    } else if (preset === 'r1_v') {
+      handleSetDmmMode('v_dc');
+      handleSetDmmJack('v_ohm');
+      handleSetProbe('red', 'R1_A');
+      handleSetProbe('black', 'R1_B');
+      setCircuits((c) => ({ ...c, powerOn: true, vs: 24.0 }));
+    } else if (preset === 'series_i') {
+      if (jumperClosed) handleToggleJumper();
+      handleSetDmmJack('ma_10a');
+      handleSetDmmMode('a_dc');
+      handleSetProbe('red', 'SERIES_JACK_A');
+      handleSetProbe('black', 'SERIES_JACK_B');
+      setCircuits((c) => ({ ...c, powerOn: true, vs: 24.0 }));
+    } else if (preset === 'r1_ohm') {
+      setCircuits((c) => ({ ...c, powerOn: false }));
+      handleSetDmmMode('ohm');
+      handleSetDmmJack('v_ohm');
+      handleSetProbe('red', 'R1_A');
+      handleSetProbe('black', 'R1_B');
+    } else if (preset === 'continuity') {
+      handleSetDmmMode('cont');
+      handleSetDmmJack('v_ohm');
+      handleSetProbe('red', 'R1_A');
+      handleSetProbe('black', 'R1_A');
+    }
+  };
 
   // Step Completion Helpers
   const completeStep = (stepIndex: number) => {
@@ -416,6 +511,12 @@ export default function Room3Experience() {
 
     if (id.includes('placard') || id.includes('clipboard')) {
       setNotebookOpen(true);
+    } else if (['circuits-multimeter', 'circuits-power-switch', 'circuits-topology-selector', 'circuits-oscilloscope'].includes(id)) {
+      handleSetCloseup('closeup');
+    } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen'].includes(id)) {
+      handleSetCloseup('closeup');
+    } else if (['relativity-velocity-dial', 'relativity-contracting-rod', 'relativity-light-clock'].includes(id)) {
+      handleSetCloseup('closeup');
     }
   };
 
@@ -423,10 +524,14 @@ export default function Room3Experience() {
     equipmentActionRef.current = handleEquipmentAction;
   });
 
-  // Keyboard navigation for stations (Keys 1-3)
+  // Keyboard navigation for stations (Keys 1-3) & Close-up toggle
   useEffect(() => {
     const handleKeyNav = (e: KeyboardEvent) => {
       if (['input', 'textarea'].includes((e.target as HTMLElement)?.tagName?.toLowerCase())) return;
+      if (e.key === 'Escape' && cameraMode === 'closeup') {
+        handleSetCloseup('walk');
+        return;
+      }
       if (e.key === '1') {
         setStationId('circuits');
         playTone(392, 'sine', 0.1, 0.15);
@@ -436,14 +541,18 @@ export default function Room3Experience() {
       } else if (e.key === '3') {
         setStationId('relativity');
         playTone(523.25, 'sine', 0.1, 0.15);
-      } else if (e.key.toLowerCase() === 'e' && interaction) {
-        handleEquipmentAction(interaction.id);
+      } else if (e.key.toLowerCase() === 'e') {
+        if (cameraMode === 'closeup') {
+          handleSetCloseup('walk');
+        } else if (interaction) {
+          handleEquipmentAction(interaction.id);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyNav);
     return () => window.removeEventListener('keydown', handleKeyNav);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interaction]);
+  }, [interaction, cameraMode]);
 
   // Touch Analog Walking Joystick Handlers
   const handleJoystickPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -803,7 +912,21 @@ export default function Room3Experience() {
         </div>
       )}
 
-      {!pointerLocked && !notebookOpen && (
+      {cameraMode === 'closeup' && !notebookOpen && (
+        <div className="closeup-hud-banner" role="status">
+          <div className="closeup-hud-badge">🔬 WORKBENCH INSTRUMENT CLOSE-UP</div>
+          <div className="closeup-hud-hint">Click apparatus in 3D or use controls · Press [ESC / E] to exit</div>
+          <button
+            type="button"
+            className="closeup-exit-button"
+            onClick={() => handleSetCloseup('walk')}
+          >
+            ← Exit to Exploration [ESC / E]
+          </button>
+        </div>
+      )}
+
+      {!pointerLocked && !notebookOpen && cameraMode === 'walk' && (
         <button className="enter-walk-mode" onClick={() => sceneApi.current?.requestPointerLock()}>
           <b>ENTER WALK MODE</b><span>Click to capture the mouse · ESC releases it</span>
         </button>
@@ -999,6 +1122,238 @@ export default function Room3Experience() {
         {/* STATION 01: CIRCUITS CONTROLS */}
         {stationId === 'circuits' && (
           <>
+            {/* Workbench Close-Up & Primary Power Switch */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <button
+                type="button"
+                className={`dmm-btn ${cameraMode === 'closeup' ? 'active' : ''}`}
+                style={{ flex: 1, padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                onClick={() => handleSetCloseup(cameraMode === 'closeup' ? 'walk' : 'closeup')}
+              >
+                <span>{cameraMode === 'closeup' ? '🚶 Exit Close-Up (ESC)' : '🔬 Workbench Close-Up (E)'}</span>
+              </button>
+              <button
+                type="button"
+                className={`dmm-btn ${circuits.powerOn ? 'active' : ''}`}
+                style={{ flex: 1, padding: '8px', color: circuits.powerOn ? '#34d399' : '#ef4444' }}
+                onClick={() => setCircuits((c) => ({ ...c, powerOn: !c.powerOn }))}
+              >
+                <span>{circuits.powerOn ? '⚡ Power: ON' : '⏻ Power: OFF'}</span>
+              </button>
+            </div>
+
+            {/* Fluke 87V Digital Multimeter Workbench Suite */}
+            <div className="dmm-workbench-card">
+              <div className="dmm-header-title">
+                <b>FLUKE 87V DIGITAL MULTIMETER</b>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>TRUE-RMS CAT IV</span>
+              </div>
+
+              {/* Dynamic LCD Screen */}
+              <div className="dmm-lcd-screen">
+                <div className="dmm-lcd-top">
+                  <span>{dmmMode.toUpperCase()} · AUTO</span>
+                  <span>JACK: {dmmJack.toUpperCase()}</span>
+                </div>
+                <div className="dmm-lcd-digits">{dmmReading.displayString}</div>
+                {dmmReading.isContinuityBeep && (
+                  <div style={{ color: '#34d399', fontSize: '11px', marginTop: '4px' }}>
+                    🔊 CONTINUITY DETECTED (&lt; 30 Ω)
+                  </div>
+                )}
+                {dmmReading.warning && (
+                  <div className="dmm-lcd-warning">{dmmReading.warning}</div>
+                )}
+              </div>
+
+              {/* Rotary Mode Selector Buttons */}
+              <div>
+                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                  <b>ROTARY FUNCTION DIAL:</b>
+                </label>
+                <div className="dmm-button-grid">
+                  <button
+                    type="button"
+                    className={`dmm-btn ${dmmMode === 'v_dc' ? 'active' : ''}`}
+                    onClick={() => handleSetDmmMode('v_dc')}
+                  >
+                    V⎓ (DC V)
+                  </button>
+                  <button
+                    type="button"
+                    className={`dmm-btn ${dmmMode === 'v_ac' ? 'active' : ''}`}
+                    onClick={() => handleSetDmmMode('v_ac')}
+                  >
+                    V~ (AC V)
+                  </button>
+                  <button
+                    type="button"
+                    className={`dmm-btn ${dmmMode === 'a_dc' ? 'active' : ''}`}
+                    onClick={() => handleSetDmmMode('a_dc')}
+                  >
+                    A⎓ (DC A)
+                  </button>
+                  <button
+                    type="button"
+                    className={`dmm-btn ${dmmMode === 'a_ac' ? 'active' : ''}`}
+                    onClick={() => handleSetDmmMode('a_ac')}
+                  >
+                    A~ (AC A)
+                  </button>
+                  <button
+                    type="button"
+                    className={`dmm-btn ${dmmMode === 'ohm' ? 'active' : ''}`}
+                    onClick={() => handleSetDmmMode('ohm')}
+                  >
+                    Ω (Ohms)
+                  </button>
+                  <button
+                    type="button"
+                    className={`dmm-btn ${dmmMode === 'cont' ? 'active' : ''}`}
+                    onClick={() => handleSetDmmMode('cont')}
+                  >
+                    🔊 Continuity
+                  </button>
+                </div>
+              </div>
+
+              {/* Red Lead Input Jack Selector */}
+              <div>
+                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                  <b>RED LEAD INPUT JACK:</b>
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                  <button
+                    type="button"
+                    className={`dmm-btn ${dmmJack === 'v_ohm' ? 'active' : ''}`}
+                    onClick={() => handleSetDmmJack('v_ohm')}
+                  >
+                    V·Ω (Hi-Z Volts/Ohms)
+                  </button>
+                  <button
+                    type="button"
+                    className={`dmm-btn ${dmmJack === 'ma_10a' ? 'active' : ''}`}
+                    onClick={() => handleSetDmmJack('ma_10a')}
+                  >
+                    mA / 10A (Current Shunt)
+                  </button>
+                </div>
+              </div>
+
+              {/* Probe Terminals Connection */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div>
+                  <label style={{ fontSize: '10px', color: '#ef4444', display: 'block', marginBottom: '2px', fontWeight: 700 }}>
+                    🔴 RED PROBE NODE:
+                  </label>
+                  <select
+                    style={{ width: '100%', padding: '6px', fontSize: '11px', background: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '6px' }}
+                    value={redTerminal ?? ''}
+                    onChange={(e) => handleSetProbe('red', (e.target.value as TerminalId) || null)}
+                  >
+                    <option value="">(Parked / Resting)</option>
+                    <option value="SRC_POS">PSU Positive (+)</option>
+                    <option value="SRC_NEG">PSU Negative (GND)</option>
+                    <option value="R1_A">Resistor 1 Node A</option>
+                    <option value="R1_B">Resistor 1 Node B</option>
+                    <option value="R2_A">Resistor 2 Node A</option>
+                    <option value="R2_B">Resistor 2 Node B</option>
+                    <option value="R3_A">Resistor 3 Node A</option>
+                    <option value="R3_B">Resistor 3 Node B</option>
+                    <option value="SERIES_JACK_A">Series Break Terminal A</option>
+                    <option value="SERIES_JACK_B">Series Break Terminal B</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px', fontWeight: 700 }}>
+                    ⚫ BLACK PROBE (COM):
+                  </label>
+                  <select
+                    style={{ width: '100%', padding: '6px', fontSize: '11px', background: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '6px' }}
+                    value={blackTerminal ?? ''}
+                    onChange={(e) => handleSetProbe('black', (e.target.value as TerminalId) || null)}
+                  >
+                    <option value="">(Parked / Resting)</option>
+                    <option value="SRC_NEG">PSU Negative (GND)</option>
+                    <option value="SRC_POS">PSU Positive (+)</option>
+                    <option value="R1_A">Resistor 1 Node A</option>
+                    <option value="R1_B">Resistor 1 Node B</option>
+                    <option value="R2_A">Resistor 2 Node A</option>
+                    <option value="R2_B">Resistor 2 Node B</option>
+                    <option value="R3_A">Resistor 3 Node A</option>
+                    <option value="R3_B">Resistor 3 Node B</option>
+                    <option value="SERIES_JACK_A">Series Break Terminal A</option>
+                    <option value="SERIES_JACK_B">Series Break Terminal B</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Series Jumper & Fuse Reset */}
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="dmm-btn"
+                  style={{ flex: 1, color: jumperClosed ? '#10b981' : '#f59e0b' }}
+                  onClick={handleToggleJumper}
+                >
+                  {jumperClosed ? '🔗 Jumper: CLOSED' : '⚡ Jumper: OPEN (Break)'}
+                </button>
+                <button
+                  type="button"
+                  className="dmm-btn"
+                  onClick={handleResetFuse}
+                  title="Reset DMM internal current fuse"
+                >
+                  ↺ Reset Fuse
+                </button>
+              </div>
+
+              {/* Guided Procedure Presets */}
+              <div className="dmm-preset-row">
+                <label style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
+                  EXPERIMENTAL PROCEDURE PRESETS:
+                </label>
+                <button
+                  type="button"
+                  className="dmm-preset-btn"
+                  onClick={() => applyPreset('source_v')}
+                >
+                  ▶ 1. Measure Source Voltage (24.00 V in parallel)
+                </button>
+                <button
+                  type="button"
+                  className="dmm-preset-btn"
+                  onClick={() => applyPreset('r1_v')}
+                >
+                  ▶ 2. Measure R1 Voltage Drop (3.69 V across R1)
+                </button>
+                <button
+                  type="button"
+                  className="dmm-preset-btn"
+                  onClick={() => applyPreset('series_i')}
+                >
+                  ▶ 3. Insert Ammeter in Series (36.92 mA series loop)
+                </button>
+                <button
+                  type="button"
+                  className="dmm-preset-btn"
+                  onClick={() => applyPreset('r1_ohm')}
+                >
+                  ▶ 4. Measure R1 Resistance (100.0 Ω unpowered)
+                </button>
+                <button
+                  type="button"
+                  className="dmm-preset-btn"
+                  onClick={() => applyPreset('continuity')}
+                >
+                  ▶ 5. Verify Circuit Continuity (Audible tone)
+                </button>
+              </div>
+            </div>
+
+            <div style={{ margin: '12px 0 6px', fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.08em' }}>
+              ADVANCED CIRCUIT PARAMETERS:
+            </div>
             <div className="segment-control" role="group" aria-label="Circuit Regime">
               <button
                 type="button"

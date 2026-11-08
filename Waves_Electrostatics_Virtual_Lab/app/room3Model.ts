@@ -15,6 +15,7 @@ export type CircuitSettings = {
   r3: number; // Ohms (1.0 - 1000.0)
   inductance: number; // mH (1.0 - 500.0 mH)
   capacitance: number; // uF (1.0 - 500.0 uF)
+  powerOn?: boolean;
 };
 
 export type OpticsSettings = {
@@ -62,6 +63,7 @@ export const INITIAL_CIRCUITS: CircuitSettings = {
   r3: 330.0,
   inductance: 150.0, // 150 mH
   capacitance: 47.0, // 47 uF
+  powerOn: true,
 };
 
 export const INITIAL_OPTICS: OpticsSettings = {
@@ -138,7 +140,8 @@ export function calculateCircuit(settings: CircuitSettings): CircuitResult {
 
   // Impedance
   const impedance = isAc ? Math.sqrt(req * req + netReactance * netReactance) : req;
-  const current = vs / Math.max(0.01, impedance);
+  const effectiveVs = settings.powerOn === false ? 0 : vs;
+  const current = effectiveVs / Math.max(0.01, impedance);
 
   // Branch Voltages & Currents
   if (topology === 'series') {
@@ -496,14 +499,14 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
     placardSrc: '/assets/placards/apparatus_electricity.png',
     placardAlt: 'Cinematic laboratory test bench for DC and AC electrical circuits with oscilloscope and power supply',
     steps: [
-      { title: 'Inspect the electronic test bench', prompt: 'Locate the DC power supply, AC function generator, resistor network board, digital multimeter, and oscilloscope.', target: 'Identify instruments for measuring voltage in parallel and current in series.' },
-      { title: 'Predict AC series RLC resonance', prompt: 'Select the condition that yields minimum impedance and unity power factor.', target: 'Apply phasor impedance relationships to predict resonance behavior.' },
-      { title: 'Calibrate circuit baseline parameters', prompt: 'Initialize reference values: Vs = 24.0 V, R1 = 100 Ω, R2 = 220 Ω, R3 = 330 Ω, L = 150 mH, C = 47 μF.', target: 'Verify instrument zero offsets and power supply output baseline.' },
-      { title: 'Energize circuit and observe waveforms', prompt: 'Toggle power switch, switch between DC and AC modes, and observe oscilloscope phase shift between V(t) and I(t).', target: 'Observe how inductance creates current lag and capacitance creates current lead.' },
-      { title: 'Record five multi-condition trials', prompt: 'Vary source voltage, topology, or driving frequency to log five complete experimental datasets.', target: 'Capture total current, branch currents, equivalent impedance, and real power.' },
-      { title: 'Verify theoretical circuit calculations', prompt: 'Calculate theoretical impedance Z = √(Req² + (XL - XC)²) and current I = V/Z for all five recorded trials.', target: 'Ensure all five trial calculations agree with theory within ±2% relative error.' },
-      { title: 'Synthesize electrical & power findings', prompt: 'Formulate observations on Ohm\'s law, Kirchhoff rules, reactive power dynamics, and identify experimental errors.', target: 'Provide thorough empirical analysis, scientific conclusions, and apparatus improvements.' },
-      { title: 'Submit certified electrical report', prompt: 'Review multi-trial data table, power factor metrics, and export certified PDF and CSV lab reports.', target: 'Complete certification and earn final station score.' },
+      { title: 'Equipment Identification & Workbench Setup', prompt: 'Identify the DC power supply, AC function generator, Fluke digital multimeter, Tektronix oscilloscope, and breadboard terminal matrix. Enter Workbench Close-Up mode [E].', target: 'Locate instruments and enter instrument close-up mode.' },
+      { title: 'Circuit Assembly & Jumper Loop Check', prompt: 'Verify the series resistor network (R1 = 100 Ω, R2 = 220 Ω, R3 = 330 Ω) and ensure the series loop jumper is closed to provide a continuous conductive path.', target: 'Verify closed loop continuity before applying power.' },
+      { title: 'Power Supply Setup & Energization', prompt: 'Configure the DC power supply to 24.0 V DC and energize the circuit. Observe the illuminated power indicator and oscilloscope standby waveform.', target: 'Apply 24.0 V DC potential across the network.' },
+      { title: 'Parallel Voltage Measurement (V⎓)', prompt: 'Set the Fluke DMM to DC Voltage (V⎓) with the red lead in the V·Ω jack. Place probes in parallel across the source (24.00 V) and across R1 (3.69 V).', target: 'Practice non-intrusive parallel potential difference measurement.' },
+      { title: 'Series Current Measurement (A⎓ Insertion)', prompt: 'De-energize circuit, open the series break (remove jumper), move red lead to mA jack, switch to A⎓, insert meter in series between loop terminals, re-energize, and measure current (36.92 mA).', target: 'Execute proper series insertion with burden shunt protection.' },
+      { title: 'De-energized Resistance Measurement (Ω)', prompt: 'Turn OFF the power supply. Switch DMM to Ohms (Ω) and red lead to V·Ω. Place probes across R1 terminals to measure isolated resistance (100.0 Ω).', target: 'Observe that resistance must only be measured on de-energized circuits.' },
+      { title: 'Parallel Network & Continuity Testing', prompt: 'Switch to Parallel topology, measure branch currents, and switch DMM to Continuity mode to verify low-resistance bus connectivity (< 30 Ω audible tone).', target: 'Analyze current division across parallel branches and verify continuity.' },
+      { title: 'Experimental Analysis & Report Certification', prompt: 'Record five experimental trials across multiple voltages and frequencies. Verify theoretical Ohm\'s Law and impedance values within ±2% and submit the certified lab notebook.', target: 'Submit multi-trial notebook and earn 100 station points.' },
     ],
     prediction: {
       question: 'In an AC series RLC circuit, what condition achieves resonance where total impedance Z is minimized?',
