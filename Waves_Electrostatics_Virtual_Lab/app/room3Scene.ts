@@ -70,6 +70,7 @@ export type Room3SceneCallbacks = {
   onPointerLockChange?: (locked: boolean) => void;
   onCameraModeChange?: (mode: 'walk' | 'closeup') => void;
   onDmmReadingChange?: (reading: MultimeterReading) => void;
+  onProbePlaced?: (probe: 'red' | 'black', terminal: TerminalId) => void;
   onCloseupHover?: (text: string | null) => void;
   onStationProximityChange?: (station: Room3StationId | null) => void;
 };
@@ -2468,7 +2469,8 @@ export function createRoom3Scene(
     onReadingChange: (reading) => {
       callbacks.onDmmReadingChange?.(reading);
     },
-    onProbePlaced: () => {
+    onProbePlaced: (probe, term) => {
+      callbacks.onProbePlaced?.(probe, term);
       playTone(520, 'sine', 0.08, 0.15);
     },
     onFuseTripped: () => {
@@ -3471,12 +3473,30 @@ export function createRoom3Scene(
           }
           if (hitObj.userData.terminalId) {
             const term = hitObj.userData.terminalId as TerminalId;
-            if (!multimeter3d.dmmState.redProbeTerminal) {
-              multimeter3d.setProbeTerminal('red', term);
-            } else if (!multimeter3d.dmmState.blackProbeTerminal && multimeter3d.dmmState.redProbeTerminal !== term) {
-              multimeter3d.setProbeTerminal('black', term);
+            // Intuitive resistor & component lead probe snapping:
+            if (term === 'R1_A' || term === 'R1_B') {
+              multimeter3d.setProbeTerminal('red', 'R1_A');
+              multimeter3d.setProbeTerminal('black', 'R1_B');
+            } else if (term === 'R2_A' || term === 'R2_B') {
+              multimeter3d.setProbeTerminal('red', 'R2_A');
+              multimeter3d.setProbeTerminal('black', 'R2_B');
+            } else if (term === 'R3_A' || term === 'R3_B') {
+              multimeter3d.setProbeTerminal('red', 'R3_A');
+              multimeter3d.setProbeTerminal('black', 'R3_B');
+            } else if (term === 'SERIES_JACK_A' || term === 'SERIES_JACK_B') {
+              multimeter3d.setProbeTerminal('red', 'SERIES_JACK_A');
+              multimeter3d.setProbeTerminal('black', 'SERIES_JACK_B');
+            } else if (term === 'SRC_POS' || term === 'SRC_NEG') {
+              multimeter3d.setProbeTerminal('red', 'SRC_POS');
+              multimeter3d.setProbeTerminal('black', 'SRC_NEG');
             } else {
-              multimeter3d.setProbeTerminal('red', term);
+              if (!multimeter3d.dmmState.redProbeTerminal) {
+                multimeter3d.setProbeTerminal('red', term);
+              } else if (!multimeter3d.dmmState.blackProbeTerminal && multimeter3d.dmmState.redProbeTerminal !== term) {
+                multimeter3d.setProbeTerminal('black', term);
+              } else {
+                multimeter3d.setProbeTerminal('red', term);
+              }
             }
             playTone(720, 'sine', 0.05, 0.15);
             return;

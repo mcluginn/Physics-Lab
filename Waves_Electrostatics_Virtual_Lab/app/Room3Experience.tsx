@@ -520,11 +520,17 @@ export default function Room3Experience() {
         onFootstep: () => playTone(80, 'sine', 0.05, 0.1),
         onCameraModeChange: (mode) => setCameraMode(mode),
         onDmmReadingChange: (reading) => setDmmReading(reading),
+        onProbePlaced: (probe, term) => {
+          if (probe === 'red') setRedTerminalState(term);
+          else setBlackTerminalState(term);
+        },
         onCloseupHover: (text) => setCloseupHoverText(text),
         onPointerLockChange: setPointerLocked,
         onStationProximityChange: (st) => setProximateStation(st),
       });
       sceneApi.current = api;
+      if (redTerminal) api.setProbeTerminal('red', redTerminal);
+      if (blackTerminal) api.setProbeTerminal('black', blackTerminal);
       if (typeof window !== 'undefined') {
         (window as unknown as { __room3Scene?: unknown }).__room3Scene = api;
         const queryStation = new URLSearchParams(window.location.search).get('station') as Room3StationId;
