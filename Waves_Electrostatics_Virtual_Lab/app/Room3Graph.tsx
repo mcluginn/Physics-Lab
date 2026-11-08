@@ -227,7 +227,7 @@ export function computeRoom3Regression(stationId: Room3StationId, trials: TrialR
 export function Room3Graph({
   stationId,
   trials,
-  accentColor = '#38bdf8',
+  accentColor = '#d4af37',
 }: {
   stationId: Room3StationId;
   trials: TrialRecord[];
@@ -429,11 +429,11 @@ export function Room3Graph({
               top: `${(scaleY(hoveredPoint.y) / svgHeight) * 100}%`,
               transform: 'translate(-50%, -120%)',
               pointerEvents: 'none',
-              background: '#0f172a',
-              border: `1px solid ${accentColor}`,
+              background: 'rgba(35, 12, 20, 0.95)',
+              border: `1.5px solid ${accentColor}`,
               borderRadius: '6px',
               padding: '6px 10px',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.6), 0 0 10px rgba(212, 175, 55, 0.25)',
               zIndex: 10,
               whiteSpace: 'nowrap',
             }}

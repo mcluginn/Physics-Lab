@@ -1253,7 +1253,7 @@ export default function Room3Experience() {
 
   return (
     <main
-      className="lab-shell"
+      className="lab-shell room3-shell"
       data-room="room-3"
       data-station={stationId}
       style={{ '--station-accent': station.accent } as CSSProperties}
@@ -1385,7 +1385,7 @@ export default function Room3Experience() {
                 <button
                   type="button"
                   className="cam-focus-btn"
-                  style={{ background: 'rgba(2, 132, 199, 0.3)', border: '1px solid #0284c7', color: '#38bdf8' }}
+                  style={{ background: 'rgba(88, 28, 44, 0.7)', border: '1.5px solid #d4af37', color: '#fef08a', fontWeight: 700 }}
                   onClick={() => setActiveWorkspaceView('circuit_workspace')}
                 >
                   ⚡ Breadboard 3D (DCACLab)
@@ -2115,7 +2115,7 @@ export default function Room3Experience() {
 
             {optics.subMode === 'refraction' && (
               <>
-                <div style={{ fontSize: '11px', color: '#38bdf8', fontFamily: 'monospace', padding: '6px 10px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '6px', margin: '4px 0 8px' }}>
+                <div style={{ fontSize: '11px', color: '#fef08a', fontFamily: 'monospace', padding: '6px 10px', background: 'rgba(53, 18, 29, 0.85)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '6px', margin: '4px 0 8px' }}>
                   Cauchy Effective n₂(λ): <b>{opticsResult.effectiveN2.toFixed(4)}</b> (Base: {optics.n2.toFixed(2)})
                 </div>
                 <RangeControl
@@ -3032,10 +3032,10 @@ export default function Room3Experience() {
                           className={`trial-chip-btn ${isActive ? 'active' : ''} ${isRecorded ? 'recorded' : ''}`}
                           style={{
                             padding: '10px 8px',
-                            background: isActive ? '#0284c7' : isRecorded ? 'rgba(16, 185, 129, 0.15)' : '#0f172a',
-                            border: isActive ? '2px solid #38bdf8' : isRecorded ? '1px solid #10b981' : '1px solid #334155',
+                            background: isActive ? 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)' : isRecorded ? 'rgba(16, 185, 129, 0.2)' : 'rgba(53, 18, 29, 0.85)',
+                            border: isActive ? '2px solid #fef08a' : isRecorded ? '1px solid #10b981' : '1px solid rgba(212, 175, 55, 0.35)',
                             borderRadius: '8px',
-                            color: '#fff',
+                            color: isActive ? '#1a0b10' : '#fff',
                             cursor: 'pointer',
                             textAlign: 'center',
                           }}
@@ -3044,7 +3044,7 @@ export default function Room3Experience() {
                             setRetakeTrialIndex(isRecorded ? idx : null);
                           }}
                         >
-                          <div style={{ fontSize: '11px', color: isRecorded ? '#34d399' : '#94a3b8' }}>
+                          <div style={{ fontSize: '11px', color: isActive ? '#1a0b10' : isRecorded ? '#34d399' : '#e9dfc9' }}>
                             {isRecorded ? '✓ Recorded' : `Trial ${idx + 1}`}
                           </div>
                           <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>
@@ -3061,10 +3061,10 @@ export default function Room3Experience() {
                     const trialNum = activeTrialTab + 1;
                     const isAlreadyRecorded = stationProgress.trials.length > activeTrialTab;
                     return (
-                      <div className="active-trial-card" style={{ padding: '16px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '10px', marginBottom: '16px' }}>
+                      <div className="active-trial-card" style={{ padding: '16px', background: 'radial-gradient(ellipse at top, rgba(88, 28, 44, 0.95) 0%, rgba(53, 18, 29, 0.98) 100%)', border: '1.5px solid rgba(212, 175, 55, 0.65)', borderRadius: '10px', marginBottom: '16px', boxShadow: '0 8px 24px rgba(0,0,0,0.5), 0 0 15px rgba(212, 175, 55, 0.2)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
-                            <span style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            <span style={{ fontSize: '12px', color: '#fef08a', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                               ACTIVE TRIAL #{trialNum} · ASSIGNED OPERATING CONDITION
                             </span>
                             <h4 style={{ margin: '4px 0', fontSize: '18px', color: '#f8fafc' }}>
@@ -3076,7 +3076,7 @@ export default function Room3Experience() {
                           <button
                             type="button"
                             className="notebook-action"
-                            style={{ background: '#0284c7', borderColor: '#38bdf8', padding: '6px 12px', fontSize: '12px' }}
+                            style={{ background: 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)', color: '#1a0b10', borderColor: '#fef08a', padding: '6px 12px', fontSize: '12px', fontWeight: 800 }}
                             onClick={() => handleSetAssignedCondition(assigned.targetValue)}
                           >
                             ⚡ Set Target {assigned.targetParam} = {assigned.targetValue}{assigned.unit}
@@ -3089,17 +3089,17 @@ export default function Room3Experience() {
 
                         {/* Live Telemetry Bar for Trial */}
                         <div className="trial-live-bar" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '12px' }}>
-                          <div style={{ padding: '8px 12px', background: '#0f172a', borderRadius: '6px', border: '1px solid #334155' }}>
-                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>LIVE SOURCE POTENTIAL</span>
-                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#38bdf8' }}>{circuits.vs.toFixed(2)} V</div>
+                          <div style={{ padding: '8px 12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '6px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
+                            <span style={{ fontSize: '10px', color: '#e9dfc9' }}>LIVE SOURCE POTENTIAL</span>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#fef08a' }}>{circuits.vs.toFixed(2)} V</div>
                           </div>
-                          <div style={{ padding: '8px 12px', background: '#0f172a', borderRadius: '6px', border: '1px solid #334155' }}>
-                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>LIVE CURRENT (SERIES)</span>
-                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#10b981' }}>{(circuitResult.current * 1000).toFixed(2)} mA</div>
+                          <div style={{ padding: '8px 12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '6px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
+                            <span style={{ fontSize: '10px', color: '#e9dfc9' }}>LIVE CURRENT (SERIES)</span>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#34d399' }}>{(circuitResult.current * 1000).toFixed(2)} mA</div>
                           </div>
-                          <div style={{ padding: '8px 12px', background: '#0f172a', borderRadius: '6px', border: '1px solid #334155' }}>
-                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>THEORETICAL RESISTANCE Req</span>
-                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#a855f7' }}>650.0 Ω</div>
+                          <div style={{ padding: '8px 12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '6px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
+                            <span style={{ fontSize: '10px', color: '#e9dfc9' }}>THEORETICAL RESISTANCE Req</span>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#d4af37' }}>650.0 Ω</div>
                           </div>
                         </div>
 
@@ -3116,7 +3116,7 @@ export default function Room3Experience() {
                           <button
                             type="button"
                             className="notebook-action"
-                            style={{ background: '#334155', borderColor: '#64748b' }}
+                            style={{ background: 'rgba(88, 28, 44, 0.7)', borderColor: 'rgba(212, 175, 55, 0.5)', color: '#fffbeb' }}
                             onClick={() => handleQuickProbe('psu')}
                           >
                             Parallel Voltage Probes
@@ -3124,7 +3124,7 @@ export default function Room3Experience() {
                           <button
                             type="button"
                             className="notebook-action"
-                            style={{ background: '#334155', borderColor: '#64748b' }}
+                            style={{ background: 'rgba(88, 28, 44, 0.7)', borderColor: 'rgba(212, 175, 55, 0.5)', color: '#fffbeb' }}
                             onClick={() => handleQuickProbe('series')}
                           >
                             Series Ammeter Probes
@@ -3179,10 +3179,10 @@ export default function Room3Experience() {
                             {stationId === 'circuits' && (
                               <>
                                 <td>{formatValue(t.vs)}</td>
-                                <td style={{ color: '#38bdf8', fontWeight: 600 }}>{formatValue(t.measuredV ?? t.vs)}</td>
+                                <td style={{ color: '#d4af37', fontWeight: 600 }}>{formatValue(t.measuredV ?? t.vs)}</td>
                                 <td style={{ color: '#10b981', fontWeight: 600 }}>{formatValue(t.measuredI_mA ?? (Number(t.current) * 1000))}</td>
                                 <td>{formatValue(t.measuredI_A ?? t.current)}</td>
-                                <td style={{ color: '#a855f7', fontWeight: 700 }}>{formatValue(t.resistance ?? t.impedance)}</td>
+                                <td style={{ color: '#fef08a', fontWeight: 700 }}>{formatValue(t.resistance ?? t.impedance)}</td>
                                 <td>650.0</td>
                                 <td>{formatValue(t.percentError)}%</td>
                                 <td>
@@ -3199,7 +3199,7 @@ export default function Room3Experience() {
                             {stationId === 'optics' && (
                               <>
                                 <td>{formatValue(t.u ?? t.paramA)}</td>
-                                <td style={{ color: '#38bdf8', fontWeight: 600 }}>{formatValue(t.v ?? t.measured)}</td>
+                                <td style={{ color: '#d4af37', fontWeight: 600 }}>{formatValue(t.v ?? t.measured)}</td>
                                 <td>{formatValue(t.invU)}</td>
                                 <td>{formatValue(t.invV)}</td>
                                 <td style={{ color: '#10b981', fontWeight: 700 }}>{formatValue(t.f_exp)}</td>
@@ -3221,7 +3221,7 @@ export default function Room3Experience() {
                                 <td>{formatValue(t.beta)}</td>
                                 <td>{formatValue(t.speed)}</td>
                                 <td>{formatValue(t.gamma)}</td>
-                                <td style={{ color: '#38bdf8', fontWeight: 600 }}>{formatValue(t.measuredGamma)}</td>
+                                <td style={{ color: '#d4af37', fontWeight: 600 }}>{formatValue(t.measuredGamma)}</td>
                                 <td style={{ color: '#10b981', fontWeight: 600 }}>{formatValue(t.dilatedTime)}</td>
                                 <td>{formatValue(t.contractedLength)}</td>
                                 <td>
@@ -3281,8 +3281,8 @@ export default function Room3Experience() {
                   <p className="step-prompt">{station.steps[7].prompt}</p>
 
                   {/* SECTION A: EXPERIMENTAL OBSERVATIONS (DATA TABLE) */}
-                  <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid #334155', paddingBottom: '6px' }}>
-                    <h5 style={{ margin: 0, color: '#38bdf8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
+                    <h5 style={{ margin: 0, color: '#fef08a', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
                       Section A: Experimental Observations (Five-Trial Recorded Dataset)
                     </h5>
                   </div>
@@ -3315,10 +3315,10 @@ export default function Room3Experience() {
                             {stationId === 'circuits' && (
                               <>
                                 <td>{formatValue(t.vs)}</td>
-                                <td style={{ color: '#38bdf8' }}>{formatValue(t.measuredV ?? t.vs)}</td>
+                                <td style={{ color: '#d4af37' }}>{formatValue(t.measuredV ?? t.vs)}</td>
                                 <td style={{ color: '#10b981' }}>{formatValue(t.measuredI_mA ?? (Number(t.current) * 1000))}</td>
                                 <td>{formatValue(t.measuredI_A ?? t.current)}</td>
-                                <td style={{ color: '#a855f7', fontWeight: 700 }}>{formatValue(t.resistance ?? t.impedance)}</td>
+                                <td style={{ color: '#fef08a', fontWeight: 700 }}>{formatValue(t.resistance ?? t.impedance)}</td>
                                 <td>650.0</td>
                                 <td>{formatValue(t.percentError)}%</td>
                               </>
@@ -3326,7 +3326,7 @@ export default function Room3Experience() {
                             {stationId === 'optics' && (
                               <>
                                 <td>{formatValue(t.u ?? t.paramA)}</td>
-                                <td style={{ color: '#38bdf8' }}>{formatValue(t.v ?? t.measured)}</td>
+                                <td style={{ color: '#d4af37' }}>{formatValue(t.v ?? t.measured)}</td>
                                 <td>{formatValue(t.invU)}</td>
                                 <td>{formatValue(t.invV)}</td>
                                 <td style={{ color: '#10b981', fontWeight: 700 }}>{formatValue(t.f_exp)}</td>
@@ -3339,7 +3339,7 @@ export default function Room3Experience() {
                                 <td>{formatValue(t.beta)}</td>
                                 <td>{formatValue(t.speed)}</td>
                                 <td>{formatValue(t.gamma)}</td>
-                                <td style={{ color: '#38bdf8' }}>{formatValue(t.measuredGamma)}</td>
+                                <td style={{ color: '#d4af37' }}>{formatValue(t.measuredGamma)}</td>
                                 <td style={{ color: '#10b981' }}>{formatValue(t.dilatedTime)}</td>
                                 <td>{formatValue(t.contractedLength)}</td>
                               </>
@@ -3351,8 +3351,8 @@ export default function Room3Experience() {
                   </div>
 
                   {/* SECTION B: COMPUTATION AND ANALYSIS */}
-                  <div className="section-divider" style={{ margin: '22px 0 10px', borderBottom: '1px solid #334155', paddingBottom: '6px' }}>
-                    <h5 style={{ margin: 0, color: '#10b981', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  <div className="section-divider" style={{ margin: '22px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
+                    <h5 style={{ margin: 0, color: '#d4af37', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
                       Section B: Computation of Experimental Data & Error Quantification
                     </h5>
                   </div>
@@ -3365,8 +3365,8 @@ export default function Room3Experience() {
                         const iA = Number(t.measuredI_A ?? t.current ?? 0.006);
                         const r = Number(t.resistance ?? (v / iA));
                         return (
-                          <div key={i} style={{ padding: '10px 8px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '11px' }}>
-                            <span style={{ color: '#38bdf8', fontWeight: 700 }}>TRIAL #{i + 1}</span>
+                          <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
+                            <span style={{ color: '#d4af37', fontWeight: 700 }}>TRIAL #{i + 1}</span>
                             <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
                               R_{i + 1} = V_{i + 1} / I_{i + 1}
                             </div>
@@ -3383,7 +3383,7 @@ export default function Room3Experience() {
                         const v = Number(t.v ?? t.measured ?? 60);
                         const f = Number(t.f_exp ?? ((u * v) / (u + v)));
                         return (
-                          <div key={i} style={{ padding: '10px 8px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '11px' }}>
+                          <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
                             <span style={{ color: '#10b981', fontWeight: 700 }}>TRIAL #{i + 1}</span>
                             <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
                               f_{i + 1} = (u·v)/(u+v)
@@ -3400,8 +3400,8 @@ export default function Room3Experience() {
                         const beta = Number(t.beta ?? 0.1);
                         const gamma = Number(t.measuredGamma ?? (1 / Math.sqrt(1 - beta * beta)));
                         return (
-                          <div key={i} style={{ padding: '10px 8px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '11px' }}>
-                            <span style={{ color: '#a855f7', fontWeight: 700 }}>TRIAL #{i + 1}</span>
+                          <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
+                            <span style={{ color: '#fef08a', fontWeight: 700 }}>TRIAL #{i + 1}</span>
                             <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
                               γ_{i + 1} = 1/√(1-β²)
                             </div>
@@ -3419,12 +3419,12 @@ export default function Room3Experience() {
 
                   {/* 2. Statistical Analysis & Error Quantification */}
                   {stationId === 'circuits' && (
-                    <div className="stats-breakdown-card" style={{ padding: '14px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px', marginBottom: '16px' }}>
+                    <div className="stats-breakdown-card" style={{ padding: '14px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px', marginBottom: '16px' }}>
                       <h5 style={{ margin: '0 0 10px', color: '#f8fafc' }}>Statistical Quantification & Error Metrics:</h5>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
                         <div>
                           <b>1. Average Experimental Resistance (Rmean):</b>
-                          <div style={{ fontFamily: 'monospace', color: '#38bdf8', margin: '4px 0' }}>
+                          <div style={{ fontFamily: 'monospace', color: '#fef08a', margin: '4px 0' }}>
                             Rmean = (R1 + R2 + R3 + R4 + R5) / 5 = {circuitMetrics.mean.toFixed(2)} Ω
                           </div>
                           <small style={{ color: '#94a3b8' }}>
@@ -3433,7 +3433,7 @@ export default function Room3Experience() {
                         </div>
                         <div>
                           <b>2. Sample Standard Deviation (s):</b>
-                          <div style={{ fontFamily: 'monospace', color: '#38bdf8', margin: '4px 0' }}>
+                          <div style={{ fontFamily: 'monospace', color: '#fef08a', margin: '4px 0' }}>
                             s = √[ Σ(Ri - Rmean)² / (5 - 1) ] = {circuitMetrics.stdDev.toFixed(3)} Ω
                           </div>
                           <small style={{ color: '#94a3b8' }}>
@@ -3463,7 +3463,7 @@ export default function Room3Experience() {
                   )}
 
                   {stationId === 'optics' && (
-                    <div className="stats-breakdown-card" style={{ padding: '14px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px', marginBottom: '16px' }}>
+                    <div className="stats-breakdown-card" style={{ padding: '14px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px', marginBottom: '16px' }}>
                       <h5 style={{ margin: '0 0 10px', color: '#f8fafc' }}>Optics Statistical Quantification:</h5>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
                         <div>
@@ -3483,8 +3483,8 @@ export default function Room3Experience() {
                   )}
 
                   {/* 3. Least-Squares Linear Regression Plot & Substituted Formula */}
-                  <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid #334155', paddingBottom: '6px' }}>
-                    <h5 style={{ margin: 0, color: '#38bdf8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
+                    <h5 style={{ margin: 0, color: '#fef08a', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
                       Section C: Least-Squares Linear Regression Analysis (Slope = Req)
                     </h5>
                   </div>
@@ -3492,7 +3492,7 @@ export default function Room3Experience() {
                   <Room3Graph stationId={stationId} trials={stationProgress.trials} accentColor={station.accent} />
 
                   {regression && stationId === 'circuits' && (
-                    <div className="regression-substitution-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px', marginTop: '12px' }}>
+                    <div className="regression-substitution-card" style={{ padding: '12px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px', marginTop: '12px' }}>
                       <b>Step-by-Step Least-Squares Substitution (V vs. I):</b>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', margin: '8px 0', fontSize: '11px', fontFamily: 'monospace' }}>
                         <div>Σ I = {regression.sumX.toFixed(5)} A</div>
@@ -3500,7 +3500,7 @@ export default function Room3Experience() {
                         <div>Σ (I·V) = {regression.sumXY.toFixed(4)} W</div>
                         <div>Σ (I²) = {regression.sumX2.toFixed(6)} A²</div>
                       </div>
-                      <div style={{ fontFamily: 'monospace', color: '#38bdf8', fontSize: '13px' }}>
+                      <div style={{ fontFamily: 'monospace', color: '#fef08a', fontSize: '13px' }}>
                         Slope m = [ N·Σ(I·V) - (ΣI)(ΣV) ] / [ N·Σ(I²) - (ΣI)² ]<br />
                         m = [ 5·({regression.sumXY.toFixed(4)}) - ({regression.sumX.toFixed(4)})·({regression.sumY.toFixed(2)}) ] / [ 5·({regression.sumX2.toFixed(6)}) - ({regression.sumX.toFixed(4)})² ] = <b>{regression.slope.toFixed(2)} Ω</b>
                       </div>

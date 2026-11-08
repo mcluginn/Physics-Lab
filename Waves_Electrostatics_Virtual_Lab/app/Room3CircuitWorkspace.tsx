@@ -184,7 +184,7 @@ export function Room3CircuitWorkspace({
       flexDirection: 'column',
       width: '100%',
       height: '100%',
-      background: '#040711',
+      background: '#1a0b10',
       color: '#f8fafc',
       fontFamily: 'system-ui, -apple-system, sans-serif',
       position: 'relative',
@@ -196,16 +196,16 @@ export function Room3CircuitWorkspace({
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '8px 16px',
-        background: '#0a0f1d',
-        borderBottom: '1px solid #1e293b',
+        background: 'linear-gradient(180deg, #35121d 0%, #230c14 100%)',
+        borderBottom: '1px solid rgba(212, 175, 55, 0.4)',
         zIndex: 20,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '16px', color: '#38bdf8' }}>⚡</span>
+          <span style={{ fontSize: '16px', color: '#fef08a' }}>⚡</span>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <b style={{ fontSize: '13px', letterSpacing: '0.5px' }}>BREADBOARD 3D VIRTUAL CIRCUIT LABORATORY</b>
-              <span style={{ fontSize: '10px', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+              <span style={{ fontSize: '10px', background: 'rgba(212, 175, 55, 0.2)', color: '#fef08a', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(212, 175, 55, 0.5)' }}>
                 DCACLab Architecture
               </span>
             </div>
@@ -217,12 +217,12 @@ export function Room3CircuitWorkspace({
 
         {/* View Toggle & Back to 3D */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ display: 'flex', background: '#020617', padding: '3px', borderRadius: '6px', border: '1px solid #334155' }}>
+          <div style={{ display: 'flex', background: '#15060b', padding: '3px', borderRadius: '6px', border: '1px solid rgba(212, 175, 55, 0.35)' }}>
             <button
               type="button"
               style={{
-                background: viewMode === 'breadboard' ? '#0284c7' : 'transparent',
-                color: '#fff',
+                background: viewMode === 'breadboard' ? '#d4af37' : 'transparent',
+                color: viewMode === 'breadboard' ? '#1a0b10' : '#fef08a',
                 border: 'none',
                 padding: '4px 10px',
                 borderRadius: '4px',
@@ -237,8 +237,8 @@ export function Room3CircuitWorkspace({
             <button
               type="button"
               style={{
-                background: viewMode === 'schematic' ? '#0284c7' : 'transparent',
-                color: '#fff',
+                background: viewMode === 'schematic' ? '#d4af37' : 'transparent',
+                color: viewMode === 'schematic' ? '#1a0b10' : '#fef08a',
                 border: 'none',
                 padding: '4px 10px',
                 borderRadius: '4px',
@@ -255,9 +255,9 @@ export function Room3CircuitWorkspace({
           <button
             type="button"
             style={{
-              background: '#0f172a',
-              color: '#38bdf8',
-              border: '1px solid #0284c7',
+              background: '#35121d',
+              color: '#fef08a',
+              border: '1px solid #d4af37',
               padding: '6px 12px',
               borderRadius: '6px',
               fontSize: '11px',
@@ -282,7 +282,7 @@ export function Room3CircuitWorkspace({
           display: 'flex',
           flexDirection: 'column',
           position: 'relative',
-          background: '#070b16',
+          background: '#1a080f',
           overflow: 'auto',
           padding: '12px',
         }}>
@@ -292,10 +292,10 @@ export function Room3CircuitWorkspace({
             alignItems: 'center',
             justifyContent: 'space-between',
             marginBottom: '10px',
-            background: 'rgba(15, 23, 42, 0.75)',
+            background: 'rgba(53, 18, 29, 0.85)',
             padding: '6px 12px',
             borderRadius: '8px',
-            border: '1px solid #1e293b',
+            border: '1px solid rgba(212, 175, 55, 0.4)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>CIRCUIT ARRANGEMENT:</span>
@@ -303,8 +303,8 @@ export function Room3CircuitWorkspace({
                 type="button"
                 className={`quick-chip ${circuits.topology === 'series' ? 'active' : ''}`}
                 style={{
-                  background: circuits.topology === 'series' ? '#0284c7' : '#1e293b',
-                  color: '#fff',
+                  background: circuits.topology === 'series' ? '#d4af37' : '#35121d',
+                  color: circuits.topology === 'series' ? '#1a0b10' : '#fef08a',
                   border: 'none',
                   padding: '4px 8px',
                   borderRadius: '4px',
@@ -319,8 +319,8 @@ export function Room3CircuitWorkspace({
                 type="button"
                 className={`quick-chip ${circuits.topology === 'parallel' ? 'active' : ''}`}
                 style={{
-                  background: circuits.topology === 'parallel' ? '#0284c7' : '#1e293b',
-                  color: '#fff',
+                  background: circuits.topology === 'parallel' ? '#d4af37' : '#35121d',
+                  color: circuits.topology === 'parallel' ? '#1a0b10' : '#fef08a',
                   border: 'none',
                   padding: '4px 8px',
                   borderRadius: '4px',
@@ -367,7 +367,7 @@ export function Room3CircuitWorkspace({
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '11px', color: '#94a3b8' }}>Mode:</span>
-              <span style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 600 }}>GUIDED EXPERIMENT</span>
+              <span style={{ fontSize: '11px', color: '#fef08a', fontWeight: 600 }}>GUIDED EXPERIMENT</span>
             </div>
           </div>
 
@@ -378,9 +378,9 @@ export function Room3CircuitWorkspace({
             alignItems: 'center',
             justifyContent: 'center',
             position: 'relative',
-            background: 'radial-gradient(circle at 50% 50%, #0d1527 0%, #050811 100%)',
+            background: 'radial-gradient(circle at 50% 50%, #2e0f19 0%, #120509 100%)',
             borderRadius: '12px',
-            border: '1px solid #1e293b',
+            border: '1px solid rgba(212, 175, 55, 0.4)',
             boxShadow: 'inset 0 0 40px rgba(0,0,0,0.6)',
             padding: '10px',
             minHeight: '440px',
@@ -484,8 +484,8 @@ export function Room3CircuitWorkspace({
                   cx="178"
                   cy="108"
                   r="12"
-                  fill="#38bdf8"
-                  stroke="#0284c7"
+                  fill="#d4af37"
+                  stroke="#b58b45"
                   strokeWidth="2"
                   style={{ cursor: 'pointer' }}
                   onClick={() => onUpdateCircuits({ vs: circuits.vs === 24.0 ? 12.0 : 24.0 })}
@@ -607,8 +607,8 @@ export function Room3CircuitWorkspace({
                     R1: 100 Ω (VR1 = {vR1.toFixed(2)}V)
                   </text>
                   {/* Snap Terminals */}
-                  <circle cx="-30" cy="0" r="6" fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
-                  <circle cx="150" cy="0" r="6" fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                  <circle cx="-30" cy="0" r="6" fill="#d4af37" stroke="#b58b45" strokeWidth="2" />
+                  <circle cx="150" cy="0" r="6" fill="#d4af37" stroke="#b58b45" strokeWidth="2" />
                   <text x="-30" y="20" fill="#0f172a" fontSize="9" fontFamily="monospace" fontWeight="bold" textAnchor="middle">Node A</text>
                   <text x="150" y="20" fill="#0f172a" fontSize="9" fontFamily="monospace" fontWeight="bold" textAnchor="middle">Node B</text>
                 </g>
@@ -661,8 +661,8 @@ export function Room3CircuitWorkspace({
                   <text x="60" y="-18" fill="#0f172a" fontSize="11" fontFamily="monospace" fontWeight="bold" textAnchor="middle">
                     R2: 220 Ω (VR2 = {vR2.toFixed(2)}V)
                   </text>
-                  <circle cx="-30" cy="0" r="6" fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
-                  <circle cx="150" cy="0" r="6" fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                  <circle cx="-30" cy="0" r="6" fill="#d4af37" stroke="#b58b45" strokeWidth="2" />
+                  <circle cx="150" cy="0" r="6" fill="#d4af37" stroke="#b58b45" strokeWidth="2" />
                   <text x="-30" y="20" fill="#0f172a" fontSize="9" fontFamily="monospace" fontWeight="bold" textAnchor="middle">Node B</text>
                   <text x="150" y="20" fill="#0f172a" fontSize="9" fontFamily="monospace" fontWeight="bold" textAnchor="middle">Node C</text>
                 </g>
@@ -680,8 +680,8 @@ export function Room3CircuitWorkspace({
                   <text x="60" y="-18" fill="#0f172a" fontSize="11" fontFamily="monospace" fontWeight="bold" textAnchor="middle">
                     R3: 330 Ω (VR3 = {vR3.toFixed(2)}V)
                   </text>
-                  <circle cx="-30" cy="0" r="6" fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
-                  <circle cx="150" cy="0" r="6" fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                  <circle cx="-30" cy="0" r="6" fill="#d4af37" stroke="#b58b45" strokeWidth="2" />
+                  <circle cx="150" cy="0" r="6" fill="#d4af37" stroke="#b58b45" strokeWidth="2" />
                   <text x="-30" y="20" fill="#0f172a" fontSize="9" fontFamily="monospace" fontWeight="bold" textAnchor="middle">Node C</text>
                   <text x="150" y="20" fill="#0f172a" fontSize="9" fontFamily="monospace" fontWeight="bold" textAnchor="middle">Node D (GND)</text>
                 </g>
@@ -739,7 +739,7 @@ export function Room3CircuitWorkspace({
                     width="46"
                     height="24"
                     rx="4"
-                    fill={dmmMode === 'v_dc' ? '#0284c7' : '#1e293b'}
+                    fill={dmmMode === 'v_dc' ? '#d4af37' : '#35121d'}
                     stroke="#334155"
                     strokeWidth="1"
                     style={{ cursor: 'pointer' }}
@@ -753,7 +753,7 @@ export function Room3CircuitWorkspace({
                     width="46"
                     height="24"
                     rx="4"
-                    fill={dmmMode === 'a_dc' ? '#0284c7' : '#1e293b'}
+                    fill={dmmMode === 'a_dc' ? '#d4af37' : '#35121d'}
                     stroke="#334155"
                     strokeWidth="1"
                     style={{ cursor: 'pointer' }}
@@ -767,7 +767,7 @@ export function Room3CircuitWorkspace({
                     width="46"
                     height="24"
                     rx="4"
-                    fill={dmmMode === 'ohm' ? '#0284c7' : '#1e293b'}
+                    fill={dmmMode === 'ohm' ? '#d4af37' : '#35121d'}
                     stroke="#334155"
                     strokeWidth="1"
                     style={{ cursor: 'pointer' }}
@@ -781,7 +781,7 @@ export function Room3CircuitWorkspace({
                     width="46"
                     height="24"
                     rx="4"
-                    fill={dmmMode === 'cont' ? '#0284c7' : '#1e293b'}
+                    fill={dmmMode === 'cont' ? '#d4af37' : '#35121d'}
                     stroke="#334155"
                     strokeWidth="1"
                     style={{ cursor: 'pointer' }}
@@ -901,8 +901,8 @@ export function Room3CircuitWorkspace({
         {/* ------------------------------------------------------------- */}
         <aside style={{
           width: '320px',
-          background: '#0a0f1d',
-          borderLeft: '1px solid #1e293b',
+          background: 'linear-gradient(180deg, #35121d 0%, #230c14 100%)',
+          borderLeft: '1px solid rgba(212, 175, 55, 0.4)',
           display: 'flex',
           flexDirection: 'column',
           padding: '14px',
@@ -910,9 +910,9 @@ export function Room3CircuitWorkspace({
           gap: '12px',
         }}>
           {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '8px' }}>
             <div>
-              <b style={{ fontSize: '12px', letterSpacing: '0.5px', color: '#38bdf8' }}>RESULTS (REAL TIME)</b>
+              <b style={{ fontSize: '12px', letterSpacing: '0.5px', color: '#fef08a' }}>RESULTS (REAL TIME)</b>
               <div style={{ fontSize: '10px', color: '#94a3b8' }}>Live Kirchhoff & Ohm Analysis</div>
             </div>
             <span style={{ fontSize: '10px', padding: '2px 6px', background: circuits.powerOn && knifeSwitchClosed ? '#14532d' : '#7f1d1d', color: '#fff', borderRadius: '4px' }}>
@@ -921,19 +921,19 @@ export function Room3CircuitWorkspace({
           </div>
 
           {/* Supply & Complete Circuit Summary */}
-          <div style={{ background: '#020617', padding: '10px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+          <div style={{ background: '#15060b', padding: '10px', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
             <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>DC SUPPLY SOURCE</div>
             <div style={{ fontSize: '20px', color: '#22c55e', fontWeight: 'bold', fontFamily: 'monospace' }}>
               {vs.toFixed(1)} V
             </div>
 
-            <div style={{ height: '1px', background: '#1e293b', margin: '8px 0' }} />
+            <div style={{ height: '1px', background: 'rgba(212, 175, 55, 0.25)', margin: '8px 0' }} />
 
             <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>COMPLETE CIRCUIT TOTALS</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontFamily: 'monospace' }}>
               <div>
                 <small style={{ color: '#64748b', fontSize: '10px' }}>I total</small>
-                <div style={{ color: '#38bdf8', fontSize: '13px', fontWeight: 'bold' }}>{totalCurrentMa.toFixed(2)} mA</div>
+                <div style={{ color: '#fef08a', fontSize: '13px', fontWeight: 'bold' }}>{totalCurrentMa.toFixed(2)} mA</div>
               </div>
               <div>
                 <small style={{ color: '#64748b', fontSize: '10px' }}>P total</small>
@@ -953,12 +953,12 @@ export function Room3CircuitWorkspace({
           </div>
 
           {/* Node Potentials */}
-          <div style={{ background: '#020617', padding: '10px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+          <div style={{ background: '#15060b', padding: '10px', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
             <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '6px', fontWeight: 600 }}>NODE POTENTIALS (vs GND)</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontFamily: 'monospace', fontSize: '11px' }}>
               <div style={{ color: '#ef4444' }}>VCC: {vVcc.toFixed(3)} V</div>
               <div style={{ color: '#64748b' }}>GND: 0.000 V</div>
-              <div style={{ color: '#38bdf8' }}>Node A: {vNodeA.toFixed(3)} V</div>
+              <div style={{ color: '#fef08a' }}>Node A: {vNodeA.toFixed(3)} V</div>
               <div style={{ color: '#f59e0b' }}>Node B: {vNodeB.toFixed(3)} V</div>
               <div style={{ color: '#a855f7' }}>Node C: {vNodeC.toFixed(3)} V</div>
               <div style={{ color: '#64748b' }}>Node D: 0.000 V</div>
@@ -966,29 +966,29 @@ export function Room3CircuitWorkspace({
           </div>
 
           {/* Per-Component Measurements */}
-          <div style={{ background: '#020617', padding: '10px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+          <div style={{ background: '#15060b', padding: '10px', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
             <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '6px', fontWeight: 600 }}>BRANCH READINGS</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontFamily: 'monospace', fontSize: '11px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed #1e293b', paddingBottom: '3px' }}>
                 <span style={{ color: '#e2e8f0' }}>R1 (100 Ω):</span>
-                <span style={{ color: '#38bdf8' }}>V = {vR1.toFixed(2)} V</span>
+                <span style={{ color: '#fef08a' }}>V = {vR1.toFixed(2)} V</span>
                 <span style={{ color: '#f59e0b' }}>I = {iR1Ma.toFixed(1)} mA</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed #1e293b', paddingBottom: '3px' }}>
                 <span style={{ color: '#e2e8f0' }}>R2 (220 Ω):</span>
-                <span style={{ color: '#38bdf8' }}>V = {vR2.toFixed(2)} V</span>
+                <span style={{ color: '#fef08a' }}>V = {vR2.toFixed(2)} V</span>
                 <span style={{ color: '#f59e0b' }}>I = {iR2Ma.toFixed(1)} mA</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#e2e8f0' }}>R3 (330 Ω):</span>
-                <span style={{ color: '#38bdf8' }}>V = {vR3.toFixed(2)} V</span>
+                <span style={{ color: '#fef08a' }}>V = {vR3.toFixed(2)} V</span>
                 <span style={{ color: '#f59e0b' }}>I = {iR3Ma.toFixed(1)} mA</span>
               </div>
             </div>
           </div>
 
           {/* Live Multimeter Readout Card */}
-          <div style={{ background: '#020617', padding: '10px', borderRadius: '8px', border: '1px solid #eab308' }}>
+          <div style={{ background: '#15060b', padding: '10px', borderRadius: '8px', border: '1px solid #eab308' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
               <span style={{ fontSize: '11px', color: '#eab308', fontWeight: 'bold' }}>FLUKE 87V DMM READOUT</span>
               <span style={{ fontSize: '10px', color: '#94a3b8' }}>JACK: {dmmJack.toUpperCase()}</span>
@@ -1018,8 +1018,8 @@ export function Room3CircuitWorkspace({
                 style={{
                   marginTop: '8px',
                   width: '100%',
-                  background: '#0284c7',
-                  color: '#fff',
+                  background: 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)',
+                  color: '#1a0b10',
                   border: 'none',
                   padding: '6px',
                   borderRadius: '4px',

@@ -6250,3 +6250,557 @@ select:focus, option:focus, option:checked {
 
 
 
+
+
+/* ================================================================== */
+/* ROOM 03 — ROYAL MAROON & ANTIQUE GOLD COMPLETE UI SUITE            */
+/* ================================================================== */
+.room3-shell {
+  --station-accent: #d4af37 !important;
+  --line: rgba(212, 175, 55, 0.35) !important;
+}
+
+/* 1. Topbar & Brand */
+.room3-shell .topbar {
+  background: linear-gradient(180deg, rgba(53, 18, 29, 0.98) 0%, rgba(35, 12, 20, 0.96) 100%) !important;
+  border-bottom: 1.5px solid rgba(212, 175, 55, 0.45) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important;
+}
+
+.room3-shell .brand-mark {
+  color: #d4af37 !important;
+  filter: drop-shadow(0 0 8px rgba(212, 175, 55, 0.8)) !important;
+}
+
+.room3-shell .brand-lockup strong {
+  color: #fffbeb !important;
+  font-family: Georgia, 'Times New Roman', serif !important;
+}
+
+.room3-shell .brand-lockup span {
+  color: #d4af37 !important;
+}
+
+.room3-shell .room-link {
+  border: 1px solid rgba(212, 175, 55, 0.4) !important;
+  background: rgba(88, 28, 44, 0.4) !important;
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .room-link:hover {
+  background: rgba(120, 35, 55, 0.7) !important;
+  border-color: #d4af37 !important;
+  color: #fffbeb !important;
+}
+
+.room3-shell .station-chip {
+  background: rgba(45, 15, 25, 0.85) !important;
+  border: 1px solid rgba(212, 175, 55, 0.3) !important;
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .station-chip:hover {
+  background: rgba(88, 28, 44, 0.9) !important;
+  border-color: rgba(212, 175, 55, 0.7) !important;
+  color: #fffbeb !important;
+}
+
+.room3-shell .station-chip.active {
+  background: linear-gradient(135deg, rgba(88, 28, 44, 0.95) 0%, rgba(53, 18, 29, 0.98) 100%) !important;
+  border: 1.5px solid #d4af37 !important;
+  color: #fef08a !important;
+  box-shadow: 0 0 16px rgba(212, 175, 55, 0.45) !important;
+}
+
+.room3-shell .station-chip-number {
+  background: rgba(212, 175, 55, 0.2) !important;
+  border: 1px solid rgba(212, 175, 55, 0.5) !important;
+  color: #fef08a !important;
+}
+
+/* 2. Walk Mode Reticle & Prompts */
+.room3-shell .enter-walk-mode {
+  background: radial-gradient(ellipse at top, rgba(88, 28, 44, 0.96) 0%, rgba(53, 18, 29, 0.98) 100%) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.75) !important;
+  color: #fffbeb !important;
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.7), 0 0 25px rgba(212, 175, 55, 0.35) !important;
+}
+
+.room3-shell .enter-walk-mode b {
+  color: #fef08a !important;
+  letter-spacing: 0.12em !important;
+}
+
+.room3-shell .enter-walk-mode span {
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .room3-dock-btn {
+  background: rgba(53, 18, 29, 0.9) !important;
+  border: 1px solid rgba(212, 175, 55, 0.5) !important;
+  color: #fffbeb !important;
+}
+
+.room3-shell .room3-dock-btn:hover {
+  background: rgba(88, 28, 44, 0.95) !important;
+  border-color: #d4af37 !important;
+  box-shadow: 0 0 14px rgba(212, 175, 55, 0.4) !important;
+}
+
+/* 3. Equipment Inspector */
+.room3-shell .equipment-inspector {
+  background: radial-gradient(ellipse at top, rgba(88, 28, 44, 0.96) 0%, rgba(53, 18, 29, 0.98) 100%) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.65) !important;
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.75), 0 0 25px rgba(212, 175, 55, 0.3) !important;
+}
+
+.room3-shell .inspector-cat {
+  color: #d4af37 !important;
+  font-weight: 800 !important;
+}
+
+.room3-shell .inspector-station {
+  color: #fef08a !important;
+  background: rgba(212, 175, 55, 0.22) !important;
+  border: 1px solid rgba(212, 175, 55, 0.5) !important;
+}
+
+.room3-shell .inspector-title {
+  color: #fffbeb !important;
+  font-family: Georgia, 'Times New Roman', serif !important;
+}
+
+.room3-shell .inspector-desc {
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .inspector-action-bar {
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.9) 0%, rgba(181, 139, 69, 0.95) 100%) !important;
+  color: #1a0b10 !important;
+  border: 1px solid #fef08a !important;
+  font-weight: 800 !important;
+}
+
+/* 4. Close-Up HUD Banner */
+.room3-shell .closeup-hud-banner {
+  background: radial-gradient(ellipse at top, rgba(88, 28, 44, 0.96) 0%, rgba(53, 18, 29, 0.98) 100%) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.65) !important;
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.7), 0 0 25px rgba(212, 175, 55, 0.3) !important;
+}
+
+.room3-shell .closeup-hud-badge {
+  color: #1a0b10 !important;
+  background: linear-gradient(135deg, #fef08a 0%, #d4af37 100%) !important;
+  border: 1px solid #fef08a !important;
+  font-weight: 800 !important;
+}
+
+.room3-shell .cam-focus-btn {
+  background: rgba(53, 18, 29, 0.85) !important;
+  border: 1px solid rgba(212, 175, 55, 0.35) !important;
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .cam-focus-btn:hover {
+  border-color: #d4af37 !important;
+  color: #fffbeb !important;
+  background: rgba(88, 28, 44, 0.9) !important;
+}
+
+.room3-shell .cam-focus-btn.active {
+  background: linear-gradient(135deg, #d4af37 0%, #b58b45 100%) !important;
+  border-color: #fef08a !important;
+  color: #1a0b10 !important;
+  box-shadow: 0 0 14px rgba(212, 175, 55, 0.5) !important;
+}
+
+.room3-shell .closeup-exit-button {
+  background: rgba(88, 28, 44, 0.7) !important;
+  border: 1px solid rgba(212, 175, 55, 0.5) !important;
+  color: #fef08a !important;
+}
+
+.room3-shell .closeup-exit-button:hover {
+  background: rgba(120, 30, 50, 0.9) !important;
+  border-color: #fef08a !important;
+}
+
+.room3-shell .closeup-hover-pill {
+  background: rgba(53, 18, 29, 0.95) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.6) !important;
+  color: #fffbeb !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 15px rgba(212, 175, 55, 0.25) !important;
+}
+
+/* 5. Objective & Control Panels */
+.room3-shell .objective-panel,
+.room3-shell .control-panel {
+  background: radial-gradient(ellipse at top left, rgba(58, 19, 31, 0.95) 0%, rgba(40, 13, 21, 0.96) 70%, rgba(26, 9, 14, 0.98) 100%) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.45) !important;
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.75), 0 0 25px rgba(212, 175, 55, 0.2) !important;
+}
+
+.room3-shell .objective-panel .eyebrow {
+  color: #d4af37 !important;
+  font-weight: 800 !important;
+}
+
+.room3-shell .objective-panel .live-dot {
+  background: #d4af37 !important;
+  box-shadow: 0 0 8px #d4af37 !important;
+}
+
+.room3-shell .objective-panel h1 {
+  color: #fffbeb !important;
+  font-family: Georgia, 'Times New Roman', serif !important;
+}
+
+.room3-shell .objective-panel p {
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .station-asset {
+  border: 1.5px solid rgba(212, 175, 55, 0.45) !important;
+}
+
+.room3-shell .station-asset figcaption {
+  background: rgba(35, 12, 20, 0.9) !important;
+  border-top: 1px solid rgba(212, 175, 55, 0.3) !important;
+}
+
+.room3-shell .station-asset figcaption span {
+  color: #d4af37 !important;
+}
+
+.room3-shell .station-asset figcaption b {
+  color: #fffbeb !important;
+}
+
+.room3-shell .prompt-line {
+  background: rgba(88, 28, 44, 0.45) !important;
+  border: 1px solid rgba(212, 175, 55, 0.5) !important;
+  color: #fef08a !important;
+}
+
+.room3-shell .prompt-line:hover {
+  background: rgba(100, 32, 50, 0.7) !important;
+  border-color: #fef08a !important;
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.35) !important;
+}
+
+.room3-shell .guidance-line {
+  background: rgba(88, 28, 44, 0.35) !important;
+  border-left: 3px solid #d4af37 !important;
+  color: #fef08a !important;
+}
+
+.room3-shell .progress-track {
+  background: rgba(35, 12, 20, 0.8) !important;
+}
+
+.room3-shell .progress-track span {
+  background: linear-gradient(90deg, #d4af37 0%, #fef08a 100%) !important;
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.7) !important;
+}
+
+/* 6. Guided Curriculum */
+.room3-shell .guided-curriculum-header {
+  background: linear-gradient(135deg, rgba(88, 28, 44, 0.8) 0%, rgba(53, 18, 29, 0.95) 100%) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.5) !important;
+}
+
+.room3-shell .guided-curriculum-header h3 {
+  color: #fef08a !important;
+  font-family: Georgia, 'Times New Roman', serif !important;
+}
+
+.room3-shell .guided-curriculum-header p {
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .guided-step-dot {
+  background: rgba(45, 15, 25, 0.8) !important;
+  border: 1px solid rgba(212, 175, 55, 0.3) !important;
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .guided-step-dot.active {
+  background: linear-gradient(135deg, #d4af37 0%, #b58b45 100%) !important;
+  border-color: #fef08a !important;
+  color: #1a0b10 !important;
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.6) !important;
+  font-weight: 800 !important;
+}
+
+.room3-shell .guided-step-dot.completed {
+  background: rgba(16, 185, 129, 0.25) !important;
+  border-color: #10b981 !important;
+  color: #34d399 !important;
+}
+
+.room3-shell .guided-instruction-card {
+  background: rgba(40, 14, 22, 0.94) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.45) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+}
+
+.room3-shell .guided-step-title-row h4 {
+  color: #fffbeb !important;
+}
+
+.room3-shell .step-points-pill {
+  background: rgba(212, 175, 55, 0.22) !important;
+  border: 1px solid rgba(212, 175, 55, 0.55) !important;
+  color: #fef08a !important;
+}
+
+.room3-shell .guided-action-box {
+  background: rgba(88, 28, 44, 0.45) !important;
+  border-left: 3px solid #d4af37 !important;
+  color: #fffbeb !important;
+}
+
+.room3-shell .guided-action-box b {
+  color: #fef08a !important;
+}
+
+.room3-shell .guided-why-box {
+  background: rgba(53, 18, 29, 0.5) !important;
+  border-left: 3px solid #b58b45 !important;
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .guided-why-box b {
+  color: #d4af37 !important;
+}
+
+.room3-shell .guided-validation-badge.in-progress {
+  background: rgba(88, 28, 44, 0.5) !important;
+  border: 1px solid rgba(212, 175, 55, 0.6) !important;
+  color: #fef08a !important;
+}
+
+/* 7. Controls & Chips */
+.room3-shell .dmm-btn {
+  background: rgba(53, 18, 29, 0.85) !important;
+  border: 1px solid rgba(212, 175, 55, 0.35) !important;
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .dmm-btn:hover {
+  background: rgba(88, 28, 44, 0.9) !important;
+  border-color: #d4af37 !important;
+  color: #fffbeb !important;
+}
+
+.room3-shell .dmm-btn.active {
+  background: linear-gradient(135deg, #d4af37 0%, #b58b45 100%) !important;
+  border-color: #fef08a !important;
+  color: #1a0b10 !important;
+  font-weight: 800 !important;
+}
+
+.room3-shell .probe-chip-btn {
+  background: rgba(53, 18, 29, 0.8) !important;
+  border: 1px solid rgba(212, 175, 55, 0.3) !important;
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .probe-chip-btn:hover {
+  background: rgba(88, 28, 44, 0.85) !important;
+  border-color: #d4af37 !important;
+}
+
+.room3-shell .probe-chip-btn.active {
+  background: linear-gradient(135deg, #d4af37 0%, #b58b45 100%) !important;
+  border-color: #fef08a !important;
+  color: #1a0b10 !important;
+  font-weight: 800 !important;
+}
+
+.room3-shell .segment-control {
+  background: #230c14 !important;
+  border: 1px solid rgba(212, 175, 55, 0.35) !important;
+}
+
+.room3-shell .segment-control button {
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .segment-control button.active {
+  background: linear-gradient(135deg, #d4af37 0%, #b58b45 100%) !important;
+  color: #1a0b10 !important;
+  font-weight: 800 !important;
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.4) !important;
+}
+
+/* 8. Laboratory Notebook & Modal */
+.room3-shell .notebook-modal {
+  background: radial-gradient(ellipse at top, #451624 0%, #2b0e17 60%, #1a080f 100%) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.65) !important;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.8), 0 0 50px rgba(212, 175, 55, 0.3) !important;
+}
+
+.room3-shell .notebook-header {
+  background: linear-gradient(135deg, #581c2c 0%, #35121d 100%) !important;
+  border-bottom: 1.5px solid rgba(212, 175, 55, 0.45) !important;
+}
+
+.room3-shell .notebook-header span {
+  color: #d4af37 !important;
+  font-weight: 800 !important;
+}
+
+.room3-shell .notebook-header h2 {
+  color: #fffbeb !important;
+  font-family: Georgia, 'Times New Roman', serif !important;
+}
+
+.room3-shell .notebook-score b {
+  color: #fef08a !important;
+}
+
+.room3-shell .close-button {
+  background: rgba(53, 18, 29, 0.8) !important;
+  border: 1px solid rgba(212, 175, 55, 0.45) !important;
+  color: #fef08a !important;
+}
+
+.room3-shell .close-button:hover {
+  background: rgba(88, 28, 44, 0.95) !important;
+  border-color: #fef08a !important;
+}
+
+.room3-shell .student-strip {
+  background: rgba(35, 12, 20, 0.95) !important;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.35) !important;
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .student-strip b {
+  color: #fef08a !important;
+}
+
+.room3-shell .step-rail {
+  background: #230c14 !important;
+  border-right: 1px solid rgba(212, 175, 55, 0.35) !important;
+}
+
+.room3-shell .step-rail button {
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .step-rail button > span {
+  border: 1px solid rgba(212, 175, 55, 0.35) !important;
+  color: #fef08a !important;
+  background: rgba(53, 18, 29, 0.6) !important;
+}
+
+.room3-shell .step-rail button.active {
+  background: rgba(88, 28, 44, 0.6) !important;
+  border-color: #d4af37 !important;
+  color: #fffbeb !important;
+}
+
+.room3-shell .step-rail button.active > span {
+  background: #d4af37 !important;
+  border-color: #fef08a !important;
+  color: #1a0b10 !important;
+  font-weight: 800 !important;
+}
+
+.room3-shell .trial-table {
+  border-collapse: collapse !important;
+  width: 100% !important;
+}
+
+.room3-shell .trial-table th {
+  background: #451624 !important;
+  color: #fef08a !important;
+  border: 1px solid rgba(212, 175, 55, 0.4) !important;
+  font-weight: 700 !important;
+  padding: 8px 10px !important;
+}
+
+.room3-shell .trial-table td {
+  background: rgba(35, 12, 20, 0.75) !important;
+  border: 1px solid rgba(212, 175, 55, 0.25) !important;
+  color: #fffbeb !important;
+  padding: 7px 10px !important;
+}
+
+.room3-shell .trial-table tr:hover td {
+  background: rgba(88, 28, 44, 0.7) !important;
+}
+
+.room3-shell .btn-retry {
+  background: linear-gradient(135deg, #d4af37 0%, #b58b45 100%) !important;
+  border-color: #fef08a !important;
+  color: #1a0b10 !important;
+  font-weight: 800 !important;
+}
+
+.room3-shell .btn-retry:hover {
+  background: linear-gradient(135deg, #fef08a 0%, #d4af37 100%) !important;
+  box-shadow: 0 0 14px rgba(212, 175, 55, 0.6) !important;
+}
+
+/* 9. Regression Graph Card */
+.room3-shell .lab-graph-card {
+  background: rgba(45, 15, 25, 0.95) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.45) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
+}
+
+.room3-shell .graph-badge {
+  color: #d4af37 !important;
+}
+
+.room3-shell .graph-title {
+  color: #fffbeb !important;
+  font-family: Georgia, 'Times New Roman', serif !important;
+}
+
+.room3-shell .metric-pill {
+  background: rgba(53, 18, 29, 0.8) !important;
+  border: 1px solid rgba(212, 175, 55, 0.35) !important;
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .metric-pill.accent {
+  background: rgba(88, 28, 44, 0.65) !important;
+  border-color: rgba(212, 175, 55, 0.65) !important;
+  color: #fef08a !important;
+}
+
+.room3-shell .regression-svg {
+  background: rgba(26, 9, 14, 0.8) !important;
+  border: 1px solid rgba(212, 175, 55, 0.25) !important;
+}
+
+.room3-shell .graph-tooltip {
+  background: rgba(53, 18, 29, 0.96) !important;
+  border: 1.5px solid #d4af37 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 15px rgba(212, 175, 55, 0.3) !important;
+  color: #fffbeb !important;
+}
+
+/* 10. Mobile Navigation Toolbar */
+.room3-shell .mobile-tab-btn {
+  background: rgba(45, 15, 25, 0.85) !important;
+  border: 1px solid rgba(212, 175, 55, 0.3) !important;
+  color: #e9dfc9 !important;
+}
+
+.room3-shell .mobile-tab-btn.active {
+  background: linear-gradient(135deg, #d4af37 0%, #b58b45 100%) !important;
+  color: #1a0b10 !important;
+  border-color: #fef08a !important;
+  font-weight: 800 !important;
+}
+
+.room3-shell .mobile-tab-btn.notebook {
+  background: rgba(88, 28, 44, 0.9) !important;
+  border-color: #d4af37 !important;
+  color: #fef08a !important;
+}
