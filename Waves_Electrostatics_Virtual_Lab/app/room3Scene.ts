@@ -69,6 +69,7 @@ export type Room3SceneCallbacks = {
   onCameraModeChange?: (mode: 'walk' | 'closeup') => void;
   onDmmReadingChange?: (reading: MultimeterReading) => void;
   onCloseupHover?: (text: string | null) => void;
+  onStationProximityChange?: (station: Room3StationId | null) => void;
 };
 
 export const ROOM3_EQUIPMENT_DESCRIPTIONS: Record<string, string> = {
@@ -134,15 +135,17 @@ export function createRoom3Scene(
 ): Room3SceneApi {
   // 1. Scene, Camera, Renderer Setup
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0c1524);
-  scene.fog = new THREE.Fog(0x0c1524, 25, 75);
+  // Warm Deep Maroon / Burgundy Atmosphere matching Room 04
+  scene.background = new THREE.Color(0x180a0f);
+  scene.fog = new THREE.Fog(0x180a0f, 20, 65);
 
   const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 70);
   let activeStation: Room3StationId = 'circuits';
   const eyeHeight = 1.70;
-  const playerPosition = new THREE.Vector3(STATION_X.circuits, eyeHeight, 4.55);
+  // Student initially stands on the central inlaid brass compass rose medallion, facing north toward the workbenches
+  const playerPosition = new THREE.Vector3(0, eyeHeight, 3.8);
   let yaw = 0;
-  let pitch = -0.08;
+  let pitch = -0.06;
   const movement = { forward: false, backward: false, left: false, right: false };
   const analogMovement = new THREE.Vector2();
 
@@ -155,7 +158,7 @@ export function createRoom3Scene(
   let leftExitLeaf: THREE.Mesh | null = null;
   let rightExitLeaf: THREE.Mesh | null = null;
 
-  // Character Controller - First Person default for clean apparatus inspection, matching Room 02
+  // Character Controller - Default Third-Person Character Camera for Immersive Exploration (matching Room 04)
   const character = new CharacterController({
     scene,
     floorY: ROOM2_CONFIG.room.floorY,
@@ -163,7 +166,7 @@ export function createRoom3Scene(
     initialYaw: yaw,
     defaultCharacter: 'female',
     allowThirdPerson: true,
-    defaultThirdPerson: false,
+    defaultThirdPerson: true,
   });
 
   const updateCamera = () => {
@@ -906,20 +909,22 @@ export function createRoom3Scene(
   const relativityPosterTex = createRelativityPosterTexture();
 
   // -------------------------------------------------------------
-  // 4. Lighting & Environmental Casework (Matching Room 02)
+  // 4. Lighting & Architectural Illumination (Warm Maroon & Mahogany Atmosphere)
   // -------------------------------------------------------------
-  scene.add(new THREE.HemisphereLight(0x9dd8ff, 0x121827, 1.55));
+  // Balanced warm sky and rich wood floor bounce light (matching Room 04's warm palette)
+  const hemiLight = new THREE.HemisphereLight(0xfff3e0, 0x482218, 2.2);
+  scene.add(hemiLight);
 
-  const keyLight = new THREE.DirectionalLight(0xffffff, 2.05);
-  keyLight.position.set(5, 10, 8);
+  const keyLight = new THREE.DirectionalLight(0xfffaed, 1.85);
+  keyLight.position.set(5, 10, 7);
   keyLight.castShadow = true;
   keyLight.shadow.mapSize.width = 2048;
   keyLight.shadow.mapSize.height = 2048;
   keyLight.shadow.bias = -0.0005;
   scene.add(keyLight);
 
-  const stationLight = new THREE.PointLight(STATION_COLOR.circuits, 22, 14, 2);
-  stationLight.position.set(STATION_X.circuits, 4.4, 2);
+  const stationLight = new THREE.PointLight(STATION_COLOR.circuits, 16, 12, 1.8);
+  stationLight.position.set(STATION_X.circuits, 4.2, 1.5);
   scene.add(stationLight);
 
   // -------------------------------------------------------------
@@ -989,35 +994,158 @@ export function createRoom3Scene(
 
   // -------------------------------------------------------------
   // 6. Architectural Room Shell (21.6m x 14.8m x 4.2m)
+  // Adopting Room 04's Materials, Colors & Atmosphere
   // -------------------------------------------------------------
-  // Floor: Epoxy terrazzo tiles
+  // Texture Helper: Procedural Dark Walnut Parquet Floor (matching Room 04)
+  const createWoodTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return new THREE.CanvasTexture(canvas);
+
+    // Warm dark walnut & rich mahogany wood base
+    ctx.fillStyle = '#422213';
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Fine wood grain lines
+    for (let i = 0; i < 600; i++) {
+      const y = Math.random() * 512;
+      const h = Math.random() * 2 + 0.5;
+      ctx.fillStyle = Math.random() > 0.4 ? 'rgba(87, 59, 42, 0.45)' : 'rgba(35, 18, 12, 0.55)';
+      ctx.fillRect(0, y, 512, h);
+    }
+
+    // Floor plank seams
+    for (let p = 0; p <= 512; p += 64) {
+      ctx.strokeStyle = 'rgba(15, 8, 4, 0.85)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p, 0);
+      ctx.lineTo(p, 512);
+      ctx.stroke();
+
+      // Subtle brass nailhead accents along planks
+      ctx.fillStyle = 'rgba(212, 175, 55, 0.25)';
+      for (let ny = 16; ny < 512; ny += 64) {
+        ctx.fillRect(p - 2, ny, 2, 2);
+      }
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(8, 6);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  };
+
+  const woodTexture = createWoodTexture();
+  const floorMaterial = new THREE.MeshStandardMaterial({
+    map: woodTexture,
+    roughness: 0.38,
+    metalness: 0.12,
+  });
+
+  // Architectural Materials
+  const wallMaroonMaterial = new THREE.MeshStandardMaterial({
+    color: 0x581c2c, // Deep Maroon primary architectural color
+    roughness: 0.74,
+    metalness: 0.10,
+  });
+  const wallBurgundyMaterial = new THREE.MeshStandardMaterial({
+    color: 0x35121d, // Dark Burgundy
+    roughness: 0.78,
+    metalness: 0.08,
+  });
+  const creamPanelMaterial = new THREE.MeshStandardMaterial({
+    color: 0xe9dfc9, // Warm Cream secondary wall surface
+    roughness: 0.68,
+    metalness: 0.05,
+  });
+  const mahoganyDeskMaterial = new THREE.MeshStandardMaterial({
+    color: 0x34190c, // Rich Mahogany
+    roughness: 0.42,
+    metalness: 0.14,
+  });
+  const walnutMaterial = new THREE.MeshStandardMaterial({
+    color: 0x573b2a, // Natural Walnut
+    roughness: 0.36,
+    metalness: 0.10,
+  });
+  const brassTrimMaterial = new THREE.MeshStandardMaterial({
+    color: 0xd4af37, // Antique Gold / Warm Brass accent
+    roughness: 0.22,
+    metalness: 0.92,
+  });
+
+  // Floor: Dark Walnut Parquet
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM2_CONFIG.room.width, ROOM2_CONFIG.room.depth),
-    material(0x607188, { map: floorTexture, roughness: 0.88, metalness: 0.08 })
+    floorMaterial
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
 
-  const grid = new THREE.GridHelper(ROOM2_CONFIG.room.width, ROOM2_CONFIG.room.width, 0x1b506a, 0x183044);
-  grid.position.y = 0.006;
-  scene.add(grid);
+  // Inlaid Brass Compass Rose Medallion (Center floor exploration feature matching Room 04)
+  const medallionGroup = new THREE.Group();
+  medallionGroup.position.set(0, 0.002, 1.0);
 
-  // Safety Yellow Walkway Perimeter Lines
-  const yellowLineMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
-  const yellowLine = new THREE.Mesh(new THREE.PlaneGeometry(ROOM2_CONFIG.room.width - 2, 0.08), yellowLineMat);
-  yellowLine.rotation.x = -Math.PI / 2;
-  yellowLine.position.set(0, 0.008, 2.8);
-  scene.add(yellowLine);
+  const outerBrassRing = new THREE.Mesh(
+    new THREE.RingGeometry(3.2, 3.28, 64),
+    brassTrimMaterial
+  );
+  outerBrassRing.rotation.x = -Math.PI / 2;
+  medallionGroup.add(outerBrassRing);
 
-  // Wall Materials
-  const wallMaterial = material(0x22324a, { roughness: 0.78, metalness: 0.06 });
-  const wainscotMaterial = material(0x152232, { roughness: 0.82, metalness: 0.10 });
-  const trimMaterial = material(0x33445b, { roughness: 0.35, metalness: 0.75 });
-  const columnMaterial = material(0x1b283b, { roughness: 0.72, metalness: 0.18 });
+  const innerBrassRing = new THREE.Mesh(
+    new THREE.RingGeometry(2.1, 2.15, 64),
+    brassTrimMaterial
+  );
+  innerBrassRing.rotation.x = -Math.PI / 2;
+  medallionGroup.add(innerBrassRing);
+
+  // 8-Pointed Celestial Compass Star Inlay
+  for (let r = 0; r < 8; r++) {
+    const angle = (r * Math.PI) / 4;
+    const starRay = new THREE.Mesh(new THREE.PlaneGeometry(0.04, 1.05), brassTrimMaterial);
+    starRay.position.set(Math.cos(angle) * 2.65, 0, Math.sin(angle) * 2.65);
+    starRay.rotation.x = -Math.PI / 2;
+    starRay.rotation.z = -angle + Math.PI / 2;
+    medallionGroup.add(starRay);
+  }
+
+  // Central Brass Medallion Boss
+  const centerEmblem = new THREE.Mesh(new THREE.CircleGeometry(0.35, 32), brassTrimMaterial);
+  centerEmblem.rotation.x = -Math.PI / 2;
+  medallionGroup.add(centerEmblem);
+
+  scene.add(medallionGroup);
+
+  // In-World Station Interaction Floor Rings (Gentle antique gold floor cues)
+  const stationFloorRings: Record<Room3StationId, THREE.Mesh> = {} as Record<Room3StationId, THREE.Mesh>;
+  (Object.keys(STATION_X) as Room3StationId[]).forEach((sId) => {
+    const ringMesh = new THREE.Mesh(
+      new THREE.RingGeometry(1.35, 1.42, 48),
+      new THREE.MeshStandardMaterial({
+        color: 0xd4af37,
+        emissive: 0xd4af37,
+        emissiveIntensity: 0.65,
+        roughness: 0.3,
+        metalness: 0.8,
+        transparent: true,
+        opacity: 0.85,
+      })
+    );
+    ringMesh.rotation.x = -Math.PI / 2;
+    ringMesh.position.set(STATION_X[sId], 0.004, 1.25);
+    scene.add(ringMesh);
+    stationFloorRings[sId] = ringMesh;
+  });
 
   const addWallSegment = (width: number, height: number, x: number, y: number, z: number) => {
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(width, height, ROOM2_CONFIG.room.wallThickness), wallMaterial);
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(width, height, ROOM2_CONFIG.room.wallThickness), wallMaroonMaterial);
     wall.position.set(x, y, z);
     wall.receiveShadow = true;
     scene.add(wall);
@@ -1034,57 +1162,53 @@ export function createRoom3Scene(
   const doorHeaderHeight = ROOM2_CONFIG.room.height - ROOM2_CONFIG.door.height;
   addWallSegment(ROOM2_CONFIG.door.width, doorHeaderHeight, ROOM2_CONFIG.door.x, ROOM2_CONFIG.door.height + doorHeaderHeight / 2, ROOM2_CONFIG.room.backZ);
 
-  // Wainscoting & Baseboards on Back Wall
+  // Lower Mahogany Wainscoting & Brass Chair Rail on Back Wall
   const backLeftWidth = doorLeft + roomHalfWidth;
   const backLeftCenterX = (doorLeft - roomHalfWidth) / 2;
-  const wainscotBackLeft = new THREE.Mesh(new THREE.BoxGeometry(backLeftWidth, 1.15, 0.04), wainscotMaterial);
+  const wainscotBackLeft = new THREE.Mesh(new THREE.BoxGeometry(backLeftWidth, 1.15, 0.04), mahoganyDeskMaterial);
   wainscotBackLeft.position.set(backLeftCenterX, 0.575, ROOM2_CONFIG.room.backZ + 0.18);
   scene.add(wainscotBackLeft);
 
-  const chairRailBackLeft = new THREE.Mesh(new THREE.BoxGeometry(backLeftWidth, 0.05, 0.06), trimMaterial);
+  const chairRailBackLeft = new THREE.Mesh(new THREE.BoxGeometry(backLeftWidth, 0.06, 0.08), brassTrimMaterial);
   chairRailBackLeft.position.set(backLeftCenterX, 1.15, ROOM2_CONFIG.room.backZ + 0.19);
   scene.add(chairRailBackLeft);
 
-  const baseboardBackLeft = new THREE.Mesh(new THREE.BoxGeometry(backLeftWidth, 0.16, 0.08), trimMaterial);
+  const baseboardBackLeft = new THREE.Mesh(new THREE.BoxGeometry(backLeftWidth, 0.16, 0.08), mahoganyDeskMaterial);
   baseboardBackLeft.position.set(backLeftCenterX, 0.08, ROOM2_CONFIG.room.backZ + 0.20);
   scene.add(baseboardBackLeft);
 
-  // 2. Front Wall (South Wall at Z = +7.40m) & Daylight Clerestory Window Ribbon
+  // 2. Front Wall (South Wall at Z = +7.40m)
   const frontZ = -ROOM2_CONFIG.room.backZ;
-  const southWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, ROOM2_CONFIG.room.height, ROOM2_CONFIG.room.wallThickness), wallMaterial);
+  const southWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, ROOM2_CONFIG.room.height, ROOM2_CONFIG.room.wallThickness), wallMaroonMaterial);
   southWall.position.set(0, ROOM2_CONFIG.room.height / 2, frontZ);
   southWall.receiveShadow = true;
   scene.add(southWall);
 
-  const southWainscot = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 1.15, 0.04), wainscotMaterial);
+  const southWainscot = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 1.15, 0.04), mahoganyDeskMaterial);
   southWainscot.position.set(0, 0.575, frontZ - 0.18);
   scene.add(southWainscot);
 
-  const southBaseboard = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 0.16, 0.08), trimMaterial);
+  const southBaseboard = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 0.16, 0.08), mahoganyDeskMaterial);
   southBaseboard.position.set(0, 0.08, frontZ - 0.20);
   scene.add(southBaseboard);
 
-  const southChairRail = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 0.05, 0.06), trimMaterial);
+  const southChairRail = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 0.06, 0.08), brassTrimMaterial);
   southChairRail.position.set(0, 1.15, frontZ - 0.19);
   scene.add(southChairRail);
 
-  // Clerestory Daylight Window Ribbon
+  // Clerestory Daylight Window Ribbon with Mahogany & Brass Framing
   const skyCanvas = document.createElement('canvas');
   skyCanvas.width = 1024;
   skyCanvas.height = 256;
   const skyContext = skyCanvas.getContext('2d');
   if (skyContext) {
     const skyGradient = skyContext.createLinearGradient(0, 0, 0, 256);
-    skyGradient.addColorStop(0, '#9bd8ff');
-    skyGradient.addColorStop(0.55, '#e5f4ff');
-    skyGradient.addColorStop(0.56, '#7897a4');
-    skyGradient.addColorStop(1, '#263d4d');
+    skyGradient.addColorStop(0, '#fdba74');
+    skyGradient.addColorStop(0.4, '#fed7aa');
+    skyGradient.addColorStop(0.7, '#ffedd5');
+    skyGradient.addColorStop(1, '#6b21a8');
     skyContext.fillStyle = skyGradient;
     skyContext.fillRect(0, 0, 1024, 256);
-    skyContext.fillStyle = 'rgba(255,255,255,.62)';
-    for (let index = 0; index < 7; index += 1) skyContext.fillRect(70 + index * 145, 60 + (index % 2) * 18, 95, 8);
-    skyContext.fillStyle = '#324f5e';
-    for (let index = 0; index < 18; index += 1) skyContext.fillRect(index * 62, 175 - (index % 4) * 12, 45, 85);
   }
   const skyTexture = new THREE.CanvasTexture(skyCanvas);
   skyTexture.colorSpace = THREE.SRGBColorSpace;
@@ -1094,9 +1218,13 @@ export function createRoom3Scene(
   const ribbonCenterY = 3.82;
   const ribbonZ = frontZ - 0.18;
 
-  const ribbonFrame = new THREE.Mesh(new THREE.BoxGeometry(ribbonWidth + 0.16, ribbonHeight + 0.12, 0.06), trimMaterial);
+  const ribbonFrame = new THREE.Mesh(new THREE.BoxGeometry(ribbonWidth + 0.16, ribbonHeight + 0.12, 0.06), mahoganyDeskMaterial);
   ribbonFrame.position.set(0, ribbonCenterY, ribbonZ);
   scene.add(ribbonFrame);
+
+  const ribbonBrassTrim = new THREE.Mesh(new THREE.BoxGeometry(ribbonWidth + 0.20, 0.03, 0.08), brassTrimMaterial);
+  ribbonBrassTrim.position.set(0, ribbonCenterY - ribbonHeight / 2 - 0.02, ribbonZ);
+  scene.add(ribbonBrassTrim);
 
   const ribbonSky = new THREE.Mesh(
     new THREE.PlaneGeometry(ribbonWidth, ribbonHeight),
@@ -1106,22 +1234,7 @@ export function createRoom3Scene(
   ribbonSky.rotation.y = Math.PI;
   scene.add(ribbonSky);
 
-  const ribbonGlass = new THREE.Mesh(
-    new THREE.PlaneGeometry(ribbonWidth, ribbonHeight),
-    new THREE.MeshPhysicalMaterial({
-      color: 0xf1f5f9,
-      transparent: true,
-      opacity: 0.18,
-      roughness: 0.06,
-      metalness: 0.25,
-      side: THREE.DoubleSide,
-    })
-  );
-  ribbonGlass.position.set(0, ribbonCenterY, ribbonZ - 0.03);
-  ribbonGlass.rotation.y = Math.PI;
-  scene.add(ribbonGlass);
-
-  const daylight = new THREE.DirectionalLight(0xccecff, 1.35);
+  const daylight = new THREE.DirectionalLight(0xffecd1, 1.25);
   daylight.position.set(0, 4.2, frontZ - 1.0);
   daylight.target.position.set(0, 1.0, 0);
   scene.add(daylight);
@@ -1129,75 +1242,169 @@ export function createRoom3Scene(
 
   // 3. Side Walls (East & West at +/- 10.8m)
   [-ROOM2_CONFIG.room.sideX, ROOM2_CONFIG.room.sideX].forEach((x) => {
-    const sideWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.wallThickness, ROOM2_CONFIG.room.height, ROOM2_CONFIG.room.depth), wallMaterial);
+    const sideWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.wallThickness, ROOM2_CONFIG.room.height, ROOM2_CONFIG.room.depth), wallMaroonMaterial);
     sideWall.position.set(x, ROOM2_CONFIG.room.height / 2, 0);
     sideWall.receiveShadow = true;
     scene.add(sideWall);
 
-    const sideBaseboard = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, ROOM2_CONFIG.room.depth), trimMaterial);
+    // Warm cream wall acoustic insets
+    [-4.5, 0.0, 4.5].forEach((pz) => {
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 2.2, 2.4), creamPanelMaterial);
+      panel.position.set(x > 0 ? x - 0.16 : x + 0.16, 2.5, pz);
+      scene.add(panel);
+
+      const panelTrim = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.24, 2.44), brassTrimMaterial);
+      panelTrim.position.set(x > 0 ? x - 0.15 : x + 0.15, 2.5, pz);
+      scene.add(panelTrim);
+    });
+
+    const sideWainscot = new THREE.Mesh(new THREE.BoxGeometry(0.34, 1.15, ROOM2_CONFIG.room.depth), mahoganyDeskMaterial);
+    sideWainscot.position.set(x > 0 ? x - 0.18 : x + 0.18, 0.575, 0);
+    scene.add(sideWainscot);
+
+    const sideBaseboard = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, ROOM2_CONFIG.room.depth), mahoganyDeskMaterial);
     sideBaseboard.position.set(x > 0 ? x - 0.20 : x + 0.20, 0.08, 0);
     scene.add(sideBaseboard);
 
-    const sideChairRail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, ROOM2_CONFIG.room.depth), trimMaterial);
+    const sideChairRail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, ROOM2_CONFIG.room.depth), brassTrimMaterial);
     sideChairRail.position.set(x > 0 ? x - 0.19 : x + 0.19, 1.15, 0);
     scene.add(sideChairRail);
   });
 
-  // Structural Columns in Corners
+  // Decorative Wall Sconces with warm amber illumination along side walls
+  const sconceZPositions = [-4.5, 0.0, 4.5];
+  [-ROOM2_CONFIG.room.sideX + 0.24, ROOM2_CONFIG.room.sideX - 0.24].forEach((sx) => {
+    sconceZPositions.forEach((sz) => {
+      const sconceGroup = new THREE.Group();
+      sconceGroup.position.set(sx, 2.4, sz);
+
+      const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 0.14), brassTrimMaterial);
+      sconceGroup.add(bracket);
+
+      const shade = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08, 0.05, 0.20, 16),
+        new THREE.MeshStandardMaterial({
+          color: 0xffecd1,
+          emissive: 0xffb356,
+          emissiveIntensity: 1.8,
+          roughness: 0.3,
+        })
+      );
+      shade.position.set(0, 0.10, 0);
+      sconceGroup.add(shade);
+
+      const sLight = new THREE.PointLight(0xffb766, 1.2, 5.5, 1.8);
+      sLight.position.set(0, 0.12, 0);
+      sconceGroup.add(sLight);
+
+      scene.add(sconceGroup);
+    });
+  });
+
+  // Structural Columns in Corners with Mahogany & Brass Moldings
   [
     [-roomHalfWidth + 0.45, ROOM2_CONFIG.room.backZ + 0.45],
     [roomHalfWidth - 0.45, ROOM2_CONFIG.room.backZ + 0.45],
     [-roomHalfWidth + 0.45, frontZ - 0.45],
     [roomHalfWidth - 0.45, frontZ - 0.45],
   ].forEach(([cx, cz]) => {
-    const col = new THREE.Mesh(new THREE.BoxGeometry(0.65, ROOM2_CONFIG.room.height, 0.65), columnMaterial);
+    const col = new THREE.Mesh(new THREE.BoxGeometry(0.65, ROOM2_CONFIG.room.height, 0.65), mahoganyDeskMaterial);
     col.position.set(cx, ROOM2_CONFIG.room.height / 2, cz);
     scene.add(col);
+
+    const colBase = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.20, 0.72), brassTrimMaterial);
+    colBase.position.set(cx, 0.10, cz);
+    scene.add(colBase);
+
+    const colCap = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.20, 0.72), brassTrimMaterial);
+    colCap.position.set(cx, ROOM2_CONFIG.room.height - 0.10, cz);
+    scene.add(colCap);
   });
 
-  // 4. Suspended Ceiling Grid & Galvanized Spiral HVAC Duct
-  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 0.16, ROOM2_CONFIG.room.depth), material(0x0a1424, { roughness: 0.92 }));
-  ceiling.position.y = ROOM2_CONFIG.room.height;
-  scene.add(ceiling);
+  // 4. Architectural Coffered Ceiling (Deep Burgundy Base + Mahogany Beams + Brass Trims)
+  const ceilingGroup = new THREE.Group();
+  scene.add(ceilingGroup);
 
-  for (let gx = -ROOM2_CONFIG.room.width / 2 + 2; gx <= ROOM2_CONFIG.room.width / 2 - 2; gx += 2.4) {
-    const tBarX = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, ROOM2_CONFIG.room.depth - 0.2), trimMaterial);
-    tBarX.position.set(gx, ROOM2_CONFIG.room.height - 0.08, 0);
-    scene.add(tBarX);
-  }
+  const ceilingBase = new THREE.Mesh(
+    new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 0.12, ROOM2_CONFIG.room.depth),
+    new THREE.MeshStandardMaterial({
+      color: 0x281018, // Deep burgundy coffer field
+      roughness: 0.88,
+      metalness: 0.06,
+    })
+  );
+  ceilingBase.position.y = ROOM2_CONFIG.room.height;
+  ceilingGroup.add(ceilingBase);
 
-  const duct = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, ROOM2_CONFIG.room.depth - 2, 20), material(0x94a3b8, { metalness: 0.82, roughness: 0.25 }));
-  duct.rotation.x = Math.PI / 2;
-  duct.position.set(0, ROOM2_CONFIG.room.height - 0.45, 0);
-  scene.add(duct);
+  // Longitudinal coffer beams (along Z)
+  [-7.2, -3.6, 0, 3.6, 7.2].forEach((bx) => {
+    const beam = new THREE.Mesh(
+      new THREE.BoxGeometry(0.26, 0.28, ROOM2_CONFIG.room.depth),
+      mahoganyDeskMaterial
+    );
+    beam.position.set(bx, ROOM2_CONFIG.room.height - 0.14, 0);
+    ceilingGroup.add(beam);
 
-  [-4.8, 4.8].forEach((tx) => {
-    const tray = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, ROOM2_CONFIG.room.depth - 2.4), material(0xd97706, { metalness: 0.65, roughness: 0.35 }));
-    tray.position.set(tx, 3.88, 0);
-    scene.add(tray);
+    const trim = new THREE.Mesh(
+      new THREE.BoxGeometry(0.30, 0.04, ROOM2_CONFIG.room.depth),
+      brassTrimMaterial
+    );
+    trim.position.set(bx, ROOM2_CONFIG.room.height - 0.28, 0);
+    ceilingGroup.add(trim);
   });
 
-  // Ceiling Fluorescent Light Troffers
-  [-6, 0, 6].forEach((x) => {
-    [-3, 2].forEach((z) => {
-      const troffer = new THREE.Mesh(
-        new THREE.BoxGeometry(2.4, 0.08, 0.8),
-        new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.2 })
-      );
-      troffer.position.set(x, 4.15, z);
-      scene.add(troffer);
+  // Cross coffer beams (along X)
+  [-5.2, -2.0, 1.5, 5.0].forEach((bz) => {
+    const beam = new THREE.Mesh(
+      new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 0.28, 0.26),
+      mahoganyDeskMaterial
+    );
+    beam.position.set(0, ROOM2_CONFIG.room.height - 0.14, bz);
+    ceilingGroup.add(beam);
 
-      const panel = new THREE.Mesh(
-        new THREE.BoxGeometry(2.2, 0.02, 0.65),
-        new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xd6e8ff, emissiveIntensity: 1.5 })
-      );
-      panel.position.set(x, 4.1, z);
-      scene.add(panel);
+    const trim = new THREE.Mesh(
+      new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 0.04, 0.30),
+      brassTrimMaterial
+    );
+    trim.position.set(0, ROOM2_CONFIG.room.height - 0.28, bz);
+    ceilingGroup.add(trim);
+  });
 
-      const light = new THREE.PointLight(0xe2f0ff, 1.6, 8, 1.8);
-      light.position.set(x, 3.8, z);
-      scene.add(light);
-    });
+  // Recessed warm architectural downlight bezels in coffer bays (matching Room 04)
+  const ceilingLightPositions: [number, number, number][] = [
+    [-5.4, ROOM2_CONFIG.room.height - 0.08, -3.6],
+    [-5.4, ROOM2_CONFIG.room.height - 0.08, 0.0],
+    [-5.4, ROOM2_CONFIG.room.height - 0.08, 3.2],
+    [0.0, ROOM2_CONFIG.room.height - 0.08, -3.6],
+    [0.0, ROOM2_CONFIG.room.height - 0.08, 0.0],
+    [0.0, ROOM2_CONFIG.room.height - 0.08, 3.2],
+    [5.4, ROOM2_CONFIG.room.height - 0.08, -3.6],
+    [5.4, ROOM2_CONFIG.room.height - 0.08, 0.0],
+    [5.4, ROOM2_CONFIG.room.height - 0.08, 3.2],
+  ];
+
+  ceilingLightPositions.forEach(([lx, ly, lz]) => {
+    const fixture = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.24, 0.06, 24),
+      brassTrimMaterial
+    );
+    fixture.position.set(lx, ly, lz);
+    ceilingGroup.add(fixture);
+
+    const bulb = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.18, 0.02, 24),
+      new THREE.MeshStandardMaterial({
+        color: 0xfffbeb,
+        emissive: 0xffe8ba,
+        emissiveIntensity: 2.0,
+      })
+    );
+    bulb.position.set(lx, ly - 0.035, lz);
+    ceilingGroup.add(bulb);
+
+    const downlight = new THREE.PointLight(0xffecd1, 1.45, 11, 1.8);
+    downlight.position.set(lx, ly - 0.15, lz);
+    scene.add(downlight);
   });
 
   // -------------------------------------------------------------
@@ -1310,62 +1517,81 @@ export function createRoom3Scene(
     const group = new THREE.Group();
     group.position.set(x, 0, 0);
 
+    // 1. Polished Dark Walnut Benchtop Surface
     const top = new THREE.Mesh(
       new THREE.BoxGeometry(ROOM2_CONFIG.table.width, ROOM2_CONFIG.table.thickness, ROOM2_CONFIG.table.depth),
-      material(0xffffff, { map: benchTexture, roughness: 0.32, metalness: 0.12 })
+      walnutMaterial
     );
     top.position.y = ROOM2_CONFIG.table.topHeight;
     top.receiveShadow = true;
+    top.castShadow = true;
     group.add(top);
 
-    // Welded Steel Subframe
-    const subframe = new THREE.Mesh(
-      new THREE.BoxGeometry(ROOM2_CONFIG.table.width - 0.2, 0.08, ROOM2_CONFIG.table.depth - 0.2),
-      material(0x1e293b, { metalness: 0.85, roughness: 0.2 })
+    // 2. Continuous Antique Brass Edge Trim Molding around Benchtop
+    const brassEdge = new THREE.Mesh(
+      new THREE.BoxGeometry(ROOM2_CONFIG.table.width + 0.02, 0.028, ROOM2_CONFIG.table.depth + 0.02),
+      brassTrimMaterial
     );
-    subframe.position.y = ROOM2_CONFIG.table.topHeight - ROOM2_CONFIG.table.thickness / 2 - 0.04;
-    group.add(subframe);
+    brassEdge.position.y = ROOM2_CONFIG.table.topHeight - 0.012;
+    group.add(brassEdge);
+
+    // 3. Rich Mahogany Under-Frame Apron
+    const apron = new THREE.Mesh(
+      new THREE.BoxGeometry(ROOM2_CONFIG.table.width - 0.14, 0.10, ROOM2_CONFIG.table.depth - 0.14),
+      mahoganyDeskMaterial
+    );
+    apron.position.y = ROOM2_CONFIG.table.topHeight - ROOM2_CONFIG.table.thickness / 2 - 0.05;
+    group.add(apron);
 
     const legOffsetX = ROOM2_CONFIG.table.width / 2 - 0.45;
     const legOffsetZ = ROOM2_CONFIG.table.depth / 2 - 0.35;
     [-legOffsetX, legOffsetX].forEach((legX) => {
       [-legOffsetZ, legOffsetZ].forEach((legZ) => {
+        // 4. Sturdy Rich Mahogany Legs
         const leg = new THREE.Mesh(
-          new THREE.BoxGeometry(0.12, ROOM2_CONFIG.table.legHeight, 0.12),
-          material(0x111827, { metalness: 0.85, roughness: 0.2 })
+          new THREE.BoxGeometry(0.11, ROOM2_CONFIG.table.legHeight, 0.11),
+          mahoganyDeskMaterial
         );
         leg.position.set(legX, ROOM2_CONFIG.table.legHeight / 2, legZ);
+        leg.castShadow = true;
         group.add(leg);
 
-        const foot = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.08, 0.08, 0.04, 12),
-          material(0x94a3b8, { metalness: 0.95, roughness: 0.1 })
+        // Antique Brass Foot Ferrule
+        const ferrule = new THREE.Mesh(
+          new THREE.BoxGeometry(0.12, 0.08, 0.12),
+          brassTrimMaterial
         );
-        foot.position.set(legX, 0.02, legZ);
-        group.add(foot);
+        ferrule.position.set(legX, 0.04, legZ);
+        group.add(ferrule);
       });
     });
 
-    // Lower Stretchers
-    const stretcher1 = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.table.width - 0.8, 0.06, 0.06), material(0x111827, { metalness: 0.8 }));
+    // 5. Lower Mahogany Stretchers
+    const stretcher1 = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.table.width - 0.8, 0.06, 0.06), mahoganyDeskMaterial);
     stretcher1.position.set(0, 0.20, -legOffsetZ);
     group.add(stretcher1);
 
-    const stretcher2 = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.table.width - 0.8, 0.06, 0.06), material(0x111827, { metalness: 0.8 }));
+    const stretcher2 = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.table.width - 0.8, 0.06, 0.06), mahoganyDeskMaterial);
     stretcher2.position.set(0, 0.20, legOffsetZ);
     group.add(stretcher2);
 
-    // Under-bench drawer unit with brushed aluminum pulls
-    const drawerUnit = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.55, 1.5), material(0x334155, { metalness: 0.75, roughness: 0.35 }));
+    // 6. Under-Bench Storage Drawer Unit in Walnut with Brass Pulls
+    const drawerUnit = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.55, 1.5), walnutMaterial);
     drawerUnit.position.set(ROOM2_CONFIG.table.width / 2 - 0.9, 0.55, 0);
     group.add(drawerUnit);
 
-    // Status Indicator Beacon Lamp (mounted on benchtop flange)
-    const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.02, 16), material(0x1e293b, { metalness: 0.85 }));
-    lampBase.position.set(-1.50, ROOM2_CONFIG.table.topHeight + ROOM2_CONFIG.table.thickness / 2 + 0.01, 0.75);
+    [-0.35, 0.0, 0.35].forEach((dz) => {
+      const pull = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.02, 0.14), brassTrimMaterial);
+      pull.position.set(ROOM2_CONFIG.table.width / 2 - 0.42, 0.55, dz);
+      group.add(pull);
+    });
+
+    // 7. Status Indicator Beacon Lamp mounted on Antique Brass Pedestal
+    const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.03, 20), brassTrimMaterial);
+    lampBase.position.set(-1.50, ROOM2_CONFIG.table.topHeight + ROOM2_CONFIG.table.thickness / 2 + 0.015, 0.75);
     group.add(lampBase);
 
-    const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.38, 12), material(0x64748b, { metalness: 0.9 }));
+    const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.38, 16), brassTrimMaterial);
     lampPole.position.set(-1.50, ROOM2_CONFIG.table.topHeight + ROOM2_CONFIG.table.thickness / 2 + 0.20, 0.75);
     group.add(lampPole);
 
@@ -1560,6 +1786,32 @@ export function createRoom3Scene(
   voltKnob.rotation.x = Math.PI / 2;
   voltKnob.position.set(-0.11, 0.05, 0.175);
   psuGroup.add(voltKnob);
+
+  // Front Panel 4mm Banana Binding Posts (+Red, -Black, GND Green)
+  const bindingPostMetal = material(0xd4af37, { metalness: 0.95, roughness: 0.15 });
+  const redPostMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.014, 0.015, 0.022, 16),
+    material(0xd92d20, { roughness: 0.35, metalness: 0.1 })
+  );
+  redPostMesh.rotation.x = Math.PI / 2;
+  redPostMesh.position.set(-0.11, 0.04, 0.175);
+  psuGroup.add(redPostMesh);
+
+  const blackPostMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.014, 0.015, 0.022, 16),
+    material(0x18181b, { roughness: 0.35, metalness: 0.1 })
+  );
+  blackPostMesh.rotation.x = Math.PI / 2;
+  blackPostMesh.position.set(-0.04, 0.04, 0.175);
+  psuGroup.add(blackPostMesh);
+
+  const gndPostMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.014, 0.015, 0.022, 16),
+    material(0x16a34a, { roughness: 0.35, metalness: 0.1 })
+  );
+  gndPostMesh.rotation.x = Math.PI / 2;
+  gndPostMesh.position.set(0.03, 0.04, 0.175);
+  psuGroup.add(gndPostMesh);
 
   // Load High-Fidelity DC Power Supply GLB Model (replaces procedural housing, display & knobs)
   gltfLoader.load('/assets/room-3/electrical/dc_power_supply.glb', (gltf) => {
@@ -2516,6 +2768,15 @@ export function createRoom3Scene(
   const targetCloseupCamLookAt = new THREE.Vector3();
   const currentCamLookAt = new THREE.Vector3(0, 1.2, 0);
 
+  // Smooth Third-Person <-> First-Person Camera Transition State
+  let cameraTransitionState: 'none' | 'entering' | 'exiting' = 'none';
+  let transitionProgress = 0;
+  const transitionDuration = 0.70; // 700ms smooth cinematic swooping
+  const camStartPos = new THREE.Vector3();
+  const camStartLookAt = new THREE.Vector3();
+  const camTargetPos = new THREE.Vector3();
+  const camTargetLookAt = new THREE.Vector3();
+
   const CLOSEUP_TARGETS: Record<Room3StationId, { pos: THREE.Vector3; lookAt: THREE.Vector3 }> = {
     circuits: {
       pos: new THREE.Vector3(STATION_X.circuits + 0.04, 1.38, 0.78),
@@ -2558,9 +2819,10 @@ export function createRoom3Scene(
   };
 
   const setCameraMode = (mode: 'walk' | 'closeup', targetStation: Room3StationId = activeStation) => {
-    if (mode === cameraMode) return;
-    cameraMode = mode;
+    if (mode === cameraMode && cameraTransitionState === 'none') return;
+
     if (mode === 'closeup') {
+      // Transitioning: Third-Person Exploration -> First-Person Experiment Mode
       if (document.pointerLockElement) {
         document.exitPointerLock();
       }
@@ -2569,17 +2831,52 @@ export function createRoom3Scene(
       savedPlayerPos.copy(playerPosition);
       savedYaw = yaw;
       savedPitch = pitch;
+
+      activeStation = targetStation;
+      stationLight.color.setHex(STATION_COLOR[activeStation]);
+      stationLight.position.x = STATION_X[activeStation];
+
       const t = CLOSEUP_TARGETS[targetStation] || CLOSEUP_TARGETS.circuits;
       targetCloseupCamPos.copy(t.pos);
       targetCloseupCamLookAt.copy(t.lookAt);
-      currentCamLookAt.copy(camera.position).add(camera.getWorldDirection(new THREE.Vector3()));
+
+      // Setup smooth cinematic camera swoop
+      camStartPos.copy(camera.position);
+      const camDir = camera.getWorldDirection(new THREE.Vector3());
+      camStartLookAt.copy(camera.position).addScaledVector(camDir, 4.0);
+      camTargetPos.copy(targetCloseupCamPos);
+      camTargetLookAt.copy(targetCloseupCamLookAt);
+
+      cameraTransitionState = 'entering';
+      transitionProgress = 0;
+      cameraMode = 'closeup';
+      callbacks.onCameraModeChange?.('closeup');
     } else {
+      // Transitioning: First-Person Experiment Mode -> Third-Person Exploration
+      savedPlayerPos.set(STATION_X[activeStation], eyeHeight, 2.3);
+      savedYaw = 0;
+      savedPitch = -0.06;
       playerPosition.copy(savedPlayerPos);
       yaw = savedYaw;
       pitch = savedPitch;
-      updateCamera();
+
+      character.root.position.x = playerPosition.x;
+      character.root.position.z = playerPosition.z;
+      // Restore character model to visible
+      character.isThirdPerson = true;
+      character.syncVisibility();
+
+      // Third-person camera follow target behind the avatar
+      camStartPos.copy(camera.position);
+      camStartLookAt.copy(currentCamLookAt);
+      camTargetPos.set(playerPosition.x + 0.28, playerPosition.y + 0.32, playerPosition.z + 2.15);
+      camTargetLookAt.set(playerPosition.x, playerPosition.y - 0.1, playerPosition.z - 1.5);
+
+      cameraTransitionState = 'exiting';
+      transitionProgress = 0;
+      cameraMode = 'walk';
+      callbacks.onCameraModeChange?.('walk');
     }
-    callbacks.onCameraModeChange?.(mode);
   };
 
   const mouseScreenPos = new THREE.Vector2();
@@ -2893,9 +3190,9 @@ export function createRoom3Scene(
     if (cameraMode === 'closeup' && isStationChange) {
       setCameraMode('walk');
     }
-    playerPosition.set(STATION_X[station], eyeHeight, 4.55);
+    playerPosition.set(STATION_X[station], eyeHeight, 3.2);
     yaw = 0;
-    pitch = -0.08;
+    pitch = -0.06;
     character.root.position.x = playerPosition.x;
     character.root.position.z = playerPosition.z;
     stationLight.color.setHex(STATION_COLOR[station]);
@@ -2912,6 +3209,7 @@ export function createRoom3Scene(
   // -------------------------------------------------------------
   const clock = new THREE.Clock();
   let animationFrameId: number;
+  let lastProximateStation: Room3StationId | null = null;
 
   const animate = () => {
     animationFrameId = requestAnimationFrame(animate);
@@ -2930,12 +3228,37 @@ export function createRoom3Scene(
     }
 
     if (!isPaused) {
-      if (cameraMode === 'closeup') {
+      if (cameraTransitionState !== 'none') {
+        transitionProgress += delta / transitionDuration;
+        if (transitionProgress >= 1.0) {
+          transitionProgress = 1.0;
+          if (cameraTransitionState === 'entering') {
+            cameraTransitionState = 'none';
+            camera.position.copy(targetCloseupCamPos);
+            currentCamLookAt.copy(targetCloseupCamLookAt);
+            camera.lookAt(currentCamLookAt);
+            // Hide player character model in first-person workbench experiment mode
+            character.isThirdPerson = false;
+            character.syncVisibility();
+          } else {
+            cameraTransitionState = 'none';
+            character.isThirdPerson = true;
+            character.syncVisibility();
+            updateCamera();
+          }
+        } else {
+          // Cubic smoothstep easing
+          const t = transitionProgress * transitionProgress * (3 - 2 * transitionProgress);
+          camera.position.lerpVectors(camStartPos, camTargetPos, t);
+          currentCamLookAt.lerpVectors(camStartLookAt, camTargetLookAt, t);
+          camera.lookAt(currentCamLookAt);
+        }
+      } else if (cameraMode === 'closeup') {
         camera.position.lerp(targetCloseupCamPos, delta * 6.0);
         currentCamLookAt.lerp(targetCloseupCamLookAt, delta * 6.0);
         camera.lookAt(currentCamLookAt);
       } else {
-        // Player Movement in walk mode
+        // Player Movement in walk mode (Third-Person exploration)
         const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
         const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
         const dir = new THREE.Vector3();
@@ -2959,6 +3282,33 @@ export function createRoom3Scene(
         }
 
         character.update(delta, playerPosition, dir, yaw, pitch, camera, false);
+
+        // Station Proximity Detection (student walking near experiment benches)
+        let currentProximate: Room3StationId | null = null;
+        if (playerPosition.z < 3.4 && playerPosition.z > -0.8) {
+          (Object.keys(STATION_X) as Room3StationId[]).forEach((sId) => {
+            if (Math.abs(playerPosition.x - STATION_X[sId]) < 2.4) {
+              currentProximate = sId;
+            }
+          });
+        }
+
+        // Pulse in-world antique gold floor rings
+        (Object.keys(stationFloorRings) as Room3StationId[]).forEach((sId) => {
+          const ring = stationFloorRings[sId];
+          if (ring) {
+            const isNear = currentProximate === sId;
+            const targetScale = isNear ? 1.06 + Math.sin(elapsed * 4.5) * 0.04 : 1.0;
+            ring.scale.setScalar(targetScale);
+            (ring.material as THREE.MeshStandardMaterial).emissiveIntensity = isNear ? 1.8 + Math.sin(elapsed * 5.0) * 0.8 : 0.45;
+            (ring.material as THREE.MeshStandardMaterial).opacity = isNear ? 1.0 : 0.65;
+          }
+        });
+
+        if (currentProximate !== lastProximateStation) {
+          lastProximateStation = currentProximate;
+          callbacks.onStationProximityChange?.(currentProximate);
+        }
       }
 
       updateOscilloscope(delta);

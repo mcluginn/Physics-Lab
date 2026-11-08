@@ -209,8 +209,9 @@ export default function Room3Experience() {
   const [assetProgress, setAssetProgress] = useState({ loaded: 0, total: 1 });
   const [sceneError, setSceneError] = useState(false);
   const [interaction, setInteraction] = useState<EquipmentInteraction | null>(null);
-  const [isThirdPerson, setIsThirdPerson] = useState(false);
+  const [isThirdPerson, setIsThirdPerson] = useState(true);
   const [activeCharacter, setActiveCharacter] = useState<CharacterType>('female');
+  const [proximateStation, setProximateStation] = useState<Room3StationId | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState<Room3Progress>(createDefaultRoom3Progress);
@@ -521,6 +522,7 @@ export default function Room3Experience() {
         onDmmReadingChange: (reading) => setDmmReading(reading),
         onCloseupHover: (text) => setCloseupHoverText(text),
         onPointerLockChange: setPointerLocked,
+        onStationProximityChange: (st) => setProximateStation(st),
       });
       sceneApi.current = api;
       if (typeof window !== 'undefined') {
@@ -692,13 +694,22 @@ export default function Room3Experience() {
           handleSetCloseup('walk');
         } else if (interaction) {
           handleEquipmentAction(interaction.id);
+        } else if (proximateStation) {
+          setStationId(proximateStation);
+          handleSetCloseup('closeup');
         }
+      } else if (e.key.toLowerCase() === 'v') {
+        const next = sceneApi.current?.toggleView();
+        if (typeof next === 'boolean') setIsThirdPerson(next);
+      } else if (e.key.toLowerCase() === 'c') {
+        const next = sceneApi.current?.switchCharacter();
+        if (next) setActiveCharacter(next);
       }
     };
     window.addEventListener('keydown', handleKeyNav);
     return () => window.removeEventListener('keydown', handleKeyNav);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interaction, cameraMode, activeWorkspaceView]);
+  }, [interaction, cameraMode, activeWorkspaceView, proximateStation]);
 
   // Touch Analog Walking Joystick Handlers
   const handleJoystickPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1385,7 +1396,7 @@ export default function Room3Experience() {
               className="closeup-exit-button"
               onClick={() => handleSetCloseup('walk')}
             >
-              ← Exit Close-Up [ESC / E]
+              ← Exit to Room Exploration [ESC / E]
             </button>
           </div>
         </div>
@@ -1400,8 +1411,40 @@ export default function Room3Experience() {
 
       {!pointerLocked && !notebookOpen && cameraMode === 'walk' && !sceneError && (
         <button className="enter-walk-mode" onClick={() => sceneApi.current?.requestPointerLock()}>
-          <b>ENTER WALK MODE</b><span>Click to capture the mouse · ESC releases it</span>
+          <b>ENTER WALK MODE</b><span>Click to capture mouse · WASD walk · ESC releases</span>
         </button>
+      )}
+
+      {/* Third-Person Character Switcher & Camera View Dock */}
+      {cameraMode === 'walk' && !notebookOpen && (
+        <div className="room3-avatar-dock" role="toolbar" aria-label="Character and View Controls">
+          <button
+            type="button"
+            className="room3-dock-btn"
+            onClick={() => {
+              const next = sceneApi.current?.switchCharacter();
+              if (next) setActiveCharacter(next);
+            }}
+            title="Switch Avatar Model (Carla / Eric) [Key C]"
+          >
+            <span>👤</span>
+            <b>{activeCharacter === 'female' ? 'Carla' : 'Eric'}</b>
+            <kbd>C</kbd>
+          </button>
+          <button
+            type="button"
+            className="room3-dock-btn"
+            onClick={() => {
+              const next = sceneApi.current?.toggleView();
+              if (typeof next === 'boolean') setIsThirdPerson(next);
+            }}
+            title="Toggle Third-Person / First-Person Camera [Key V]"
+          >
+            <span>🎥</span>
+            <b>{isThirdPerson ? '3rd Person' : '1st Person'}</b>
+            <kbd>V</kbd>
+          </button>
+        </div>
       )}
 
       {interaction && !notebookOpen && cameraMode === 'walk' && (
@@ -1422,6 +1465,46 @@ export default function Room3Experience() {
             <kbd>E</kbd>
             <span>{interaction.action}</span>
           </div>
+        </aside>
+      )}
+
+      {/* Station Approach Proximity Card during Third-Person Walk */}
+      {!interaction && proximateStation && !notebookOpen && cameraMode === 'walk' && (
+        <aside className="room3-proximity-card" role="region" aria-label="Station Approach Prompt">
+          <div className="proximity-badge-row">
+            <span className="proximity-icon">
+              {proximateStation === 'circuits' ? '⚡' : proximateStation === 'optics' ? '🔬' : '⏱️'}
+            </span>
+            <span className="proximity-cat">
+              STATION 0{proximateStation === 'circuits' ? '1' : proximateStation === 'optics' ? '2' : '3'} PROXIMITY
+            </span>
+            <span className="proximity-badge">APPROACH WORKBENCH</span>
+          </div>
+          <h3 className="proximity-title">
+            {proximateStation === 'circuits'
+              ? 'DC & AC Electrical Circuits Station'
+              : proximateStation === 'optics'
+                ? 'Geometric & Physical Optics Bench'
+                : 'Special Theory of Relativity Station'}
+          </h3>
+          <p className="proximity-desc">
+            {proximateStation === 'circuits'
+              ? "Step up to the solderless breadboard to conduct Ohm's Law and 5-trial impedance measurements."
+              : proximateStation === 'optics'
+                ? "Inspect Snell's Law refraction, thin lens imaging, and laser wave diffraction fringes."
+                : 'Examine Lorentz length contraction, relativistic time dilation, and momentum mass energy.'}
+          </p>
+          <button
+            type="button"
+            className="proximity-action-btn"
+            onClick={() => {
+              setStationId(proximateStation);
+              handleSetCloseup('closeup');
+            }}
+          >
+            <kbd>E</kbd>
+            <span>Enter First-Person Experiment Mode</span>
+          </button>
         </aside>
       )}
 

@@ -827,16 +827,33 @@ export class Multimeter3D {
   // -------------------------------------------------------------
   private buildPsuFeedWires() {
     // Exact PSU binding posts at rear-left (benchX - 0.65, 0.94, -0.48)
-    const psuRedPostPos = new THREE.Vector3(this.benchX - 0.74, 0.98, -0.28);
-    const psuBlackPostPos = new THREE.Vector3(this.benchX - 0.69, 0.98, -0.28);
+    // Exact PSU binding posts at rear-left (benchX - 0.65, 0.94, -0.48, rotY = 0.08)
+    // Red Post: local (-0.11, 0.04, 0.175) -> world (benchX - 0.745, 0.98, -0.297)
+    // Black Post: local (-0.04, 0.04, 0.175) -> world (benchX - 0.675, 0.98, -0.302)
+    const psuRedPostPos = new THREE.Vector3(this.benchX - 0.745, 0.98, -0.297);
+    const psuBlackPostPos = new THREE.Vector3(this.benchX - 0.675, 0.98, -0.302);
     const posPos = this.terminalPositions.SRC_POS;
     const negPos = this.terminalPositions.SRC_NEG;
     const tableY = 0.945;
 
+    // 4mm Banana Plug Terminal Boots at the PSU Binding Posts
+    const bananaPlugMatRed = new THREE.MeshStandardMaterial({ color: 0xd92d20, roughness: 0.35, metalness: 0.15 });
+    const bananaPlugMatBlack = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.35, metalness: 0.15 });
+
+    const redPlugBoot = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.038, 16), bananaPlugMatRed);
+    redPlugBoot.rotation.x = Math.PI / 2 - 0.15;
+    redPlugBoot.position.copy(psuRedPostPos).add(new THREE.Vector3(0, 0, 0.018));
+    this.root.add(redPlugBoot);
+
+    const blackPlugBoot = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.038, 16), bananaPlugMatBlack);
+    blackPlugBoot.rotation.x = Math.PI / 2 - 0.15;
+    blackPlugBoot.position.copy(psuBlackPostPos).add(new THREE.Vector3(0, 0, 0.018));
+    this.root.add(blackPlugBoot);
+
     // Heavy Red Wire (+24V): Drops from PSU binding post to benchtop, curves along left side of breadboard to SRC_POS
     const redCurve = new THREE.CatmullRomCurve3([
-      psuRedPostPos,
-      new THREE.Vector3(this.benchX - 0.74, 0.96, -0.24),
+      psuRedPostPos.clone().add(new THREE.Vector3(0, 0, 0.035)),
+      new THREE.Vector3(this.benchX - 0.745, 0.96, -0.23),
       new THREE.Vector3(this.benchX - 0.70, tableY, -0.15),
       new THREE.Vector3(this.benchX - 0.50, tableY, -0.04),
       new THREE.Vector3(this.benchX - 0.38, tableY, 0.01),
@@ -849,9 +866,9 @@ export class Multimeter3D {
 
     // Heavy Black Wire (0V GND): Drops from PSU binding post to benchtop, curves along left side of breadboard to SRC_NEG
     const blackCurve = new THREE.CatmullRomCurve3([
-      psuBlackPostPos,
-      new THREE.Vector3(this.benchX - 0.69, 0.96, -0.24),
-      new THREE.Vector3(this.benchX - 0.66, tableY, -0.12),
+      psuBlackPostPos.clone().add(new THREE.Vector3(0, 0, 0.035)),
+      new THREE.Vector3(this.benchX - 0.675, 0.96, -0.23),
+      new THREE.Vector3(this.benchX - 0.65, tableY, -0.12),
       new THREE.Vector3(this.benchX - 0.46, tableY, 0.06),
       new THREE.Vector3(this.benchX - 0.38, tableY, 0.14),
       negPos.clone().add(new THREE.Vector3(0, 0.012, 0)),

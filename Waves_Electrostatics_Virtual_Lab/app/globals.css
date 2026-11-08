@@ -5121,6 +5121,156 @@ select:focus, option:focus, option:checked {
   letter-spacing: 0.02em;
 }
 
+/* ------------------------------------------------------------------ */
+/* Room 03 Proximity Approach Banner & Third-Person Avatar Dock       */
+/* Adopting Room 04's Deep Maroon & Antique Gold Architectural Style  */
+/* ------------------------------------------------------------------ */
+.room3-proximity-card {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(540px, calc(100vw - 32px));
+  padding: 16px 22px;
+  background: radial-gradient(ellipse at top, rgba(88, 28, 44, 0.95) 0%, rgba(53, 18, 29, 0.96) 70%, rgba(26, 11, 16, 0.98) 100%);
+  border: 1.5px solid rgba(212, 175, 55, 0.7);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75), 0 0 25px rgba(212, 175, 55, 0.35);
+  backdrop-filter: blur(14px);
+  animation: room3PulseIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+}
+
+@keyframes room3PulseIn {
+  from { opacity: 0; transform: translate(-50%, 15px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.room3-proximity-card .proximity-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.room3-proximity-card .proximity-icon {
+  font-size: 16px;
+  filter: drop-shadow(0 0 6px rgba(212, 175, 55, 0.8));
+}
+
+.room3-proximity-card .proximity-cat {
+  font: 800 11px/1 ui-monospace, monospace;
+  color: #d4af37;
+  letter-spacing: 0.1em;
+}
+
+.room3-proximity-card .proximity-badge {
+  font: 700 9px/1 ui-monospace, monospace;
+  color: #fef08a;
+  background: rgba(212, 175, 55, 0.22);
+  border: 1px solid rgba(212, 175, 55, 0.5);
+  border-radius: 999px;
+  padding: 3px 8px;
+  margin-left: auto;
+}
+
+.room3-proximity-card .proximity-title {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: #fffbeb;
+  letter-spacing: 0.02em;
+}
+
+.room3-proximity-card .proximity-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #e2e8f0;
+}
+
+.room3-proximity-card .proximity-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px 18px;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.9) 0%, rgba(181, 139, 69, 0.95) 100%);
+  border: 1px solid #fef08a;
+  border-radius: 8px;
+  color: #1a0b10;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(212, 175, 55, 0.4);
+  transition: all 0.16s ease;
+}
+
+.room3-proximity-card .proximity-action-btn:hover {
+  background: linear-gradient(135deg, #fef08a 0%, #d4af37 100%);
+  box-shadow: 0 6px 20px rgba(212, 175, 55, 0.65);
+  transform: translateY(-1px);
+}
+
+.room3-proximity-card .proximity-action-btn kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #1a0b10;
+  color: #fef08a;
+  border-radius: 4px;
+  font: 800 11px/1 ui-monospace, monospace;
+}
+
+/* Room 03 Bottom-Left Avatar & View Controls Dock */
+.room3-avatar-dock {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.room3-dock-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(30, 15, 20, 0.88);
+  border: 1.5px solid rgba(212, 175, 55, 0.45);
+  border-radius: 10px;
+  color: #fffbeb;
+  font-size: 12px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  transition: all 0.16s ease;
+}
+
+.room3-dock-btn:hover {
+  border-color: #d4af37;
+  background: rgba(88, 28, 44, 0.7);
+  box-shadow: 0 6px 20px rgba(212, 175, 55, 0.35);
+  transform: translateY(-1px);
+}
+
+.room3-dock-btn kbd {
+  padding: 1px 5px;
+  background: rgba(212, 175, 55, 0.2);
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  border-radius: 4px;
+  font: 700 10px/1 ui-monospace, monospace;
+  color: #fef08a;
+}
+
 .dmm-workbench-card {
   display: flex;
   flex-direction: column;

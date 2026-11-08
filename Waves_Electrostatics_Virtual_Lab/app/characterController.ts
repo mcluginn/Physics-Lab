@@ -269,7 +269,7 @@ export class CharacterController {
     }
   }
 
-  private syncVisibility() {
+  public syncVisibility() {
     if (!this.isThirdPerson) {
       this.root.visible = false;
       return;
