@@ -95,22 +95,22 @@ export class Multimeter3D {
     };
 
     // Terminal World Positions on Workbench (y = 0.94m benchtop)
-    // Board is centered at benchX - 0.12, y = 0.952, z = 0.12
+    // Board is centered at benchX - 0.10, y = 0.952, z = 0.10
     this.terminalPositions = {
-      SRC_POS: new THREE.Vector3(benchX - 0.34, 0.97, 0.04),
-      SRC_NEG: new THREE.Vector3(benchX - 0.34, 0.97, 0.20),
-      SERIES_JACK_A: new THREE.Vector3(benchX - 0.20, 0.97, 0.20),
-      SERIES_JACK_B: new THREE.Vector3(benchX - 0.08, 0.97, 0.20),
-      R1_A: new THREE.Vector3(benchX - 0.24, 0.97, 0.06),
-      R1_B: new THREE.Vector3(benchX - 0.12, 0.97, 0.06),
-      R2_A: new THREE.Vector3(benchX - 0.12, 0.97, 0.06),
-      R2_B: new THREE.Vector3(benchX + 0.00, 0.97, 0.06),
-      R3_A: new THREE.Vector3(benchX + 0.00, 0.97, 0.06),
-      R3_B: new THREE.Vector3(benchX + 0.12, 0.97, 0.06),
-      IND_A: new THREE.Vector3(benchX - 0.20, 0.97, -0.02),
-      IND_B: new THREE.Vector3(benchX - 0.10, 0.97, -0.02),
-      CAP_A: new THREE.Vector3(benchX + 0.02, 0.97, -0.02),
-      CAP_B: new THREE.Vector3(benchX + 0.12, 0.97, -0.02),
+      SRC_POS: new THREE.Vector3(benchX - 0.32, 0.97, 0.02),
+      SRC_NEG: new THREE.Vector3(benchX - 0.32, 0.97, 0.18),
+      SERIES_JACK_A: new THREE.Vector3(benchX - 0.18, 0.97, 0.18),
+      SERIES_JACK_B: new THREE.Vector3(benchX - 0.06, 0.97, 0.18),
+      R1_A: new THREE.Vector3(benchX - 0.22, 0.97, 0.04),
+      R1_B: new THREE.Vector3(benchX - 0.10, 0.97, 0.04),
+      R2_A: new THREE.Vector3(benchX - 0.10, 0.97, 0.04),
+      R2_B: new THREE.Vector3(benchX + 0.02, 0.97, 0.04),
+      R3_A: new THREE.Vector3(benchX + 0.02, 0.97, 0.04),
+      R3_B: new THREE.Vector3(benchX + 0.14, 0.97, 0.04),
+      IND_A: new THREE.Vector3(benchX - 0.18, 0.97, -0.04),
+      IND_B: new THREE.Vector3(benchX - 0.08, 0.97, -0.04),
+      CAP_A: new THREE.Vector3(benchX + 0.04, 0.97, -0.04),
+      CAP_B: new THREE.Vector3(benchX + 0.14, 0.97, -0.04),
     };
 
     // LCD Texture Canvas
@@ -141,7 +141,7 @@ export class Multimeter3D {
   private buildCircuitTrainerBoard() {
     const boardGroup = new THREE.Group();
     boardGroup.name = 'Circuit_Trainer_Board';
-    boardGroup.position.set(this.benchX - 0.12, 0.94 + 0.012, 0.12);
+    boardGroup.position.set(this.benchX - 0.10, 0.94 + 0.012, 0.10);
 
     // 1. Phenolic Base Plate with chamfered edges
     const baseMat = new THREE.MeshStandardMaterial({
@@ -446,8 +446,8 @@ export class Multimeter3D {
   private buildMultimeterBody() {
     const meterGroup = new THREE.Group();
     meterGroup.name = 'DMM_Body_Group';
-    // Positioned cleanly to the right of the board with 18cm gap to avoid any clipping
-    meterGroup.position.set(this.benchX + 0.44, 0.965, 0.14);
+    // Positioned cleanly to the right of the board with 20cm gap to avoid any clipping
+    meterGroup.position.set(this.benchX + 0.45, 0.965, 0.14);
     meterGroup.rotation.y = -Math.PI / 8; // 22.5 deg inward towards student
     meterGroup.rotation.x = 0.22; // Ergonomic 12.5 deg tilt up
 
@@ -682,7 +682,7 @@ export class Multimeter3D {
     const redMesh = createProbeMesh(0xef4444, 'Probe_Red');
     this.redProbeGroup.add(redMesh);
     // Resting position neatly in the staging area between board and multimeter
-    this.redProbeGroup.position.set(this.benchX + 0.26, 0.948, 0.28);
+    this.redProbeGroup.position.set(this.benchX + 0.28, 0.948, 0.28);
     this.redProbeGroup.rotation.set(Math.PI / 2, 0, -Math.PI / 6); // Flat on table
     this.root.add(this.redProbeGroup);
 
@@ -690,7 +690,7 @@ export class Multimeter3D {
     const blackMesh = createProbeMesh(0x18181b, 'Probe_Black');
     this.blackProbeGroup.add(blackMesh);
     // Resting position neatly in the staging area between board and multimeter
-    this.blackProbeGroup.position.set(this.benchX + 0.33, 0.948, 0.28);
+    this.blackProbeGroup.position.set(this.benchX + 0.35, 0.948, 0.28);
     this.blackProbeGroup.rotation.set(Math.PI / 2, 0, -Math.PI / 6); // Flat on table
     this.root.add(this.blackProbeGroup);
 
@@ -701,19 +701,18 @@ export class Multimeter3D {
   // BUILD POWER FEED HOOKUP WIRES FROM DC PSU TO TRAINER BOARD
   // -------------------------------------------------------------
   private buildPsuFeedWires() {
-    // PSU binding posts at rear-left (x = benchX - 0.65, z = -0.32, front face z ~ -0.11)
-    const psuRedPostPos = new THREE.Vector3(this.benchX - 0.745, 0.98, -0.11);
-    const psuBlackPostPos = new THREE.Vector3(this.benchX - 0.691, 0.98, -0.11);
+    // PSU binding posts at rear-left (x = benchX - 0.65, z = -0.48, front face z ~ -0.32)
+    const psuRedPostPos = new THREE.Vector3(this.benchX - 0.745, 0.98, -0.32);
+    const psuBlackPostPos = new THREE.Vector3(this.benchX - 0.691, 0.98, -0.32);
     const posPos = this.terminalPositions.SRC_POS;
     const negPos = this.terminalPositions.SRC_NEG;
 
     // Heavy Red Wire (+24V): Drops from PSU binding post to bench, curves smoothly, plugs into board SRC_POS
     const redCurve = new THREE.CatmullRomCurve3([
       psuRedPostPos,
-      new THREE.Vector3(this.benchX - 0.745, 0.97, -0.06),
-      new THREE.Vector3(this.benchX - 0.62, 0.946, -0.03),
-      new THREE.Vector3(this.benchX - 0.48, 0.946, 0.00),
-      new THREE.Vector3(this.benchX - 0.38, 0.955, 0.03),
+      new THREE.Vector3(this.benchX - 0.745, 0.946, -0.22),
+      new THREE.Vector3(this.benchX - 0.58, 0.946, -0.10),
+      new THREE.Vector3(this.benchX - 0.42, 0.946, -0.02),
       posPos.clone().add(new THREE.Vector3(0, 0.015, 0)),
     ]);
     const redGeo = new THREE.TubeGeometry(redCurve, 24, 0.005, 8, false);
@@ -723,10 +722,9 @@ export class Multimeter3D {
     // Heavy Black Wire (0V GND): Drops from PSU binding post to bench, curves smoothly, plugs into board SRC_NEG
     const blackCurve = new THREE.CatmullRomCurve3([
       psuBlackPostPos,
-      new THREE.Vector3(this.benchX - 0.691, 0.97, -0.06),
-      new THREE.Vector3(this.benchX - 0.58, 0.946, 0.04),
-      new THREE.Vector3(this.benchX - 0.46, 0.946, 0.12),
-      new THREE.Vector3(this.benchX - 0.38, 0.955, 0.18),
+      new THREE.Vector3(this.benchX - 0.691, 0.946, -0.20),
+      new THREE.Vector3(this.benchX - 0.52, 0.946, -0.04),
+      new THREE.Vector3(this.benchX - 0.40, 0.946, 0.10),
       negPos.clone().add(new THREE.Vector3(0, 0.015, 0)),
     ]);
     const blackGeo = new THREE.TubeGeometry(blackCurve, 24, 0.005, 8, false);
@@ -895,7 +893,7 @@ export class Multimeter3D {
         this.redProbeGroup.rotation.set(0.25, 0, -0.15); // Authentic 15-deg backward lean
       } else {
         // Return to resting position on table
-        this.redProbeGroup.position.set(this.benchX + 0.26, 0.948, 0.28);
+        this.redProbeGroup.position.set(this.benchX + 0.28, 0.948, 0.28);
         this.redProbeGroup.rotation.set(Math.PI / 2, 0, -Math.PI / 6);
       }
     } else {
@@ -905,7 +903,7 @@ export class Multimeter3D {
         this.blackProbeGroup.position.set(p.x, p.y + 0.015, p.z);
         this.blackProbeGroup.rotation.set(0.25, 0, 0.15);
       } else {
-        this.blackProbeGroup.position.set(this.benchX + 0.33, 0.948, 0.28);
+        this.blackProbeGroup.position.set(this.benchX + 0.35, 0.948, 0.28);
         this.blackProbeGroup.rotation.set(Math.PI / 2, 0, -Math.PI / 6);
       }
     }

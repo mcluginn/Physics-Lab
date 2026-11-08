@@ -1524,14 +1524,14 @@ export function createRoom3Scene(
 
   // 1. DC Power Supply / AC Function Generator Unit (Positioned on the rear-left instrument row)
   const psuGroup = new THREE.Group();
-  psuGroup.position.set(circuitsBenchX - 0.65, 0.94, -0.32);
+  psuGroup.position.set(circuitsBenchX - 0.65, 0.94, -0.48);
   psuGroup.rotation.y = 0.08;
 
   const psuHousing = new THREE.Mesh(
-    new THREE.BoxGeometry(0.48, 0.26, 0.38),
+    new THREE.BoxGeometry(0.44, 0.24, 0.34),
     material(0x1e293b, { metalness: 0.8, roughness: 0.3 })
   );
-  psuHousing.position.set(0, 0.13, 0);
+  psuHousing.position.set(0, 0.12, 0);
   psuGroup.add(psuHousing);
 
   const psuCanvas = document.createElement('canvas');
@@ -1540,32 +1540,32 @@ export function createRoom3Scene(
   const psuCtx = psuCanvas.getContext('2d')!;
   const psuTexture = new THREE.CanvasTexture(psuCanvas);
   const psuDisplay = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.32, 0.15),
+    new THREE.PlaneGeometry(0.30, 0.14),
     new THREE.MeshBasicMaterial({ map: psuTexture })
   );
-  psuDisplay.position.set(0, 0.15, 0.195);
+  psuDisplay.position.set(0, 0.14, 0.175);
   psuGroup.add(psuDisplay);
 
   const powerSwitchMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.07, 0.08, 0.04),
+    new THREE.BoxGeometry(0.06, 0.07, 0.04),
     material(0x0284c7, { emissive: 0x0284c7, emissiveIntensity: 0.9 })
   );
-  powerSwitchMesh.position.set(0.14, 0.05, 0.195);
+  powerSwitchMesh.position.set(0.13, 0.05, 0.175);
   psuGroup.add(powerSwitchMesh);
 
   const voltKnob = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.035, 0.035, 0.035, 24),
+    new THREE.CylinderGeometry(0.032, 0.032, 0.035, 24),
     material(0x94a3b8, { metalness: 0.9, roughness: 0.2 })
   );
   voltKnob.rotation.x = Math.PI / 2;
-  voltKnob.position.set(-0.12, 0.05, 0.195);
+  voltKnob.position.set(-0.11, 0.05, 0.175);
   psuGroup.add(voltKnob);
 
   // Load High-Fidelity DC Power Supply GLB Model (replaces procedural housing, display & knobs)
   gltfLoader.load('/assets/room-3/electrical/dc_power_supply.glb', (gltf) => {
     const model = gltf.scene;
     model.name = 'DC_PSU_GLB';
-    model.scale.setScalar(1.35);
+    model.scale.setScalar(1.30);
     model.position.set(0, 0, 0);
     model.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
@@ -1596,16 +1596,31 @@ export function createRoom3Scene(
   const updatePsuTexture = (vs: number, freq: number, isAc: boolean) => {
     psuCtx.fillStyle = '#050811';
     psuCtx.fillRect(0, 0, 512, 256);
-    psuCtx.font = 'bold 36px monospace';
-    psuCtx.fillStyle = '#38bdf8';
-    psuCtx.fillText(isAc ? 'AC FUNCTION GEN' : 'DC POWER SUPPLY', 20, 48);
 
+    // Instrument Frame Header
+    psuCtx.font = 'bold 24px monospace';
+    psuCtx.fillStyle = '#38bdf8';
+    psuCtx.fillText(isAc ? 'AGILENT 33220A AC/DC SOURCE' : 'KEYSIGHT E3631A DC POWER SUPPLY', 20, 38);
+
+    psuCtx.font = 'bold 16px monospace';
+    psuCtx.fillStyle = '#10b981';
+    psuCtx.fillText(isAc ? 'CH1: SINE WAVE · 50Ω LOAD' : 'CH1: CV (CONSTANT VOLTAGE) · OUTPUT ON', 20, 68);
+
+    // Large High-Contrast Digital Readout
     psuCtx.font = 'bold 64px monospace';
     psuCtx.fillStyle = '#ef4444';
-    psuCtx.fillText(`${vs.toFixed(1)} V`, 20, 130);
+    psuCtx.fillText(`${vs.toFixed(2)} V`, 20, 150);
 
-    psuCtx.fillStyle = isAc ? '#10b981' : '#64748b';
-    psuCtx.fillText(isAc ? `${freq.toFixed(0)} Hz` : '0 Hz (DC)', 20, 210);
+    // Secondary Telemetry Row
+    psuCtx.font = 'bold 26px monospace';
+    psuCtx.fillStyle = '#38bdf8';
+    const circI = calculateCircuit(currentCircuits).current;
+    psuCtx.fillText(isAc ? `FREQ: ${freq.toFixed(1)} Hz` : `I_OUT: ${(circI * 1000).toFixed(1)} mA`, 20, 205);
+
+    psuCtx.font = 'bold 18px monospace';
+    psuCtx.fillStyle = '#94a3b8';
+    psuCtx.fillText(isAc ? 'OFFSET: 0.00 V · 50Ω' : 'CC LIMIT: 3.000 A · TRIP: 3.20 A', 20, 238);
+
     psuTexture.needsUpdate = true;
   };
   updatePsuTexture(currentCircuits.vs, currentCircuits.freq, currentCircuits.mode === 'ac');
@@ -1632,14 +1647,15 @@ export function createRoom3Scene(
     readout: `Vs = ${currentCircuits.vs.toFixed(1)} V · Mode: ${currentCircuits.mode.toUpperCase()}`,
   });
 
-  // 2. Tektronix Dual-Channel Digital Storage Oscilloscope
+  // 2. Tektronix Dual-Channel Digital Storage Oscilloscope (Pushed back to rear instrument bank)
   const oscGroup = new THREE.Group();
-  oscGroup.position.set(circuitsBenchX - 0.05, 0.94 + 0.22, -0.36);
+  oscGroup.position.set(circuitsBenchX - 0.05, 0.94, -0.52);
 
   const oscHousing = new THREE.Mesh(
-    new THREE.BoxGeometry(0.72, 0.44, 0.45),
+    new THREE.BoxGeometry(0.44, 0.24, 0.30),
     material(0x334155, { metalness: 0.7, roughness: 0.35 })
   );
+  oscHousing.position.set(0, 0.12, 0);
   oscGroup.add(oscHousing);
 
   const oscCanvas = document.createElement('canvas');
@@ -1648,10 +1664,10 @@ export function createRoom3Scene(
   const oscCtx = oscCanvas.getContext('2d')!;
   const oscTexture = new THREE.CanvasTexture(oscCanvas);
   const oscScreen = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.48, 0.34),
+    new THREE.PlaneGeometry(0.24, 0.18),
     new THREE.MeshBasicMaterial({ map: oscTexture })
   );
-  oscScreen.position.set(-0.06, 0.02, 0.23);
+  oscScreen.position.set(-0.08, 0.12, 0.152);
   oscGroup.add(oscScreen);
 
   let oscPhase = 0;
@@ -1708,23 +1724,23 @@ export function createRoom3Scene(
     // Text Overlay
     oscCtx.font = 'bold 20px monospace';
     oscCtx.fillStyle = '#eab308';
-    oscCtx.fillText(`CH1: ${currentCircuits.vs.toFixed(1)} V`, 20, 32);
+    oscCtx.fillText(`CH1: ${currentCircuits.vs.toFixed(1)} V (10V/div)`, 20, 32);
     oscCtx.fillStyle = '#38bdf8';
-    oscCtx.fillText(`CH2: ${circResult.current.toFixed(3)} A`, 20, 60);
+    oscCtx.fillText(`CH2: ${(circResult.current * 1000).toFixed(1)} mA (20mA/div)`, 20, 60);
     oscCtx.fillStyle = '#10b981';
     oscCtx.fillText(`Δφ = ${circResult.phaseAngleDeg.toFixed(1)}°`, 20, 360);
-    oscCtx.fillText(`cos φ = ${circResult.powerFactor.toFixed(3)}`, 280, 360);
+    oscCtx.fillText(`cos φ = ${circResult.powerFactor.toFixed(3)} · M: 2.0ms`, 230, 360);
 
     oscTexture.needsUpdate = true;
   };
   updateOscilloscope(0);
 
-  // Load High-Fidelity Tektronix Oscilloscope GLB Model
+  // Load High-Fidelity Tektronix Oscilloscope GLB Model (properly scaled to bench instrument proportions)
   gltfLoader.load('/assets/room-3/electrical/oscilloscope.glb', (gltf) => {
     const model = gltf.scene;
     model.name = 'Oscilloscope_GLB';
-    model.scale.setScalar(1.50);
-    model.position.set(0, -0.22, 0.16);
+    model.scale.setScalar(1.15);
+    model.position.set(0, 0, 0);
     model.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         child.castShadow = true;
@@ -1761,17 +1777,56 @@ export function createRoom3Scene(
     readout: `Waveform Trace: V(t) vs I(t) · Phase Shift φ = ${calculateCircuit(currentCircuits).phaseAngleDeg.toFixed(1)}°`,
   });
 
-  // 4. Rigol DDS Arbitrary Function Generator Unit
+  // 4. Rigol DDS Arbitrary Function Generator Unit (Positioned on the rear-right instrument row)
   const fgenGroup = new THREE.Group();
-  fgenGroup.position.set(circuitsBenchX + 0.72, 0.94 + 0.12, -0.32);
+  fgenGroup.position.set(circuitsBenchX + 0.65, 0.94, -0.48);
+  fgenGroup.rotation.y = -0.08;
+
+  const fgenCanvas = document.createElement('canvas');
+  fgenCanvas.width = 512;
+  fgenCanvas.height = 256;
+  const fgenCtx = fgenCanvas.getContext('2d')!;
+  const fgenTexture = new THREE.CanvasTexture(fgenCanvas);
+
+  const updateFgenDisplay = () => {
+    fgenCtx.fillStyle = '#0a192f';
+    fgenCtx.fillRect(0, 0, 512, 256);
+
+    fgenCtx.font = 'bold 24px monospace';
+    fgenCtx.fillStyle = '#38bdf8';
+    fgenCtx.fillText('RIGOL DG1022 DDS ARB GENERATOR', 20, 38);
+
+    fgenCtx.font = 'bold 16px monospace';
+    fgenCtx.fillStyle = '#10b981';
+    fgenCtx.fillText('CH1: 50Ω HIGH-Z · OUTPUT [ON]', 20, 68);
+
+    fgenCtx.font = 'bold 54px monospace';
+    fgenCtx.fillStyle = '#eab308';
+    fgenCtx.fillText(`${currentCircuits.freq.toFixed(1)} Hz`, 20, 140);
+
+    fgenCtx.font = 'bold 24px monospace';
+    fgenCtx.fillStyle = '#38bdf8';
+    fgenCtx.fillText(`WAVE: ${currentCircuits.mode === 'ac' ? 'SINE ~' : 'DC LEVEL'}`, 20, 195);
+    fgenCtx.font = 'bold 18px monospace';
+    fgenCtx.fillStyle = '#94a3b8';
+    fgenCtx.fillText(`AMPL: ${currentCircuits.vs.toFixed(1)} Vpp · OFFSET: 0.00 V`, 20, 235);
+
+    fgenTexture.needsUpdate = true;
+  };
+  updateFgenDisplay();
+
   gltfLoader.load('/assets/room-3/electrical/function_generator.glb', (gltf) => {
     const model = gltf.scene;
     model.name = 'FunctionGenerator_GLB';
-    model.scale.setScalar(1.4);
+    model.scale.setScalar(1.30);
+    model.position.set(0, 0, 0);
     model.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         child.castShadow = true;
         child.receiveShadow = true;
+        if (child.name === 'FunctionGen_LCD_Screen') {
+          (child as THREE.Mesh).material = new THREE.MeshBasicMaterial({ map: fgenTexture });
+        }
       }
     });
     fgenGroup.add(model);
@@ -2280,16 +2335,16 @@ export function createRoom3Scene(
         out.set(STATION_X.circuits, 3.40, ROOM2_CONFIG.room.backZ + 0.25);
         return true;
       case 'circuits-power-switch':
-        out.set(circuitsBenchX - 0.58, 1.12, -0.12);
+        out.set(circuitsBenchX - 0.58, 1.10, -0.32);
         return true;
       case 'circuits-voltage-knob':
-        out.set(circuitsBenchX - 0.73, 1.12, -0.12);
+        out.set(circuitsBenchX - 0.73, 1.10, -0.32);
         return true;
       case 'circuits-oscilloscope':
-        out.set(circuitsBenchX, 1.35, -0.17);
+        out.set(circuitsBenchX - 0.05, 1.18, -0.52);
         return true;
       case 'circuits-topology-selector':
-        out.set(circuitsBenchX, 1.15, 0.15);
+        out.set(circuitsBenchX - 0.10, 1.05, 0.10);
         return true;
       case 'circuits-clipboard':
         out.set(circuitsBenchX + 1.1, 1.15, 0.35);
@@ -2463,8 +2518,8 @@ export function createRoom3Scene(
 
   const CLOSEUP_TARGETS: Record<Room3StationId, { pos: THREE.Vector3; lookAt: THREE.Vector3 }> = {
     circuits: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.48, 0.92),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.05, 0.98, -0.05),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.42, 0.88),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.05, 1.02, -0.15),
     },
     optics: {
       pos: new THREE.Vector3(STATION_X.optics, 1.34, 0.72),
@@ -2478,20 +2533,20 @@ export function createRoom3Scene(
 
   const CIRCUITS_CLOSEUP_SUBVIEWS = {
     station: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.48, 0.92),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.05, 0.98, -0.05),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.42, 0.88),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.05, 1.02, -0.15),
     },
     board: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.12, 1.28, 0.44),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.12, 0.96, 0.12),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.10, 1.26, 0.42),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.10, 0.96, 0.10),
     },
     multimeter: {
-      pos: new THREE.Vector3(STATION_X.circuits + 0.44, 1.24, 0.42),
-      lookAt: new THREE.Vector3(STATION_X.circuits + 0.44, 0.97, 0.16),
+      pos: new THREE.Vector3(STATION_X.circuits + 0.45, 1.24, 0.42),
+      lookAt: new THREE.Vector3(STATION_X.circuits + 0.45, 0.97, 0.14),
     },
     psu: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.65, 1.25, 0.15),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.65, 1.05, -0.32),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.65, 1.22, -0.08),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.65, 1.04, -0.48),
     },
   };
 

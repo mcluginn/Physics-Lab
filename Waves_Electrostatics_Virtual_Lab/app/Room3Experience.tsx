@@ -1391,19 +1391,10 @@ export default function Room3Experience() {
             </button>
           </div>
 
-          {stationId === 'circuits' && (
+          {stationId === 'circuits' && experienceMode === 'advanced' && (
             <div className="closeup-circuits-quickbar">
-              <div className="closeup-guidance-pill">
-                <span className="step-tag">CURRENT TASK</span>
-                <span className="step-text">
-                  {currentGuidedStep ? currentGuidedStep.action : 'Measure voltage and current with multimeter'}
-                </span>
-                {currentGuidedStep?.expectedResult && (
-                  <span className="expected-pill">🎯 Target: {currentGuidedStep.expectedResult}</span>
-                )}
-              </div>
               <div className="closeup-quick-buttons">
-                <span className="quick-title">⚡ Quick Probes:</span>
+                <span className="quick-title">⚡ Quick Probes (Advanced Override):</span>
                 <button
                   type="button"
                   className={`quick-chip ${redTerminal === 'R1_A' && blackTerminal === 'R1_B' ? 'active' : ''}`}
@@ -1581,56 +1572,58 @@ export default function Room3Experience() {
         </button>
       </div>
 
-      {/* Left Objective Panel */}
-      <section
-        className={`objective-panel ${mobilePanel === 'objective' ? 'mobile-visible' : 'mobile-hidden'}`}
-        aria-labelledby="objective-title"
-      >
-        <div className="objective-panel-header-row">
-          <div className="eyebrow"><span className="live-dot" /> STATION {station.number} · STEP {stationProgress.currentStep + 1}/8 · {STEP_NAMES[stationProgress.currentStep].toUpperCase()}</div>
-          <button
-            type="button"
-            className="mobile-panel-close-btn"
-            onClick={() => setMobilePanel('none')}
-            title="Close panel to view 3D apparatus"
-          >
-            ✕ Back to 3D
-          </button>
-        </div>
-        <h1 id="objective-title">{station.steps[stationProgress.currentStep]?.title || station.title}</h1>
-        <p>{station.steps[stationProgress.currentStep]?.prompt || station.objective}</p>
-        <figure className="station-asset">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={station.placardSrc}
-            alt={station.placardAlt}
-            loading={stationId === 'circuits' ? 'eager' : 'lazy'}
-          />
-          <figcaption>
-            <span>VISUAL REFERENCE</span>
-            <b>{station.subtitle}</b>
-          </figcaption>
-        </figure>
-        <button
-          className="prompt-line"
-          onClick={() => {
-            setNotebookStep(stationProgress.currentStep);
-            setNotebookOpen(true);
-          }}
+      {/* Left Objective Panel - Only active in Walk mode so close-up workbench is 100% unobstructed */}
+      {cameraMode === 'walk' && (
+        <section
+          className={`objective-panel ${mobilePanel === 'objective' ? 'mobile-visible' : 'mobile-hidden'}`}
+          aria-labelledby="objective-title"
         >
-          <span>↳</span><b>Open notebook:</b> {station.steps[stationProgress.currentStep]?.target || `Step ${stationProgress.currentStep + 1}: ${STEP_NAMES[stationProgress.currentStep]}`}
-        </button>
-        {guidanceTarget && (
-          <div className="guidance-line">
-            <span>↓</span>
-            <div>
-              <b>IN-WORLD GUIDE ACTIVE</b>
-              <small>Follow the pulsing marker to the {GUIDANCE_LABELS[guidanceTarget] || 'apparatus'}.</small>
-            </div>
+          <div className="objective-panel-header-row">
+            <div className="eyebrow"><span className="live-dot" /> STATION {station.number} · STEP {stationProgress.currentStep + 1}/8 · {STEP_NAMES[stationProgress.currentStep].toUpperCase()}</div>
+            <button
+              type="button"
+              className="mobile-panel-close-btn"
+              onClick={() => setMobilePanel('none')}
+              title="Close panel to view 3D apparatus"
+            >
+              ✕ Back to 3D
+            </button>
           </div>
-        )}
-        <div className="progress-track"><span style={{ width: `${(stationProgress.completed.filter(Boolean).length / 8) * 100}%` }} /></div>
-      </section>
+          <h1 id="objective-title">{station.steps[stationProgress.currentStep]?.title || station.title}</h1>
+          <p>{station.steps[stationProgress.currentStep]?.prompt || station.objective}</p>
+          <figure className="station-asset">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={station.placardSrc}
+              alt={station.placardAlt}
+              loading={stationId === 'circuits' ? 'eager' : 'lazy'}
+            />
+            <figcaption>
+              <span>VISUAL REFERENCE</span>
+              <b>{station.subtitle}</b>
+            </figcaption>
+          </figure>
+          <button
+            className="prompt-line"
+            onClick={() => {
+              setNotebookStep(stationProgress.currentStep);
+              setNotebookOpen(true);
+            }}
+          >
+            <span>↳</span><b>Open notebook:</b> {station.steps[stationProgress.currentStep]?.target || `Step ${stationProgress.currentStep + 1}: ${STEP_NAMES[stationProgress.currentStep]}`}
+          </button>
+          {guidanceTarget && (
+            <div className="guidance-line">
+              <span>↓</span>
+              <div>
+                <b>IN-WORLD GUIDE ACTIVE</b>
+                <small>Follow the pulsing marker to the {GUIDANCE_LABELS[guidanceTarget] || 'apparatus'}.</small>
+              </div>
+            </div>
+          )}
+          <div className="progress-track"><span style={{ width: `${(stationProgress.completed.filter(Boolean).length / 8) * 100}%` }} /></div>
+        </section>
+      )}
 
       {/* Right Aside: Live Controls & Explicit Derived Telemetry */}
       <aside
