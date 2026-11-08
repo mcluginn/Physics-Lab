@@ -2641,17 +2641,75 @@ export function createRoom3Scene(
   };
 
   // -------------------------------------------------------------
-  // 18. Pointer Controls, Mouse Click Raycasting & Keyboard Listeners
+  // 18. Pointer Controls, Free Mouse-Look & Keyboard Listeners
   // -------------------------------------------------------------
   let isPointerDown = false;
+  let dragTravel = 0;
   let prevMouseX = 0;
   let prevMouseY = 0;
 
+  const interactAtScreenPoint = (clientX: number, clientY: number): boolean => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const pointer = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    raycaster.setFromCamera(pointer, camera);
+    const intersects = raycaster.intersectObjects(interactableObjects, true);
+    for (const hit of intersects) {
+      let currentObj: THREE.Object3D | null = hit.object;
+      let inter: EquipmentInteraction | undefined = undefined;
+      while (currentObj && !inter) {
+        inter = objectToInteractionMap.get(currentObj) || currentObj.userData.equipmentInteraction;
+        currentObj = currentObj.parent;
+      }
+      if (inter) {
+        const maxDist = (inter.id.includes('placard') || inter.id === 'physics-whiteboard' || inter.id === 'campus-door' || inter.id.includes('assistant') || inter.id.includes('professor')) ? 14.0 : 8.5;
+        if (hit.distance <= maxDist) {
+          triggerEquipmentAction(inter.id);
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const requestPointerLock = () => {
+    if (cameraMode !== 'walk') return;
+    try {
+      const lockReq = renderer.domElement.requestPointerLock?.();
+      if (lockReq && typeof (lockReq as Promise<void>).catch === 'function') {
+        void (lockReq as Promise<void>).catch(() => callbacks.onPointerLockChange?.(false));
+      }
+    } catch {
+      // browser may refuse pointer lock before user gesture
+    }
+  };
+
   const onPointerDown = (e: PointerEvent) => {
     if (e.target !== renderer.domElement) return;
+
+    if (cameraMode === 'closeup') {
+      return;
+    }
+
     isPointerDown = true;
+    dragTravel = 0;
     prevMouseX = e.clientX;
     prevMouseY = e.clientY;
+
+    if (document.pointerLockElement !== renderer.domElement) {
+      if (e.button === 0) {
+        if (!interactAtScreenPoint(e.clientX, e.clientY)) {
+          requestPointerLock();
+        }
+      }
+      return;
+    }
+
+    if (e.button === 0) {
+      interact();
+    }
   };
 
   const onPointerMove = (e: PointerEvent) => {
@@ -2676,35 +2734,56 @@ export function createRoom3Scene(
       }
       return;
     }
-    if (document.pointerLockElement === renderer.domElement || document.pointerLockElement === container) {
-      yaw -= e.movementX * 0.0022;
-      pitch = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, pitch - e.movementY * 0.0022));
-      updateCamera();
-    } else if (isPointerDown) {
+
+    // When NOT in pointer lock, allow smooth dragging with either mouse button
+    if (document.pointerLockElement !== renderer.domElement && isPointerDown) {
       const dx = e.clientX - prevMouseX;
       const dy = e.clientY - prevMouseY;
+      dragTravel += Math.hypot(dx, dy);
       prevMouseX = e.clientX;
       prevMouseY = e.clientY;
       yaw -= dx * 0.0032;
-      pitch = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, pitch - dy * 0.0032));
+      pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch - dy * 0.0032));
       updateCamera();
     }
+  };
+
+  // Free first-person mouse look while pointer is locked (zero buttons held)
+  const onMouseMove = (e: MouseEvent) => {
+    if (cameraMode === 'closeup') return;
+    if (document.pointerLockElement !== renderer.domElement) return;
+    yaw -= e.movementX * 0.0022;
+    pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch - e.movementY * 0.0022));
+    updateCamera();
   };
 
   const onPointerUp = () => {
     isPointerDown = false;
   };
 
+  const onPointerLockChange = () => {
+    const locked = document.pointerLockElement === renderer.domElement;
+    callbacks.onPointerLockChange?.(locked);
+    if (!locked) {
+      movement.forward = movement.backward = movement.left = movement.right = false;
+      mouseActive = false;
+    }
+  };
+
+  const onContextMenu = (e: MouseEvent) => {
+    e.preventDefault();
+  };
+
   const onCanvasClick = (e: MouseEvent) => {
     if (!container || !renderer.domElement) return;
-    const rect = renderer.domElement.getBoundingClientRect();
-    const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    const clickPointer = new THREE.Vector2(mouseX, mouseY);
-    raycaster.setFromCamera(clickPointer, camera);
 
     if (cameraMode === 'closeup') {
       if (activeStation === 'circuits') {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        const clickPointer = new THREE.Vector2(mouseX, mouseY);
+        raycaster.setFromCamera(clickPointer, camera);
         const hits = raycaster.intersectObjects(multimeter3d.interactableMeshes, true);
         if (hits.length > 0) {
           const hitObj = hits[0].object;
@@ -2739,20 +2818,10 @@ export function createRoom3Scene(
         }
       }
     } else {
-      const intersects = raycaster.intersectObjects(interactableObjects, true);
-      for (const hit of intersects) {
-        let currentObj: THREE.Object3D | null = hit.object;
-        let inter: EquipmentInteraction | undefined = undefined;
-        while (currentObj && !inter) {
-          inter = objectToInteractionMap.get(currentObj) || currentObj.userData.equipmentInteraction;
-          currentObj = currentObj.parent;
-        }
-        if (inter) {
-          const maxDist = (inter.id.includes('placard') || inter.id === 'physics-whiteboard' || inter.id === 'campus-door' || inter.id.includes('assistant') || inter.id.includes('professor')) ? 14.0 : 8.5;
-          if (hit.distance <= maxDist) {
-            triggerEquipmentAction(inter.id);
-            break;
-          }
+      if (dragTravel >= 8) return;
+      if (document.pointerLockElement !== renderer.domElement) {
+        if (!interactAtScreenPoint(e.clientX, e.clientY)) {
+          requestPointerLock();
         }
       }
     }
@@ -2760,8 +2829,11 @@ export function createRoom3Scene(
 
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
   renderer.domElement.addEventListener('click', onCanvasClick);
+  renderer.domElement.addEventListener('contextmenu', onContextMenu);
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('pointerlockchange', onPointerLockChange);
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && cameraMode === 'closeup') {
@@ -2930,8 +3002,11 @@ export function createRoom3Scene(
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('click', onCanvasClick);
+      renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('pointerlockchange', onPointerLockChange);
       character.dispose();
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh || obj instanceof THREE.Line) {
@@ -2964,11 +3039,7 @@ export function createRoom3Scene(
       doorOpenedCallback = onOpened ?? null;
       playDoorSound(true);
     },
-    requestPointerLock: () => {
-      if (cameraMode === 'walk') {
-        renderer.domElement.requestPointerLock?.();
-      }
-    },
+    requestPointerLock,
     resetView: () => setStation(activeStation),
     toggleView: () => {
       const is3rd = character.toggleView();

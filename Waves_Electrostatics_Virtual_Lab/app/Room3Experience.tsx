@@ -506,6 +506,7 @@ export default function Room3Experience() {
         onCameraModeChange: (mode) => setCameraMode(mode),
         onDmmReadingChange: (reading) => setDmmReading(reading),
         onCloseupHover: (text) => setCloseupHoverText(text),
+        onPointerLockChange: setPointerLocked,
       });
       sceneApi.current = api;
       if (typeof window !== 'undefined') {
