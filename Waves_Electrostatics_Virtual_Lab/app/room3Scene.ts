@@ -1533,7 +1533,34 @@ export function createRoom3Scene(
   );
   psuGroup.add(psuHousing);
 
-  // Load High-Fidelity DC Power Supply GLB Model
+  const psuCanvas = document.createElement('canvas');
+  psuCanvas.width = 512;
+  psuCanvas.height = 256;
+  const psuCtx = psuCanvas.getContext('2d')!;
+  const psuTexture = new THREE.CanvasTexture(psuCanvas);
+  const psuDisplay = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.38, 0.18),
+    new THREE.MeshBasicMaterial({ map: psuTexture })
+  );
+  psuDisplay.position.set(0, 0.05, 0.215);
+  psuGroup.add(psuDisplay);
+
+  const powerSwitchMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.10, 0.05),
+    material(0x0284c7, { emissive: 0x0284c7, emissiveIntensity: 0.9 })
+  );
+  powerSwitchMesh.position.set(0.18, -0.08, 0.215);
+  psuGroup.add(powerSwitchMesh);
+
+  const voltKnob = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.04, 0.04, 24),
+    material(0x94a3b8, { metalness: 0.9, roughness: 0.2 })
+  );
+  voltKnob.rotation.x = Math.PI / 2;
+  voltKnob.position.set(-0.15, -0.08, 0.215);
+  psuGroup.add(voltKnob);
+
+  // Load High-Fidelity DC Power Supply GLB Model (replaces procedural housing, display & knobs)
   gltfLoader.load('/assets/room-3/electrical/dc_power_supply.glb', (gltf) => {
     const model = gltf.scene;
     model.name = 'DC_PSU_GLB';
@@ -1548,11 +1575,11 @@ export function createRoom3Scene(
         }
       }
     });
-    (psuHousing.material as THREE.Material).transparent = true;
-    (psuHousing.material as THREE.Material).opacity = 0;
-    (psuHousing.material as THREE.Material).depthWrite = false;
-    (psuHousing.material as THREE.Material).needsUpdate = true;
-    psuHousing.visible = true;
+    // Hide procedural fallback meshes to prevent double-rendering / clipping
+    psuHousing.visible = false;
+    psuDisplay.visible = false;
+    powerSwitchMesh.visible = false;
+    voltKnob.visible = false;
     psuGroup.add(model);
     registerInteractable(model, {
       id: 'circuits-power-switch',
@@ -1564,18 +1591,6 @@ export function createRoom3Scene(
       readout: `Output: ${currentCircuits.vs.toFixed(1)} V · Current Limit: 3.00 A`,
     });
   }, undefined, (err) => console.warn('DC PSU GLB load note:', err));
-
-  const psuCanvas = document.createElement('canvas');
-  psuCanvas.width = 512;
-  psuCanvas.height = 256;
-  const psuCtx = psuCanvas.getContext('2d')!;
-  const psuTexture = new THREE.CanvasTexture(psuCanvas);
-  const psuDisplay = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.38, 0.18),
-    new THREE.MeshBasicMaterial({ map: psuTexture })
-  );
-  psuDisplay.position.set(0, 0.05, 0.215);
-  psuGroup.add(psuDisplay);
 
   const updatePsuTexture = (vs: number, freq: number, isAc: boolean) => {
     psuCtx.fillStyle = '#050811';
@@ -1593,21 +1608,6 @@ export function createRoom3Scene(
     psuTexture.needsUpdate = true;
   };
   updatePsuTexture(currentCircuits.vs, currentCircuits.freq, currentCircuits.mode === 'ac');
-
-  const powerSwitchMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.08, 0.10, 0.05),
-    material(0x0284c7, { emissive: 0x0284c7, emissiveIntensity: 0.9 })
-  );
-  powerSwitchMesh.position.set(0.18, -0.08, 0.215);
-  psuGroup.add(powerSwitchMesh);
-
-  const voltKnob = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.04, 0.04, 0.04, 24),
-    material(0x94a3b8, { metalness: 0.9, roughness: 0.2 })
-  );
-  voltKnob.rotation.x = Math.PI / 2;
-  voltKnob.position.set(-0.15, -0.08, 0.215);
-  psuGroup.add(voltKnob);
 
   scene.add(psuGroup);
 
@@ -1733,11 +1733,9 @@ export function createRoom3Scene(
         }
       }
     });
-    (oscHousing.material as THREE.Material).transparent = true;
-    (oscHousing.material as THREE.Material).opacity = 0;
-    (oscHousing.material as THREE.Material).depthWrite = false;
-    (oscHousing.material as THREE.Material).needsUpdate = true;
-    oscHousing.visible = true;
+    // Hide procedural fallback housing and floating screen to prevent double-rendering
+    oscHousing.visible = false;
+    oscScreen.visible = false;
     oscGroup.add(model);
     registerInteractable(model, {
       id: 'circuits-oscilloscope',
@@ -2464,8 +2462,8 @@ export function createRoom3Scene(
 
   const CLOSEUP_TARGETS: Record<Room3StationId, { pos: THREE.Vector3; lookAt: THREE.Vector3 }> = {
     circuits: {
-      pos: new THREE.Vector3(STATION_X.circuits, 1.48, 0.94),
-      lookAt: new THREE.Vector3(STATION_X.circuits, 0.98, 0.10),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.02, 1.46, 0.92),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.02, 0.98, 0.10),
     },
     optics: {
       pos: new THREE.Vector3(STATION_X.optics, 1.34, 0.72),
@@ -2479,16 +2477,16 @@ export function createRoom3Scene(
 
   const CIRCUITS_CLOSEUP_SUBVIEWS = {
     station: {
-      pos: new THREE.Vector3(STATION_X.circuits, 1.48, 0.94),
-      lookAt: new THREE.Vector3(STATION_X.circuits, 0.98, 0.10),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.02, 1.46, 0.92),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.02, 0.98, 0.10),
     },
     board: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.30, 0.45),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.05, 0.96, 0.10),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.12, 1.28, 0.44),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.12, 0.96, 0.12),
     },
     multimeter: {
-      pos: new THREE.Vector3(STATION_X.circuits + 0.44, 1.25, 0.42),
-      lookAt: new THREE.Vector3(STATION_X.circuits + 0.44, 0.98, 0.14),
+      pos: new THREE.Vector3(STATION_X.circuits + 0.44, 1.24, 0.42),
+      lookAt: new THREE.Vector3(STATION_X.circuits + 0.44, 0.97, 0.16),
     },
     psu: {
       pos: new THREE.Vector3(STATION_X.circuits - 0.52, 1.22, 0.35),

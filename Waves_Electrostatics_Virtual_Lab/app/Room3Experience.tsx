@@ -35,6 +35,7 @@ import {
 } from './room3Model';
 import { Room3Graph, computeRoom3Regression } from './Room3Graph';
 import { Room3Schematic2D } from './Room3Schematic2D';
+import { Room3CircuitWorkspace } from './Room3CircuitWorkspace';
 import {
   createRoom3Scene,
   type EquipmentInteraction,
@@ -238,6 +239,9 @@ export default function Room3Experience() {
   const [equipmentMessage, setEquipmentMessage] = useState('');
   const [soundVolume, setSoundVolume] = useState(0.5);
   const [pointerLocked, setPointerLocked] = useState(false);
+
+  // Coordinated Workspace Views (View A: 3D Laboratory vs View B: DCACLab Interactive Breadboard Workspace)
+  const [activeWorkspaceView, setActiveWorkspaceView] = useState<'3d' | 'circuit_workspace'>('3d');
 
   // Multimeter & Workbench Instrument States
   const [cameraMode, setCameraMode] = useState<'walk' | 'closeup'>(() => {
@@ -687,9 +691,15 @@ export default function Room3Experience() {
   useEffect(() => {
     const handleKeyNav = (e: KeyboardEvent) => {
       if (['input', 'textarea'].includes((e.target as HTMLElement)?.tagName?.toLowerCase())) return;
-      if (e.key === 'Escape' && cameraMode === 'closeup') {
-        handleSetCloseup('walk');
-        return;
+      if (e.key === 'Escape') {
+        if (activeWorkspaceView === 'circuit_workspace') {
+          setActiveWorkspaceView('3d');
+          return;
+        }
+        if (cameraMode === 'closeup') {
+          handleSetCloseup('walk');
+          return;
+        }
       }
       if (e.key === '1') {
         setStationId('circuits');
@@ -701,7 +711,9 @@ export default function Room3Experience() {
         setStationId('relativity');
         playTone(523.25, 'sine', 0.1, 0.15);
       } else if (e.key.toLowerCase() === 'e') {
-        if (cameraMode === 'closeup') {
+        if (activeWorkspaceView === 'circuit_workspace') {
+          setActiveWorkspaceView('3d');
+        } else if (cameraMode === 'closeup') {
           handleSetCloseup('walk');
         } else if (interaction) {
           handleEquipmentAction(interaction.id);
@@ -711,7 +723,7 @@ export default function Room3Experience() {
     window.addEventListener('keydown', handleKeyNav);
     return () => window.removeEventListener('keydown', handleKeyNav);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interaction, cameraMode]);
+  }, [interaction, cameraMode, activeWorkspaceView]);
 
   // Touch Analog Walking Joystick Handlers
   const handleJoystickPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1239,6 +1251,7 @@ export default function Room3Experience() {
       <div
         ref={sceneContainer}
         className="scene"
+        style={{ display: activeWorkspaceView === '3d' ? 'block' : 'none' }}
         aria-label={`Interactive 3D ${station.shortName} laboratory`}
       >
         {sceneError && (
@@ -1256,6 +1269,43 @@ export default function Room3Experience() {
           />
         )}
       </div>
+
+      {/* VIEW B: INTERACTIVE CIRCUIT WORKSPACE (DCACLab Concept) */}
+      {stationId === 'circuits' && activeWorkspaceView === 'circuit_workspace' && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 12 }}>
+          <Room3CircuitWorkspace
+            circuits={circuits}
+            circuitResult={circuitResult}
+            dmmMode={dmmMode}
+            dmmJack={dmmJack}
+            redTerminal={redTerminal}
+            blackTerminal={blackTerminal}
+            jumperClosed={jumperClosed}
+            dmmReading={dmmReading}
+            onUpdateCircuits={(patch) => {
+              setCircuits((prev) => {
+                const next = { ...prev, ...patch };
+                sceneApi.current?.setCircuits(next);
+                return next;
+              });
+            }}
+            onSetDmmMode={handleSetDmmMode}
+            onSetDmmJack={handleSetDmmJack}
+            onSetProbe={handleSetProbe}
+            onToggleJumper={handleToggleJumper}
+            onResetFuse={handleResetFuse}
+            onBackTo3D={() => setActiveWorkspaceView('3d')}
+            experienceMode={experienceMode}
+            onSetExperienceMode={setExperienceMode}
+            guidedStep={currentGuidedStep}
+            stepValidation={stepValidation}
+            onContinueGuidedStep={handleContinueGuidedStep}
+            onRecordMeasurement={() => {
+              recordCurrentTrial();
+            }}
+          />
+        </div>
+      )}
       <div className="vignette" aria-hidden="true" />
 
       {/* Loading overlay */}
@@ -1288,7 +1338,7 @@ export default function Room3Experience() {
         </div>
       )}
 
-      {cameraMode === 'closeup' && !notebookOpen && (
+      {cameraMode === 'closeup' && !notebookOpen && activeWorkspaceView === '3d' && (
         <div className="closeup-hud-banner" role="status">
           <div className="closeup-hud-header">
             <div className="closeup-hud-badge">🔬 WORKBENCH CLOSE-UP</div>
@@ -1321,6 +1371,14 @@ export default function Room3Experience() {
                   onClick={() => handleSetCloseupFocus('psu')}
                 >
                   ⚡ Power Supply
+                </button>
+                <button
+                  type="button"
+                  className="cam-focus-btn"
+                  style={{ background: 'rgba(2, 132, 199, 0.3)', border: '1px solid #0284c7', color: '#38bdf8' }}
+                  onClick={() => setActiveWorkspaceView('circuit_workspace')}
+                >
+                  ⚡ Breadboard 3D (DCACLab)
                 </button>
               </div>
             )}
@@ -1394,7 +1452,7 @@ export default function Room3Experience() {
         </div>
       )}
 
-      {cameraMode === 'closeup' && !notebookOpen && closeupHoverText && (
+      {cameraMode === 'closeup' && !notebookOpen && activeWorkspaceView === '3d' && closeupHoverText && (
         <div className="closeup-hover-pill" role="status" aria-live="polite">
           <span className="hover-icon">⚡</span>
           <span className="hover-text">{closeupHoverText}</span>
@@ -1797,6 +1855,26 @@ export default function Room3Experience() {
         {/* STATION 01: CIRCUITS CONTROLS */}
         {stationId === 'circuits' && (
           <>
+            {/* View Switcher: 3D Workbench vs Breadboard 3D (DCACLab) */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+              <button
+                type="button"
+                className={`dmm-btn ${activeWorkspaceView === '3d' ? 'active' : ''}`}
+                style={{ flex: 1, padding: '7px 4px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                onClick={() => setActiveWorkspaceView('3d')}
+              >
+                <span>🔬 3D Laboratory</span>
+              </button>
+              <button
+                type="button"
+                className={`dmm-btn ${activeWorkspaceView === 'circuit_workspace' ? 'active' : ''}`}
+                style={{ flex: 1, padding: '7px 4px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', background: activeWorkspaceView === 'circuit_workspace' ? '#0284c7' : '#0f172a', color: '#38bdf8' }}
+                onClick={() => setActiveWorkspaceView('circuit_workspace')}
+              >
+                <span>⚡ Breadboard (DCACLab)</span>
+              </button>
+            </div>
+
             {/* Workbench Close-Up & Primary Power Switch */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
               <button
