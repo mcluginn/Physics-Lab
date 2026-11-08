@@ -19,8 +19,41 @@ body {
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
-button, input { font: inherit; }
+
+/* Global Selection, Highlight, and Text Contrast Hardening */
+::selection {
+  background-color: rgba(34, 211, 238, 0.35) !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+::-moz-selection {
+  background-color: rgba(34, 211, 238, 0.35) !important;
+  color: #ffffff !important;
+}
+mark {
+  background-color: rgba(34, 211, 238, 0.22) !important;
+  color: #38bdf8 !important;
+}
+
+button, input, select, textarea { font: inherit; }
 button { color: inherit; }
+
+/* Native form controls hardening for Windows / Chromium */
+select, option {
+  background-color: #0c1829 !important;
+  color: #f1f5f9 !important;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 6px;
+}
+select:focus, option:focus, option:checked {
+  background-color: #162a45 !important;
+  color: #38bdf8 !important;
+  outline: 2px solid #38bdf8 !important;
+}
+:focus-visible {
+  outline: 2px solid #38bdf8 !important;
+  outline-offset: 2px !important;
+}
 
 .campus-shell { position: relative; min-height: 100vh; overflow: hidden; padding: 0 clamp(24px, 5vw, 76px); background: radial-gradient(circle at 50% 12%, rgba(28, 80, 112, 0.34), transparent 34%), linear-gradient(145deg, #040811 0%, #081426 48%, #050812 100%); color: #f7fbff; }
 .campus-grid { position: absolute; inset: 0; opacity: 0.34; background-image: linear-gradient(rgba(79, 156, 190, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(79, 156, 190, 0.08) 1px, transparent 1px); background-size: 44px 44px; mask-image: linear-gradient(to bottom, black, transparent 80%); }
@@ -4669,6 +4702,7 @@ button { color: inherit; }
     bottom: calc(100% + 8px);
     padding: 14px 16px;
   }
+}
 /* ============================================================== */
 /* COMMEMORATIVE HARDWOOD & EMBEDDED GOLD FOUNDERS HONOR ROLL */
 /* ============================================================== */
@@ -5044,6 +5078,579 @@ button { color: inherit; }
   border-color: #38bdf8;
   color: #f0f9ff;
 }
+
+/* ==========================================================================
+   ROOM 03 NOTEBOOK, GUIDED ASSESSMENT, CALCULATION & CERTIFICATION SUITE
+   ========================================================================== */
+
+.step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: #e2e8f0;
+}
+
+.step-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.step-badge-row h4 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+}
+
+.step-points-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+  font: 800 10px/1 ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+.step-prompt {
+  margin: 0 0 14px 0;
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* Step 1: Component Checklist */
+.equipment-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 10px;
+}
+
+.equipment-checklist b {
+  font-size: 12px;
+  color: #38bdf8;
+  letter-spacing: 0.04em;
+}
+
+.equipment-checklist ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.equipment-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(71, 85, 105, 0.4);
+  border-radius: 7px;
+  font-size: 11.5px;
+  color: #94a3b8;
+  transition: all 0.15s ease;
+}
+
+.equipment-checklist li.done {
+  background: rgba(6, 78, 59, 0.25);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+}
+
+/* Step 2: Prediction Question */
+.prediction-question {
+  margin: 0 0 12px 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+  line-height: 1.5;
+}
+
+/* Step 3: Calibration Reference Box */
+.calibration-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-left: 4px solid #38bdf8;
+  border-radius: 10px;
+}
+
+.calibration-box b {
+  font-size: 12px;
+  color: #38bdf8;
+  letter-spacing: 0.05em;
+}
+
+.calibration-box p {
+  margin: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.6;
+}
+
+/* Step 4: Run Settling Card */
+.run-settling-card {
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 10px;
+}
+
+.settling-state {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+}
+
+.settling-state .spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(56, 189, 248, 0.2);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.settling-state p {
+  margin: 0;
+  color: #7dd3fc;
+  font-size: 12.5px;
+}
+
+.ready-state p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Step 6: Calculation Table & Entries */
+.calc-inputs-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.calc-row {
+  padding: 10px 14px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(71, 85, 105, 0.4);
+  border-radius: 8px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.calc-row b {
+  color: #38bdf8;
+}
+
+.calc-input-wrapper input {
+  width: 100%;
+  background: #07111e !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+  border-radius: 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.calc-input-wrapper input:focus {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+/* Step 7: Formative Assessment Guided Questions */
+.guided-questions-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 18px 0;
+  padding: 16px;
+  background: rgba(12, 22, 38, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 12px;
+}
+
+.guided-questions-container > b {
+  font-size: 13px;
+  color: #38bdf8;
+  letter-spacing: 0.04em;
+}
+
+.guide-question-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(71, 85, 105, 0.35);
+  border-radius: 8px;
+}
+
+.q-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #f1f5f9;
+  line-height: 1.45;
+}
+
+.q-title b {
+  color: #38bdf8;
+  font-family: ui-monospace, monospace;
+}
+
+.q-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.q-opt-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 6px;
+  background: rgba(30, 41, 59, 0.6) !important;
+  border: 1px solid rgba(71, 85, 105, 0.5) !important;
+  color: #cbd5e1 !important;
+  font-size: 12px;
+  line-height: 1.45;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.q-opt-btn:hover {
+  background: rgba(51, 65, 85, 0.8) !important;
+  border-color: #94a3b8 !important;
+  color: #ffffff !important;
+}
+
+.q-opt-btn.correct {
+  background: rgba(6, 78, 59, 0.4) !important;
+  border-color: #10b981 !important;
+  color: #6ee7b7 !important;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+}
+
+.q-opt-btn.incorrect {
+  background: rgba(127, 29, 29, 0.35) !important;
+  border-color: #ef4444 !important;
+  color: #fca5a5 !important;
+}
+
+.q-explanation {
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(6, 78, 59, 0.25);
+  border-left: 3px solid #10b981;
+  color: #a7f3d0;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* Step 7: Errors Checklist */
+.errors-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+  padding: 14px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(71, 85, 105, 0.35);
+  border-radius: 10px;
+}
+
+.errors-checklist b {
+  font-size: 12px;
+  color: #38bdf8;
+  letter-spacing: 0.04em;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #cbd5e1;
+  font-size: 12px;
+  transition: background 0.12s ease;
+}
+
+.checkbox-row:hover {
+  background: rgba(30, 41, 59, 0.4);
+}
+
+.checkbox-row input[type="checkbox"] {
+  accent-color: #38bdf8;
+  width: 15px;
+  height: 15px;
+}
+
+/* Text Area Group */
+.text-area-group {
+  margin: 14px 0;
+}
+
+.text-area-group label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.text-area-group b {
+  font-size: 12px;
+  color: #38bdf8;
+}
+
+.text-area-group textarea {
+  width: 100%;
+  padding: 10px 12px;
+  background: #07111e !important;
+  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+  border-radius: 8px;
+  color: #f8fafc !important;
+  font-size: 12px;
+  line-height: 1.5;
+  outline: none;
+  resize: vertical;
+}
+
+.text-area-group textarea:focus {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+/* Step 8: Certification Card */
+.certification-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.95), rgba(8, 16, 30, 0.98));
+  border: 1.5px solid rgba(56, 189, 248, 0.45);
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(56, 189, 248, 0.05);
+}
+
+.cert-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.cert-seal {
+  font-size: 28px;
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5));
+}
+
+.cert-header h5 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: 0.02em;
+}
+
+.student-metadata-fields label span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.student-metadata-fields input {
+  width: 100%;
+  background: #07111e !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+  border-radius: 6px;
+  font-size: 12px;
+  outline: none;
+}
+
+.student-metadata-fields input:focus {
+  border-color: #38bdf8 !important;
+}
+
+.station-score-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: rgba(30, 41, 59, 0.4);
+  border: 1px solid rgba(71, 85, 105, 0.3);
+  border-radius: 10px;
+}
+
+.score-badge-circle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.2), rgba(15, 23, 42, 0.8));
+  border: 2px solid #38bdf8;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
+  flex-shrink: 0;
+}
+
+.score-badge-circle b {
+  font: 900 20px/1 ui-monospace, monospace;
+  color: #38bdf8;
+}
+
+.score-badge-circle span {
+  font: 700 8px/1 ui-monospace, monospace;
+  color: #94a3b8;
+  letter-spacing: 0.06em;
+}
+
+.station-score-summary p {
+  margin: 0;
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+.station-score-summary p b {
+  color: #34d399;
+}
+
+/* Feedback Alert Banners */
+.feedback-alert {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  margin: 10px 0;
+}
+
+.feedback-alert.correct {
+  background: rgba(6, 78, 59, 0.3);
+  border: 1px solid #10b981;
+  color: #6ee7b7;
+}
+
+.feedback-alert.incorrect {
+  background: rgba(127, 29, 29, 0.3);
+  border: 1px solid #ef4444;
+  color: #fca5a5;
+}
+
+.feedback-alert.partial {
+  background: rgba(120, 53, 15, 0.3);
+  border: 1px solid #f59e0b;
+  color: #fcd34d;
+}
+
+/* Notebook Footer Button Styling Reset & Alignment */
+.notebook-footer .button-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notebook-footer .primary-button {
+  width: auto !important;
+  margin-top: 0 !important;
+  padding: 6px 14px !important;
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  border: 1px solid #38bdf8 !important;
+  border-radius: 6px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  cursor: pointer;
+}
+
+.notebook-footer .primary-button:hover:not(:disabled) {
+  background: #0369a1 !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+}
+
+.notebook-footer .secondary-button {
+  width: auto !important;
+  margin-top: 0 !important;
+  padding: 6px 12px !important;
+  background: rgba(30, 41, 59, 0.8) !important;
+  color: #cbd5e1 !important;
+  border: 1px solid rgba(148, 163, 184, 0.3) !important;
+  border-radius: 6px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+}
+
+.notebook-footer .secondary-button:hover:not(:disabled) {
+  background: rgba(51, 65, 85, 0.9) !important;
+  color: #f8fafc !important;
+}
+
+.notebook-footer .primary-button:disabled,
+.notebook-footer .secondary-button:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed;
+}
+
+/* Station Chips Interactive Hover/Focus Polish */
+.station-chip:hover:not(:disabled) {
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(20, 36, 60, 0.85);
+  color: #f8fafc;
+}
+.station-chip:focus-visible {
+  outline: 2px solid #38bdf8 !important;
+  outline-offset: 2px !important;
+}
+
+.mobile-btn-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+.mobile-btn-text {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+
 
 
 

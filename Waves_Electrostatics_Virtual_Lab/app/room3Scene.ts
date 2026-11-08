@@ -170,8 +170,8 @@ export function createRoom3Scene(
   updateCamera();
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setSize(container.clientWidth, container.clientHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.7));
+  renderer.setSize(container.clientWidth, container.clientHeight, false);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -217,6 +217,9 @@ export function createRoom3Scene(
   // 2. Texture & Asset Loading
   // -------------------------------------------------------------
   const loadingManager = new THREE.LoadingManager();
+  loadingManager.onProgress = (_url, loaded, total) => callbacks.onAssetProgress?.(loaded, total);
+  loadingManager.onLoad = () => callbacks.onAssetsReady?.();
+
   const textureLoader = new THREE.TextureLoader(loadingManager);
 
   const loadTexture = (path: string, fallback = '#173047') => {
@@ -1208,8 +1211,17 @@ export function createRoom3Scene(
     const targets = Array.isArray(objects) ? objects : [objects];
     targets.forEach((obj) => {
       obj.userData.interactionId = interaction.id;
-      interactableObjects.push(obj);
+      obj.userData.equipmentInteraction = interaction;
+      if (!interactableObjects.includes(obj)) interactableObjects.push(obj);
       objectToInteractionMap.set(obj, interaction);
+      obj.traverse((child) => {
+        child.userData.interactionId = interaction.id;
+        child.userData.equipmentInteraction = interaction;
+        if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.Points) {
+          if (!interactableObjects.includes(child)) interactableObjects.push(child);
+          objectToInteractionMap.set(child, interaction);
+        }
+      });
     });
   };
 
@@ -1501,7 +1513,7 @@ export function createRoom3Scene(
   createClipboard('optics', STATION_X.optics + 1.1, 0.35, 'optics-clipboard', 'Optics Trials Clipboard');
   createClipboard('relativity', STATION_X.relativity + 1.1, 0.35, 'relativity-clipboard', 'Relativity Trials Clipboard');
 
-  const gltfLoader = new GLTFLoader();
+  const gltfLoader = new GLTFLoader(loadingManager);
 
   // -------------------------------------------------------------
   // 12. Station 01 3D Apparatus: Circuits Bench (x = -6.0m)
@@ -1533,8 +1545,21 @@ export function createRoom3Scene(
         }
       }
     });
-    psuHousing.visible = false;
+    (psuHousing.material as THREE.Material).transparent = true;
+    (psuHousing.material as THREE.Material).opacity = 0;
+    (psuHousing.material as THREE.Material).depthWrite = false;
+    (psuHousing.material as THREE.Material).needsUpdate = true;
+    psuHousing.visible = true;
     psuGroup.add(model);
+    registerInteractable(model, {
+      id: 'circuits-power-switch',
+      stationId: 'circuits',
+      category: 'POWER & EXCITATION',
+      name: 'DC Regulated Power Supply',
+      description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-power-switch'],
+      action: 'Toggle Main Power Switch',
+      readout: `Output: ${currentCircuits.vs.toFixed(1)} V · Current Limit: 3.00 A`,
+    });
   }, undefined, (err) => console.warn('DC PSU GLB load note:', err));
 
   const psuCanvas = document.createElement('canvas');
@@ -1705,8 +1730,21 @@ export function createRoom3Scene(
         }
       }
     });
-    oscHousing.visible = false;
+    (oscHousing.material as THREE.Material).transparent = true;
+    (oscHousing.material as THREE.Material).opacity = 0;
+    (oscHousing.material as THREE.Material).depthWrite = false;
+    (oscHousing.material as THREE.Material).needsUpdate = true;
+    oscHousing.visible = true;
     oscGroup.add(model);
+    registerInteractable(model, {
+      id: 'circuits-oscilloscope',
+      stationId: 'circuits',
+      category: 'INSTRUMENTATION',
+      name: 'Tektronix Dual-Channel Digital Storage Oscilloscope',
+      description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-oscilloscope'],
+      action: 'Observe Waveform Phase Shift',
+      readout: `Waveform Trace: V(t) vs I(t) · Phase Shift φ = ${calculateCircuit(currentCircuits).phaseAngleDeg.toFixed(1)}°`,
+    });
   }, undefined, (err) => console.warn('Oscilloscope GLB load note:', err));
 
   scene.add(oscGroup);
@@ -1800,8 +1838,21 @@ export function createRoom3Scene(
         child.receiveShadow = true;
       }
     });
-    breadboardPlate.visible = false;
+    (breadboardPlate.material as THREE.Material).transparent = true;
+    (breadboardPlate.material as THREE.Material).opacity = 0;
+    (breadboardPlate.material as THREE.Material).depthWrite = false;
+    (breadboardPlate.material as THREE.Material).needsUpdate = true;
+    breadboardPlate.visible = true;
     breadboardGroup.add(model);
+    registerInteractable(model, {
+      id: 'circuits-topology-selector',
+      stationId: 'circuits',
+      category: 'CIRCUIT TOPOLOGY',
+      name: 'Configurable RLC Breadboard Matrix',
+      description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-topology-selector'],
+      action: 'Change Circuit Topology (Series / Parallel / Combo)',
+      readout: `Active Topology: ${currentCircuits.topology.toUpperCase()} · Req = ${calculateCircuit(currentCircuits).req.toFixed(1)} Ω`,
+    });
   }, undefined, (err) => console.warn('Breadboard GLB load note:', err));
 
   // 4. Rigol DDS Arbitrary Function Generator Unit
@@ -1818,6 +1869,15 @@ export function createRoom3Scene(
       }
     });
     fgenGroup.add(model);
+    registerInteractable(model, {
+      id: 'circuits-power-switch',
+      stationId: 'circuits',
+      category: 'EXCITATION SOURCE',
+      name: 'Rigol DDS Arbitrary Function Generator & Power Supply',
+      description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-power-switch'],
+      action: 'Toggle Main Power Switch & Waveform',
+      readout: `Supply: ${currentCircuits.vs.toFixed(1)} V · Mode: ${currentCircuits.mode.toUpperCase()}`,
+    });
   }, undefined, (err) => console.warn('Function Gen GLB load note:', err));
   scene.add(fgenGroup);
 
@@ -1884,8 +1944,21 @@ export function createRoom3Scene(
         child.receiveShadow = true;
       }
     });
-    rail.visible = false;
+    (rail.material as THREE.Material).transparent = true;
+    (rail.material as THREE.Material).opacity = 0;
+    (rail.material as THREE.Material).depthWrite = false;
+    (rail.material as THREE.Material).needsUpdate = true;
+    rail.visible = true;
     railGroup.add(model);
+    registerInteractable(model, {
+      id: 'optics-rail',
+      stationId: 'optics',
+      category: 'OPTICAL BENCH',
+      name: 'Graduated Metric Optical Bench Rail',
+      description: 'Precision metric rail holding laser diode, goniometer prism mount, and micrometric diffraction screen.',
+      action: 'Examine Optical Alignment',
+      readout: 'Alignment: Paraxial collinear · Scale: 0 to 200 cm',
+    });
   }, undefined, (err) => console.warn('Optical Rail GLB load note:', err));
 
   // Laser Diode Emitter
@@ -1909,8 +1982,21 @@ export function createRoom3Scene(
         child.receiveShadow = true;
       }
     });
-    laserHousing.visible = false;
+    (laserHousing.material as THREE.Material).transparent = true;
+    (laserHousing.material as THREE.Material).opacity = 0;
+    (laserHousing.material as THREE.Material).depthWrite = false;
+    (laserHousing.material as THREE.Material).needsUpdate = true;
+    laserHousing.visible = true;
     railGroup.add(model);
+    registerInteractable(model, {
+      id: 'optics-laser',
+      stationId: 'optics',
+      category: 'COHERENT EMISSION',
+      name: 'Tunable Coherent Diode Laser Collimator',
+      description: ROOM3_EQUIPMENT_DESCRIPTIONS['optics-laser'],
+      action: 'Cycle Emission Wavelength (Green 532nm / Red 650nm / Violet 405nm)',
+      readout: `Laser Wavelength: ${currentOptics.wavelength} nm · Coherence: 150 m`,
+    });
   }, undefined, (err) => console.warn('Laser Source GLB load note:', err));
 
   const beamMat = new THREE.MeshBasicMaterial({
@@ -2098,8 +2184,21 @@ export function createRoom3Scene(
         child.receiveShadow = true;
       }
     });
-    track.visible = false;
+    (track.material as THREE.Material).transparent = true;
+    (track.material as THREE.Material).opacity = 0;
+    (track.material as THREE.Material).depthWrite = false;
+    (track.material as THREE.Material).needsUpdate = true;
+    track.visible = true;
     relativityGroup.add(model);
+    registerInteractable(model, {
+      id: 'relativity-velocity-dial',
+      stationId: 'relativity',
+      category: 'ACCELERATOR BEAMLINE',
+      name: 'Relativistic Maglev Particle Sled Track',
+      description: ROOM3_EQUIPMENT_DESCRIPTIONS['relativity-velocity-dial'],
+      action: 'Vary Relativistic Speed β (v/c)',
+      readout: `Track: Synchrotron Quadrupole · Active β: ${(currentRelativity.beta).toFixed(3)}c`,
+    });
   }, undefined, (err) => console.warn('Maglev Beamline GLB load note:', err));
 
   // Quadrupole magnetic coils along track
@@ -2494,20 +2593,46 @@ export function createRoom3Scene(
     callbacks.onCameraModeChange?.(mode);
   };
 
+  const mouseScreenPos = new THREE.Vector2();
+  let mouseActive = false;
+
+  const triggerEquipmentAction = (interactionId: string) => {
+    callbacks.onEquipmentInteract?.(interactionId);
+    if (['circuits-multimeter', 'circuits-power-switch', 'circuits-topology-selector', 'circuits-oscilloscope'].includes(interactionId)) {
+      setCameraMode('closeup', 'circuits');
+    } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen'].includes(interactionId)) {
+      setCameraMode('closeup', 'optics');
+    } else if (['relativity-velocity-dial', 'relativity-contracting-rod', 'relativity-light-clock'].includes(interactionId)) {
+      setCameraMode('closeup', 'relativity');
+    }
+  };
+
   const checkInteractions = () => {
     if (cameraMode === 'closeup') return;
-    raycaster.setFromCamera(screenCenter, camera);
+    const isLocked = document.pointerLockElement === renderer.domElement || document.pointerLockElement === container;
+    const rayPointer = isLocked || !mouseActive ? screenCenter : mouseScreenPos;
+    raycaster.setFromCamera(rayPointer, camera);
     const intersects = raycaster.intersectObjects(interactableObjects, true);
 
     let foundInteraction: EquipmentInteraction | null = null;
-    if (intersects.length > 0 && intersects[0].distance < 4.5) {
-      let currentObj: THREE.Object3D | null = intersects[0].object;
-      while (currentObj && !foundInteraction) {
-        if (objectToInteractionMap.has(currentObj)) {
-          foundInteraction = objectToInteractionMap.get(currentObj)!;
-        }
+    for (const hit of intersects) {
+      let currentObj: THREE.Object3D | null = hit.object;
+      let inter: EquipmentInteraction | undefined = undefined;
+      while (currentObj && !inter) {
+        inter = objectToInteractionMap.get(currentObj) || currentObj.userData.equipmentInteraction;
         currentObj = currentObj.parent;
       }
+      if (inter) {
+        const maxDist = (inter.id.includes('placard') || inter.id === 'physics-whiteboard' || inter.id === 'campus-door' || inter.id.includes('assistant') || inter.id.includes('professor')) ? 14.0 : 8.5;
+        if (hit.distance <= maxDist) {
+          foundInteraction = inter;
+          break;
+        }
+      }
+    }
+
+    if (!isLocked) {
+      renderer.domElement.style.cursor = foundInteraction ? 'pointer' : 'default';
     }
 
     if (foundInteraction !== currentHoveredInteraction) {
@@ -2522,14 +2647,7 @@ export function createRoom3Scene(
       return;
     }
     if (currentHoveredInteraction) {
-      callbacks.onEquipmentInteract?.(currentHoveredInteraction.id);
-      if (['circuits-multimeter', 'circuits-power-switch', 'circuits-topology-selector', 'circuits-oscilloscope'].includes(currentHoveredInteraction.id)) {
-        setCameraMode('closeup', 'circuits');
-      } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen'].includes(currentHoveredInteraction.id)) {
-        setCameraMode('closeup', 'optics');
-      } else if (['relativity-velocity-dial', 'relativity-contracting-rod', 'relativity-light-clock'].includes(currentHoveredInteraction.id)) {
-        setCameraMode('closeup', 'relativity');
-      }
+      triggerEquipmentAction(currentHoveredInteraction.id);
     }
   };
 
@@ -2548,6 +2666,11 @@ export function createRoom3Scene(
   };
 
   const onPointerMove = (e: PointerEvent) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouseScreenPos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouseScreenPos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    mouseActive = true;
+
     if (cameraMode === 'closeup') return;
     if (document.pointerLockElement === renderer.domElement || document.pointerLockElement === container) {
       yaw -= e.movementX * 0.0022;
@@ -2573,7 +2696,8 @@ export function createRoom3Scene(
     const rect = renderer.domElement.getBoundingClientRect();
     const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), camera);
+    const clickPointer = new THREE.Vector2(mouseX, mouseY);
+    raycaster.setFromCamera(clickPointer, camera);
 
     if (cameraMode === 'closeup') {
       if (activeStation === 'circuits') {
@@ -2612,22 +2736,19 @@ export function createRoom3Scene(
       }
     } else {
       const intersects = raycaster.intersectObjects(interactableObjects, true);
-      if (intersects.length > 0 && intersects[0].distance < 4.5) {
-        let currentObj: THREE.Object3D | null = intersects[0].object;
-        while (currentObj) {
-          if (objectToInteractionMap.has(currentObj)) {
-            const inter = objectToInteractionMap.get(currentObj)!;
-            callbacks.onEquipmentInteract?.(inter.id);
-            if (['circuits-multimeter', 'circuits-power-switch', 'circuits-topology-selector', 'circuits-oscilloscope'].includes(inter.id)) {
-              setCameraMode('closeup', 'circuits');
-            } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen'].includes(inter.id)) {
-              setCameraMode('closeup', 'optics');
-            } else if (['relativity-velocity-dial', 'relativity-contracting-rod', 'relativity-light-clock'].includes(inter.id)) {
-              setCameraMode('closeup', 'relativity');
-            }
+      for (const hit of intersects) {
+        let currentObj: THREE.Object3D | null = hit.object;
+        let inter: EquipmentInteraction | undefined = undefined;
+        while (currentObj && !inter) {
+          inter = objectToInteractionMap.get(currentObj) || currentObj.userData.equipmentInteraction;
+          currentObj = currentObj.parent;
+        }
+        if (inter) {
+          const maxDist = (inter.id.includes('placard') || inter.id === 'physics-whiteboard' || inter.id === 'campus-door' || inter.id.includes('assistant') || inter.id.includes('professor')) ? 14.0 : 8.5;
+          if (hit.distance <= maxDist) {
+            triggerEquipmentAction(inter.id);
             break;
           }
-          currentObj = currentObj.parent;
         }
       }
     }
@@ -2679,6 +2800,7 @@ export function createRoom3Scene(
       if (width > 0 && height > 0) {
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setSize(width, height, false);
       }
     }

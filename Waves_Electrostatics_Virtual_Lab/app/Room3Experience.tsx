@@ -191,6 +191,8 @@ export default function Room3Experience() {
 
   // App & 3D HUD States
   const [sceneReady, setSceneReady] = useState(false);
+  const [assetsReady, setAssetsReady] = useState(false);
+  const [assetProgress, setAssetProgress] = useState({ loaded: 0, total: 1 });
   const [sceneError, setSceneError] = useState(false);
   const [interaction, setInteraction] = useState<EquipmentInteraction | null>(null);
   const [isThirdPerson, setIsThirdPerson] = useState(false);
@@ -201,8 +203,20 @@ export default function Room3Experience() {
   const [hydrated, setHydrated] = useState(false);
 
   // Notebook Modal States
-  const [notebookOpen, setNotebookOpen] = useState(false);
-  const [notebookStep, setNotebookStep] = useState(0);
+  const [notebookOpen, setNotebookOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const q = new URLSearchParams(window.location.search).get('notebook');
+      if (q === 'true' || q === '1') return true;
+    }
+    return false;
+  });
+  const [notebookStep, setNotebookStep] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const s = Number(new URLSearchParams(window.location.search).get('step'));
+      if (!isNaN(s) && s >= 0 && s <= 7) return s;
+    }
+    return 0;
+  });
   const [predictionSelection, setPredictionSelection] = useState<number | null>(null);
   const [predictionStatus, setPredictionStatus] = useState<'idle' | 'correct' | 'incorrect'>('idle');
   const [predictionFeedback, setPredictionFeedback] = useState('');
@@ -219,7 +233,13 @@ export default function Room3Experience() {
   const [pointerLocked, setPointerLocked] = useState(false);
 
   // Multimeter & Workbench Instrument States
-  const [cameraMode, setCameraMode] = useState<'walk' | 'closeup'>('walk');
+  const [cameraMode, setCameraMode] = useState<'walk' | 'closeup'>(() => {
+    if (typeof window !== 'undefined') {
+      const q = new URLSearchParams(window.location.search).get('closeup');
+      if (q === 'true' || q === '1') return 'closeup';
+    }
+    return 'walk';
+  });
   const [dmmReading, setDmmReading] = useState<MultimeterReading>({
     value: 24.0,
     displayString: '24.00 V',
@@ -352,8 +372,11 @@ export default function Room3Experience() {
   // 3. Three.js Scene Hydration (Non-blocking background initialization)
   useEffect(() => {
     if (!sceneContainer.current) return;
+    let fallbackTimer: NodeJS.Timeout | null = null;
     try {
       const api = createRoom3Scene(sceneContainer.current, {
+        onAssetProgress: (loaded, total) => setAssetProgress({ loaded, total: Math.max(1, total) }),
+        onAssetsReady: () => setAssetsReady(true),
         onEquipmentInteract: (id) => equipmentActionRef.current(id),
         onInteractionChange: (inter) => setInteraction(inter),
         onFootstep: () => playTone(80, 'sine', 0.05, 0.1),
@@ -366,7 +389,16 @@ export default function Room3Experience() {
         if (queryStation && ['circuits', 'optics', 'relativity'].includes(queryStation)) {
           api.setStation(queryStation);
         }
+        const queryCloseup = new URLSearchParams(window.location.search).get('closeup');
+        if (queryCloseup === 'true' || queryCloseup === '1') {
+          api.setCameraMode('closeup', queryStation || 'circuits');
+        }
       }
+      // Guarantee assetsReady resolves after timeout in case of cached or slow network
+      fallbackTimer = setTimeout(() => {
+        setAssetsReady(true);
+      }, 2200);
+
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSceneReady(true);
       setSceneError(false);
@@ -377,6 +409,7 @@ export default function Room3Experience() {
     }
 
     return () => {
+      if (fallbackTimer) clearTimeout(fallbackTimer);
       sceneApi.current?.dispose();
       sceneApi.current = null;
       if (audioContext.current && audioContext.current.state !== 'closed') {
@@ -883,12 +916,12 @@ export default function Room3Experience() {
       <div className="vignette" aria-hidden="true" />
 
       {/* Loading overlay */}
-      {!sceneReady && !sceneError && (
+      {!assetsReady && !sceneError && (
         <div className="lab-loading-gate" role="status" aria-live="polite">
           <div>
             <b>PREPARING ROOM 03</b>
-            <p>Loading laboratory surfaces and precision instruments…</p>
-            <span><i style={{ width: '100%' }} /></span>
+            <p>Loading laboratory surfaces and precision instruments… {assetProgress.loaded}/{assetProgress.total}</p>
+            <span><i style={{ width: `${Math.min(100, (assetProgress.loaded / Math.max(1, assetProgress.total)) * 100)}%` }} /></span>
           </div>
         </div>
       )}
@@ -1813,8 +1846,8 @@ export default function Room3Experience() {
 
       {/* Bottom Status Dock */}
       <div className="status-dock">
-        <span className={sceneReady && !sceneError ? 'status-ready' : 'status-waiting'}>
-          {sceneError ? '× 3D UNAVAILABLE' : sceneReady ? '● 3D LAB ONLINE' : '○ PREPARING 3D LAB'}
+        <span className={sceneReady && assetsReady && !sceneError ? 'status-ready' : 'status-waiting'}>
+          {sceneError ? '× 3D UNAVAILABLE' : sceneReady && assetsReady ? '● 3D LAB ONLINE' : '○ PREPARING 3D LAB'}
         </span>
         <span>
           {pointerLocked
