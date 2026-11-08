@@ -172,7 +172,13 @@ export default function Room3Experience() {
   const joystickPointerId = useRef<number | null>(null);
 
   // Station & Physical Settings States
-  const [stationId, setStationId] = useState<Room3StationId>('circuits');
+  const [stationId, setStationId] = useState<Room3StationId>(() => {
+    if (typeof window !== 'undefined') {
+      const q = new URLSearchParams(window.location.search).get('station') as Room3StationId;
+      if (q && ['circuits', 'optics', 'relativity'].includes(q)) return q;
+    }
+    return 'circuits';
+  });
   const [circuits, setCircuits] = useState<CircuitSettings>(INITIAL_CIRCUITS);
   const [optics, setOptics] = useState<OpticsSettings>(INITIAL_OPTICS);
   const [relativity, setRelativity] = useState<RelativitySettings>(INITIAL_RELATIVITY);
@@ -181,7 +187,7 @@ export default function Room3Experience() {
   const [sceneReady, setSceneReady] = useState(false);
   const [sceneError, setSceneError] = useState(false);
   const [interaction, setInteraction] = useState<EquipmentInteraction | null>(null);
-  const [isThirdPerson, setIsThirdPerson] = useState(true);
+  const [isThirdPerson, setIsThirdPerson] = useState(false);
   const [activeCharacter, setActiveCharacter] = useState<CharacterType>('female');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [paused, setPaused] = useState(false);
@@ -331,6 +337,12 @@ export default function Room3Experience() {
         onFootstep: () => playTone(80, 'sine', 0.05, 0.1),
       });
       sceneApi.current = api;
+      if (typeof window !== 'undefined') {
+        const queryStation = new URLSearchParams(window.location.search).get('station') as Room3StationId;
+        if (queryStation && ['circuits', 'optics', 'relativity'].includes(queryStation)) {
+          api.setStation(queryStation);
+        }
+      }
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSceneReady(true);
       setSceneError(false);
