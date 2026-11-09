@@ -226,6 +226,8 @@ export function createRoom3Scene(
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         keyLight.shadow.mapSize.set(2048, 2048);
       }
+      keyLight.shadow.bias = -0.0005;
+      keyLight.shadow.normalBias = 0.04;
       keyLight.shadow.map?.dispose();
       keyLight.shadow.map = null;
     }
@@ -999,8 +1001,14 @@ export function createRoom3Scene(
   keyLight.castShadow = true;
   keyLight.shadow.mapSize.width = 2048;
   keyLight.shadow.mapSize.height = 2048;
-  keyLight.shadow.bias = -0.00008;
-  keyLight.shadow.normalBias = 0.02;
+  keyLight.shadow.camera.left = -15;
+  keyLight.shadow.camera.right = 15;
+  keyLight.shadow.camera.top = 15;
+  keyLight.shadow.camera.bottom = -15;
+  keyLight.shadow.camera.near = 0.5;
+  keyLight.shadow.camera.far = 40;
+  keyLight.shadow.bias = -0.0005;
+  keyLight.shadow.normalBias = 0.04;
   scene.add(keyLight);
 
   const stationLight = new THREE.PointLight(STATION_COLOR.circuits, 16, 12, 1.8);
@@ -1227,7 +1235,7 @@ export function createRoom3Scene(
   const addWallSegment = (width: number, height: number, x: number, y: number, z: number) => {
     const wall = new THREE.Mesh(new THREE.BoxGeometry(width, height, ROOM2_CONFIG.room.wallThickness), wallMaroonMaterial);
     wall.position.set(x, y, z);
-    wall.receiveShadow = true;
+    wall.receiveShadow = false;
     scene.add(wall);
     return wall;
   };
@@ -1261,7 +1269,7 @@ export function createRoom3Scene(
   const frontZ = -ROOM2_CONFIG.room.backZ;
   const southWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, ROOM2_CONFIG.room.height, ROOM2_CONFIG.room.wallThickness), wallMaroonMaterial);
   southWall.position.set(0, ROOM2_CONFIG.room.height / 2, frontZ);
-  southWall.receiveShadow = true;
+  southWall.receiveShadow = false;
   scene.add(southWall);
 
   const southWainscot = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 1.15, 0.04), mahoganyDeskMaterial);
@@ -1315,7 +1323,7 @@ export function createRoom3Scene(
     // A. Solid Wall Base (below Y = 1.15m, full length 14.8m)
     const baseWall = new THREE.Mesh(new THREE.BoxGeometry(0.32, 1.15, ROOM2_CONFIG.room.depth), wallMaroonMaterial);
     baseWall.position.set(x, 0.575, 0);
-    baseWall.receiveShadow = true;
+    baseWall.receiveShadow = false;
     scene.add(baseWall);
 
     const sideWainscot = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.15, ROOM2_CONFIG.room.depth), mahoganyDeskMaterial);
@@ -1333,7 +1341,7 @@ export function createRoom3Scene(
     // B. Solid Wall Header (above Y = 3.65m, full length 14.8m)
     const headerWall = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.55, ROOM2_CONFIG.room.depth), wallMaroonMaterial);
     headerWall.position.set(x, 3.925, 0);
-    headerWall.receiveShadow = true;
+    headerWall.receiveShadow = false;
     scene.add(headerWall);
 
     const sideFrieze = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.22, ROOM2_CONFIG.room.depth), mahoganyDeskMaterial);
@@ -1355,7 +1363,7 @@ export function createRoom3Scene(
     pierDefs.forEach((p) => {
       const pier = new THREE.Mesh(new THREE.BoxGeometry(0.32, 2.50, p.length), wallMaroonMaterial);
       pier.position.set(x, 2.40, p.centerZ);
-      pier.receiveShadow = true;
+      pier.receiveShadow = false;
       scene.add(pier);
 
       if (p.hasPilaster) {
@@ -1363,7 +1371,7 @@ export function createRoom3Scene(
         const pilasterX = isEast ? x - 0.18 : x + 0.18;
         const pilaster = new THREE.Mesh(new THREE.BoxGeometry(0.04, 2.50, 1.80), mahoganyDeskMaterial);
         pilaster.position.set(pilasterX, 2.40, p.centerZ);
-        pilaster.receiveShadow = true;
+        pilaster.receiveShadow = false;
         scene.add(pilaster);
 
         // Antique Brass Side Edges on Pilaster
