@@ -413,10 +413,13 @@ export default function Room3Experience() {
   const hasUncertainty = stationProgress.errors.length > 0;
 
   // Step 8 Certification Gating
+  const isComputationVerified = Boolean(stationProgress.completed[7]);
+  const allTrialsLogged = stationProgress.trials.length >= TOTAL_TRIALS;
+  const isStudentInfoFilled = studentName.trim().length > 0 && studentId.trim().length > 0 && studentSection.trim().length > 0;
   const steps1to7Done = useMemo(() => {
     return stationProgress.completed.slice(0, 7).every(Boolean);
   }, [stationProgress.completed]);
-  const reportReady = steps1to7Done && studentName.trim().length > 0 && studentId.trim().length > 0 && studentSection.trim().length > 0;
+  const reportReady = allTrialsLogged && isComputationVerified && allGuideCorrect && isStudentInfoFilled;
 
   // Scoring
   const currentScore = stationScore(stationProgress);
@@ -1385,6 +1388,8 @@ export default function Room3Experience() {
             blackTerminal={blackTerminal}
             jumperClosed={jumperClosed}
             dmmReading={dmmReading}
+            trials={stationProgress.trials}
+            measurementWarning={measurementWarning}
             onUpdateCircuits={(patch) => {
               setCircuits((prev) => {
                 const next = { ...prev, ...patch };
@@ -1500,6 +1505,178 @@ export default function Room3Experience() {
               ← Exit to Room Exploration [ESC / E]
             </button>
           </div>
+
+          {/* 3D Data Collection Trial Quick Bar */}
+          <div className="closeup-trial-bar" style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            marginTop: '8px',
+            paddingTop: '8px',
+            borderTop: '1px solid rgba(212, 175, 55, 0.3)',
+            flexWrap: 'wrap',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#fef08a' }}>
+                📊 3D TRIALS: {stationProgress.trials.length} / {TOTAL_TRIALS}
+              </span>
+              {stationProgress.trials.length < TOTAL_TRIALS && (
+                <span style={{ fontSize: '11px', color: '#e2e8f0', background: 'rgba(53, 18, 29, 0.85)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
+                  Target #{stationProgress.trials.length + 1}: <b style={{ color: '#fef08a' }}>
+                    {(() => {
+                      const tgt = ROOM3_ASSIGNED_TRIALS[stationId][stationProgress.trials.length];
+                      return tgt ? `${tgt.targetParam} = ${tgt.targetValue} ${tgt.unit}` : '';
+                    })()}
+                  </b>
+                </span>
+              )}
+            </div>
+
+            {/* Quick Operating Point Setter */}
+            {stationProgress.trials.length < TOTAL_TRIALS && (
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <span style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>Target Set:</span>
+                {stationId === 'circuits' && [4, 8, 12, 16, 20].map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    style={{
+                      background: circuits.vs === v ? '#d4af37' : 'rgba(35, 12, 20, 0.7)',
+                      color: circuits.vs === v ? '#1a0b10' : '#fffbeb',
+                      border: '1px solid rgba(212, 175, 55, 0.5)',
+                      borderRadius: '4px',
+                      padding: '2px 7px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => {
+                      const next = { ...circuits, vs: v, powerOn: true };
+                      setCircuits(next);
+                      sceneApi.current?.setCircuits(next);
+                      playTone(600, 'sine', 0.05, 0.1);
+                    }}
+                  >
+                    {v}V
+                  </button>
+                ))}
+                {stationId === 'optics' && [30, 40, 50, 60, 70].map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    style={{
+                      background: optics.objectDistance === u ? '#d4af37' : 'rgba(35, 12, 20, 0.7)',
+                      color: optics.objectDistance === u ? '#1a0b10' : '#fffbeb',
+                      border: '1px solid rgba(212, 175, 55, 0.5)',
+                      borderRadius: '4px',
+                      padding: '2px 7px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => {
+                      const next = { ...optics, objectDistance: u, powerOn: true };
+                      setOptics(next);
+                      sceneApi.current?.setOptics(next);
+                      playTone(600, 'sine', 0.05, 0.1);
+                    }}
+                  >
+                    {u}cm
+                  </button>
+                ))}
+                {stationId === 'relativity' && [0.1, 0.3, 0.5, 0.7, 0.9].map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    style={{
+                      background: relativity.beta === b ? '#d4af37' : 'rgba(35, 12, 20, 0.7)',
+                      color: relativity.beta === b ? '#1a0b10' : '#fffbeb',
+                      border: '1px solid rgba(212, 175, 55, 0.5)',
+                      borderRadius: '4px',
+                      padding: '2px 7px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => {
+                      const next = { ...relativity, beta: b, powerOn: true };
+                      setRelativity(next);
+                      sceneApi.current?.setRelativity(next);
+                      playTone(600, 'sine', 0.05, 0.1);
+                    }}
+                  >
+                    {b}c
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="cam-focus-btn"
+                style={{
+                  background: stationProgress.trials.length >= TOTAL_TRIALS ? 'rgba(16, 185, 129, 0.25)' : 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)',
+                  color: stationProgress.trials.length >= TOTAL_TRIALS ? '#34d399' : '#1a0b10',
+                  borderColor: stationProgress.trials.length >= TOTAL_TRIALS ? '#10b981' : '#fef08a',
+                  fontWeight: 800,
+                  fontSize: '12px',
+                  padding: '5px 12px',
+                  cursor: 'pointer',
+                }}
+                onClick={() => {
+                  if (stationProgress.trials.length >= TOTAL_TRIALS) {
+                    setNotebookOpen(true);
+                    setNotebookStep(7);
+                  } else {
+                    recordCurrentTrial();
+                  }
+                }}
+              >
+                {stationProgress.trials.length >= TOTAL_TRIALS
+                  ? '✓ 5 Trials Done · Open Step 8 Computation →'
+                  : `📝 Record 3D Trial (${stationProgress.trials.length + 1} / 5)`}
+              </button>
+              <button
+                type="button"
+                className="cam-focus-btn"
+                onClick={() => {
+                  setNotebookOpen(true);
+                  setNotebookStep(stationProgress.currentStep);
+                }}
+                title="Open Lab Notebook"
+              >
+                📓 Notebook
+              </button>
+            </div>
+          </div>
+
+          {measurementWarning && (
+            <div style={{
+              marginTop: '8px',
+              padding: '6px 12px',
+              background: 'rgba(127, 29, 29, 0.95)',
+              border: '1.5px solid #ef4444',
+              borderRadius: '6px',
+              color: '#fef2f2',
+              fontSize: '11px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+            }}>
+              <span>⚠️ {measurementWarning}</span>
+              <button
+                type="button"
+                onClick={() => setMeasurementWarning('')}
+                style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: '13px', fontWeight: 800 }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -2493,24 +2670,175 @@ export default function Room3Experience() {
           >
             {paused ? '▶ Resume animation' : 'Ⅱ Freeze animation'}
           </button>
-          <button
-            type="button"
-            className="record-button"
-            disabled={stationProgress.trials.length >= TOTAL_TRIALS}
-            onClick={() => recordCurrentTrial()}
-          >
-            📝 Record Current State (Trial {stationProgress.trials.length + 1} / 5)
-          </button>
-          {stationProgress.currentStep === 4 && (
-            <button
-              type="button"
-              className="record-button"
-              onClick={() => returnToApparatus(`Use the highlighted ${GUIDANCE_LABELS[`${stationId}-clipboard`]} to record trial ${Math.min(TOTAL_TRIALS, stationProgress.trials.length + 1)}.`)}
-              disabled={stationProgress.trials.length >= TOTAL_TRIALS}
-            >
-              ◎ Guide me to trial {Math.min(TOTAL_TRIALS, stationProgress.trials.length + 1)}/{TOTAL_TRIALS}
-            </button>
-          )}
+          {/* 3D Trial Data Collection Status Card */}
+          <div style={{
+            marginTop: '10px',
+            padding: '12px',
+            background: 'rgba(53, 18, 29, 0.85)',
+            border: '1.5px solid rgba(212, 175, 55, 0.45)',
+            borderRadius: '8px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#fef08a' }}>
+                🔬 3D DATA TRIALS ({stationProgress.trials.length} / {TOTAL_TRIALS})
+              </span>
+              <span style={{ fontSize: '11px', color: stationProgress.trials.length >= TOTAL_TRIALS ? '#34d399' : '#d4af37', fontWeight: 700 }}>
+                {stationProgress.trials.length >= TOTAL_TRIALS ? '✓ All 5 Logged' : `Trial #${stationProgress.trials.length + 1}`}
+              </span>
+            </div>
+
+            {stationProgress.trials.length < TOTAL_TRIALS && (
+              <div style={{ fontSize: '11px', color: '#e2e8f0', marginBottom: '8px', background: 'rgba(26, 9, 14, 0.6)', padding: '6px 8px', borderRadius: '4px', border: '1px solid rgba(212, 175, 55, 0.25)' }}>
+                Target #{stationProgress.trials.length + 1}: <b style={{ color: '#fef08a' }}>
+                  {(() => {
+                    const tgt = ROOM3_ASSIGNED_TRIALS[stationId][stationProgress.trials.length];
+                    return tgt ? `${tgt.targetParam} = ${tgt.targetValue} ${tgt.unit}` : '';
+                  })()}
+                </b>
+              </div>
+            )}
+
+            {stationProgress.trials.length < TOTAL_TRIALS && (
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginBottom: '10px' }}>
+                <span style={{ fontSize: '10px', color: '#94a3b8' }}>Target:</span>
+                {stationId === 'circuits' && [4, 8, 12, 16, 20].map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    style={{
+                      flex: 1,
+                      background: circuits.vs === v ? '#d4af37' : 'rgba(35, 12, 20, 0.8)',
+                      color: circuits.vs === v ? '#1a0b10' : '#fffbeb',
+                      border: '1px solid rgba(212, 175, 55, 0.5)',
+                      borderRadius: '4px',
+                      padding: '3px 0',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => {
+                      const next = { ...circuits, vs: v, powerOn: true };
+                      setCircuits(next);
+                      sceneApi.current?.setCircuits(next);
+                      playTone(600, 'sine', 0.05, 0.1);
+                    }}
+                  >
+                    {v}V
+                  </button>
+                ))}
+                {stationId === 'optics' && [30, 40, 50, 60, 70].map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    style={{
+                      flex: 1,
+                      background: optics.objectDistance === u ? '#d4af37' : 'rgba(35, 12, 20, 0.8)',
+                      color: optics.objectDistance === u ? '#1a0b10' : '#fffbeb',
+                      border: '1px solid rgba(212, 175, 55, 0.5)',
+                      borderRadius: '4px',
+                      padding: '3px 0',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => {
+                      const next = { ...optics, objectDistance: u, powerOn: true };
+                      setOptics(next);
+                      sceneApi.current?.setOptics(next);
+                      playTone(600, 'sine', 0.05, 0.1);
+                    }}
+                  >
+                    {u}cm
+                  </button>
+                ))}
+                {stationId === 'relativity' && [0.1, 0.3, 0.5, 0.7, 0.9].map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    style={{
+                      flex: 1,
+                      background: relativity.beta === b ? '#d4af37' : 'rgba(35, 12, 20, 0.8)',
+                      color: relativity.beta === b ? '#1a0b10' : '#fffbeb',
+                      border: '1px solid rgba(212, 175, 55, 0.5)',
+                      borderRadius: '4px',
+                      padding: '3px 0',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => {
+                      const next = { ...relativity, beta: b, powerOn: true };
+                      setRelativity(next);
+                      sceneApi.current?.setRelativity(next);
+                      playTone(600, 'sine', 0.05, 0.1);
+                    }}
+                  >
+                    {b}c
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {measurementWarning && (
+              <div style={{
+                marginBottom: '10px',
+                padding: '8px 10px',
+                background: 'rgba(127, 29, 29, 0.95)',
+                border: '1.5px solid #ef4444',
+                borderRadius: '6px',
+                color: '#fef2f2',
+                fontSize: '11px',
+                fontWeight: 600,
+                lineHeight: 1.4,
+              }}>
+                ⚠️ {measurementWarning}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                className="record-button"
+                style={{
+                  flex: 1,
+                  background: stationProgress.trials.length >= TOTAL_TRIALS ? 'rgba(16, 185, 129, 0.25)' : 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)',
+                  color: stationProgress.trials.length >= TOTAL_TRIALS ? '#34d399' : '#1a0b10',
+                  borderColor: stationProgress.trials.length >= TOTAL_TRIALS ? '#10b981' : '#fef08a',
+                  fontWeight: 800,
+                }}
+                onClick={() => {
+                  if (stationProgress.trials.length >= TOTAL_TRIALS) {
+                    setNotebookOpen(true);
+                    setNotebookStep(7);
+                  } else {
+                    recordCurrentTrial();
+                  }
+                }}
+              >
+                {stationProgress.trials.length >= TOTAL_TRIALS
+                  ? '✓ 5 Trials Done · Open Step 8 →'
+                  : `📝 Record 3D Trial (${stationProgress.trials.length + 1} / 5)`}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                style={{
+                  background: 'rgba(53, 18, 29, 0.8)',
+                  borderColor: 'rgba(212, 175, 55, 0.4)',
+                  color: '#fef08a',
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                }}
+                onClick={() => {
+                  setNotebookOpen(true);
+                  setNotebookStep(stationProgress.currentStep);
+                }}
+              >
+                📓 Notebook
+              </button>
+            </div>
+          </div>
         </div>
       </aside>
 
@@ -2671,17 +2999,20 @@ export default function Room3Experience() {
                   const isDone = stationProgress.completed[index];
                   const isCur = notebookStep === index;
                   const isSkipped = stationProgress.skipped?.[index];
+                  const isLocked = index > stationProgress.currentStep && !isDone;
                   return (
                     <button
                       key={name}
                       type="button"
-                      className={`${isCur ? 'active' : ''} ${isDone ? 'complete' : ''} ${isSkipped ? 'skipped' : ''}`}
-                      onClick={() => setNotebookStep(index)}
+                      disabled={isLocked}
+                      className={`${isCur ? 'active' : ''} ${isDone ? 'complete' : ''} ${isSkipped ? 'skipped' : ''} ${isLocked ? 'locked' : ''}`}
+                      onClick={() => !isLocked && setNotebookStep(index)}
+                      title={isLocked ? `Step ${index + 1} is locked until previous steps are completed.` : undefined}
                     >
-                      <span>{isDone ? '✓' : isSkipped ? '↷' : index + 1}</span>
+                      <span>{isDone ? '✓' : isLocked ? '🔒' : isSkipped ? '↷' : index + 1}</span>
                       <div>
                         <b>{name}</b>
-                        <small>{STEP_POINTS[index]} pts</small>
+                        <small>{isLocked ? 'Locked 🔒' : `${STEP_POINTS[index]} pts`}</small>
                       </div>
                     </button>
                   );
@@ -2700,7 +3031,7 @@ export default function Room3Experience() {
                   <p className="step-prompt">{station.steps[0].prompt}</p>
 
                   <div className="equipment-checklist">
-                    <b>Station Component Inspection (Click item or inspect in 3D):</b>
+                    <b>Station Component Physical Inspection Status:</b>
                     <ul style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px', padding: 0 }}>
                       {INSPECTION_TARGETS[stationId].map((tgt) => {
                         const isInspected = stationProgress.inspected.includes(tgt);
@@ -2709,40 +3040,52 @@ export default function Room3Experience() {
                             key={tgt}
                             className={isInspected ? 'done' : ''}
                             style={{
-                              cursor: isInspected ? 'default' : 'pointer',
+                              cursor: 'default',
                               padding: '8px 12px',
-                              background: isInspected ? 'rgba(16, 185, 129, 0.12)' : '#0f172a',
-                              border: isInspected ? '1px solid #10b981' : '1px solid #334155',
+                              background: isInspected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(35, 12, 20, 0.8)',
+                              border: isInspected ? '1.5px solid #10b981' : '1px solid rgba(212, 175, 55, 0.35)',
                               borderRadius: '6px',
                               listStyle: 'none',
                               display: 'flex',
                               alignItems: 'center',
+                              justifyContent: 'space-between',
                               gap: '8px',
                             }}
-                            onClick={() => !isInspected && markInspected(tgt)}
                           >
-                            <span>{isInspected ? '✅' : '🔍'}</span>
-                            <span style={{ fontSize: '12px', fontWeight: 600 }}>{tgt.replace(`${stationId}-`, '').replace(/-/g, ' ').toUpperCase()}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span>{isInspected ? '✅' : '🔍'}</span>
+                              <span style={{ fontSize: '12px', fontWeight: 600 }}>{tgt.replace(`${stationId}-`, '').replace(/-/g, ' ').toUpperCase()}</span>
+                            </div>
+                            <span style={{ fontSize: '10px', color: isInspected ? '#34d399' : '#94a3b8', fontWeight: 700 }}>
+                              {isInspected ? '✓ Inspected' : 'Pending 3D'}
+                            </span>
                           </li>
                         );
                       })}
                     </ul>
                   </div>
 
-                  {!allInspected && (
+                  {!allInspected ? (
                     <div className="feedback-alert incorrect" style={{ marginTop: '14px' }}>
-                      ⚠️ Inspection Incomplete: Walk up to and interact with all station instruments in 3D (or click any remaining uninspected item above) to unlock confirmation.
+                      ⚠️ Physical Inspection Required: Explore the 3D laboratory and click / approach all apparatus instruments in 3D to complete inspection ({stationProgress.inspected.length} / {INSPECTION_TARGETS[stationId].length} completed).
+                    </div>
+                  ) : (
+                    <div className="feedback-alert correct" style={{ marginTop: '14px' }}>
+                      ✓ All apparatus components have been inspected in the 3D environment.
                     </div>
                   )}
 
                   <div className="button-row" style={{ marginTop: '16px' }}>
-                    <button
-                      type="button"
-                      className="notebook-action"
-                      onClick={() => returnToApparatus(`Inspect the highlighted ${GUIDANCE_LABELS[INSPECTION_TARGET[stationId]]} in the 3D room.`)}
-                    >
-                      Return to highlighted apparatus
-                    </button>
+                    {!allInspected && (
+                      <button
+                        type="button"
+                        className="notebook-action"
+                        style={{ background: 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)', color: '#1a0b10', fontWeight: 800 }}
+                        onClick={() => setNotebookOpen(false)}
+                      >
+                        🔬 Close Notebook & Inspect Apparatus in 3D View ({stationProgress.inspected.length} / {INSPECTION_TARGETS[stationId].length})
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="notebook-action"
@@ -2819,7 +3162,7 @@ export default function Room3Experience() {
                     <button
                       type="button"
                       className="notebook-action"
-                      disabled={stationProgress.completed[1]}
+                      disabled={stationProgress.completed[1] || currentPredictionAnswer !== station.prediction.answer}
                       onClick={() => completeStep(1)}
                     >
                       {stationProgress.completed[1] ? '✓ Step 2 Complete (10/10 pts)' : stationId === 'circuits' ? 'Confirm Circuit Assembly (+10 pts)' : stationId === 'optics' ? 'Confirm Optical Alignment (+10 pts)' : 'Confirm Frame Calibration (+10 pts)'}
@@ -2917,40 +3260,20 @@ export default function Room3Experience() {
                   )}
 
                   <div className="button-row" style={{ marginTop: '16px' }}>
-                    {stationId === 'circuits' && (
+                    {!(stationId === 'circuits' ? circuits.powerOn : stationId === 'optics' ? optics.powerOn : relativity.powerOn) && (
                       <button
                         type="button"
                         className="notebook-action"
-                        style={{ background: '#0284c7', borderColor: '#38bdf8' }}
-                        onClick={() => setCircuits((prev) => ({ ...prev, vs: 24.0, powerOn: true }))}
+                        style={{ background: 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)', color: '#1a0b10', fontWeight: 800 }}
+                        onClick={() => setNotebookOpen(false)}
                       >
-                        ⚡ Energize Power Supply at 24.0 V DC
-                      </button>
-                    )}
-                    {stationId === 'optics' && (
-                      <button
-                        type="button"
-                        className="notebook-action"
-                        style={{ background: '#059669', borderColor: '#10b981' }}
-                        onClick={() => setOptics((prev) => ({ ...prev, powerOn: true, wavelength: 532 }))}
-                      >
-                        ⚡ Energize Diode Laser (λ = 532 nm)
-                      </button>
-                    )}
-                    {stationId === 'relativity' && (
-                      <button
-                        type="button"
-                        className="notebook-action"
-                        style={{ background: '#7c3aed', borderColor: '#a78bfa' }}
-                        onClick={() => setRelativity((prev) => ({ ...prev, powerOn: true }))}
-                      >
-                        ⚡ Initialize Accelerator Beamline
+                        ⚡ Close Notebook & Energize Source in 3D View
                       </button>
                     )}
                     <button
                       type="button"
                       className="notebook-action"
-                      disabled={stationProgress.completed[2] || (stationId === 'circuits' ? !circuits.powerOn : stationId === 'optics' ? !optics.powerOn : !relativity.powerOn)}
+                      disabled={stationProgress.completed[2] || !(stationId === 'circuits' ? circuits.powerOn : stationId === 'optics' ? optics.powerOn : relativity.powerOn)}
                       onClick={() => completeStep(2)}
                     >
                       {stationProgress.completed[2] ? '✓ Step 3 Complete (10/10 pts)' : stationId === 'circuits' ? 'Confirm Power Configuration (+10 pts)' : stationId === 'optics' ? 'Confirm Laser Configuration (+10 pts)' : 'Confirm Beamline Setup (+10 pts)'}
@@ -2992,60 +3315,32 @@ export default function Room3Experience() {
 
                   {stationId === 'circuits' && (
                     <div className="dmm-prep-controls" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '16px' }}>
-                      <div style={{ padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>ROTARY SELECTOR DIAL</span>
-                        <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                          <button
-                            type="button"
-                            className="notebook-action"
-                            style={{ padding: '6px 10px', fontSize: '12px', background: dmmMode === 'v_dc' ? '#0284c7' : '#0f172a' }}
-                            onClick={() => handleSetDmmMode('v_dc')}
-                          >
-                            V⎓ (DC Volts)
-                          </button>
-                          <button
-                            type="button"
-                            className="notebook-action"
-                            style={{ padding: '6px 10px', fontSize: '12px', background: dmmMode === 'a_dc' ? '#0284c7' : '#0f172a' }}
-                            onClick={() => handleSetDmmMode('a_dc')}
-                          >
-                            A⎓ (DC Amps)
-                          </button>
+                      <div style={{ padding: '12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
+                        <span style={{ fontSize: '11px', color: '#e9dfc9' }}>ROTARY SELECTOR DIAL (3D FLUKE 87V)</span>
+                        <div style={{ fontSize: '15px', fontWeight: 700, color: dmmMode === 'v_dc' ? '#34d399' : '#f87171', marginTop: '6px' }}>
+                          {dmmMode === 'v_dc' ? '✓ V⎓ (DC Voltage Mode)' : `⚠️ Currently: ${dmmMode.toUpperCase()} (Must be V⎓)`}
                         </div>
+                        <small style={{ color: '#94a3b8' }}>Turn rotary dial on 3D meter or Live Controls</small>
                       </div>
-                      <div style={{ padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>RED LEAD INPUT JACK</span>
-                        <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                          <button
-                            type="button"
-                            className="notebook-action"
-                            style={{ padding: '6px 10px', fontSize: '12px', background: dmmJack === 'v_ohm' ? '#0284c7' : '#0f172a' }}
-                            onClick={() => handleSetDmmJack('v_ohm')}
-                          >
-                            V·Ω (Hi-Z Volts/Ohms)
-                          </button>
-                          <button
-                            type="button"
-                            className="notebook-action"
-                            style={{ padding: '6px 10px', fontSize: '12px', background: dmmJack === 'ma_10a' ? '#0284c7' : '#0f172a' }}
-                            onClick={() => handleSetDmmJack('ma_10a')}
-                          >
-                            mA / 10A (Shunt)
-                          </button>
+                      <div style={{ padding: '12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
+                        <span style={{ fontSize: '11px', color: '#e9dfc9' }}>RED LEAD INPUT JACK</span>
+                        <div style={{ fontSize: '15px', fontWeight: 700, color: dmmJack === 'v_ohm' ? '#34d399' : '#f87171', marginTop: '6px' }}>
+                          {dmmJack === 'v_ohm' ? '✓ V·Ω Jack (Hi-Z 10 MΩ)' : `⚠️ Currently: ${dmmJack.toUpperCase()} (Must be V·Ω)`}
                         </div>
+                        <small style={{ color: '#94a3b8' }}>Click red lead jack in 3D or Live Controls</small>
                       </div>
                     </div>
                   )}
 
                   {stationId === 'optics' && (
                     <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-                      <div style={{ padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>NOMINAL LENS SPECIFICATION</span>
-                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#10b981', marginTop: '4px' }}>f = 20.0 cm (Converging)</div>
+                      <div style={{ padding: '12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
+                        <span style={{ fontSize: '11px', color: '#e9dfc9' }}>NOMINAL LENS SPECIFICATION</span>
+                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>f = 20.0 cm (Converging)</div>
                         <small style={{ color: '#94a3b8' }}>Crown Glass n = 1.50</small>
                       </div>
-                      <div style={{ padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>OPTICAL RAIL STATUS</span>
+                      <div style={{ padding: '12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
+                        <span style={{ fontSize: '11px', color: '#e9dfc9' }}>OPTICAL RAIL STATUS</span>
                         <div style={{ fontSize: '16px', fontWeight: 700, color: '#fef08a', marginTop: '4px' }}>Paraxial Axis Aligned</div>
                         <small style={{ color: '#94a3b8' }}>Zero chromatic dispersion at 532 nm</small>
                       </div>
@@ -3054,13 +3349,13 @@ export default function Room3Experience() {
 
                   {stationId === 'relativity' && (
                     <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-                      <div style={{ padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>PROPER TIME STANDARD</span>
-                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#10b981', marginTop: '4px' }}>Δt₀ = 10.00 s</div>
+                      <div style={{ padding: '12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
+                        <span style={{ fontSize: '11px', color: '#e9dfc9' }}>PROPER TIME STANDARD</span>
+                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>Δt₀ = 10.00 s</div>
                         <small style={{ color: '#94a3b8' }}>Inertial Rest Frame S&apos;</small>
                       </div>
-                      <div style={{ padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>REST LENGTH STANDARD</span>
+                      <div style={{ padding: '12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
+                        <span style={{ fontSize: '11px', color: '#e9dfc9' }}>REST LENGTH STANDARD</span>
                         <div style={{ fontSize: '16px', fontWeight: 700, color: '#fef08a', marginTop: '4px' }}>L₀ = 20.00 m</div>
                         <small style={{ color: '#94a3b8' }}>Laboratory Reference Frame S</small>
                       </div>
@@ -3068,43 +3363,20 @@ export default function Room3Experience() {
                   )}
 
                   <div className="button-row" style={{ marginTop: '16px' }}>
-                    {stationId === 'circuits' && (
+                    {!(stationId === 'circuits' ? (dmmMode === 'v_dc' && dmmJack === 'v_ohm') : true) && (
                       <button
                         type="button"
                         className="notebook-action"
-                        style={{ background: '#059669', borderColor: '#10b981' }}
-                        onClick={() => {
-                          handleSetDmmMode('v_dc');
-                          handleSetDmmJack('v_ohm');
-                        }}
+                        style={{ background: 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)', color: '#1a0b10', fontWeight: 800 }}
+                        onClick={() => setNotebookOpen(false)}
                       >
-                        ⚡ Auto-Prepare DMM for DC Voltage Sensing
-                      </button>
-                    )}
-                    {stationId === 'optics' && (
-                      <button
-                        type="button"
-                        className="notebook-action"
-                        style={{ background: '#059669', borderColor: '#10b981' }}
-                        onClick={() => setOptics((prev) => ({ ...prev, focalLength: 20.0 }))}
-                      >
-                        ⚡ Calibrate Thin Lens Mount (f = 20.0 cm)
-                      </button>
-                    )}
-                    {stationId === 'relativity' && (
-                      <button
-                        type="button"
-                        className="notebook-action"
-                        style={{ background: '#7c3aed', borderColor: '#a78bfa' }}
-                        onClick={() => setRelativity((prev) => ({ ...prev, properTime: 10.0, properLength: 20.0 }))}
-                      >
-                        ⚡ Synchronize Atomic Reference Clocks
+                        🔬 Close Notebook & Configure Multimeter in 3D View
                       </button>
                     )}
                     <button
                       type="button"
                       className="notebook-action"
-                      disabled={stationProgress.completed[3]}
+                      disabled={stationProgress.completed[3] || (stationId === 'circuits' && !(dmmMode === 'v_dc' && dmmJack === 'v_ohm'))}
                       onClick={() => completeStep(3)}
                     >
                       {stationProgress.completed[3] ? '✓ Step 4 Complete (10/10 pts)' : stationId === 'circuits' ? 'Confirm Multimeter Preparation (+10 pts)' : stationId === 'optics' ? 'Confirm Optics Preparation (+10 pts)' : 'Confirm Detector Calibration (+10 pts)'}
@@ -3147,50 +3419,18 @@ export default function Room3Experience() {
 
                   {stationId === 'circuits' && (
                     <div style={{ marginTop: '16px' }}>
-                      <b>Practice Measuring Potential Drops Across Circuit Elements:</b>
-                      <div className="probe-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '10px' }}>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: (redTerminal === 'SRC_POS' && blackTerminal === 'SRC_NEG') ? 'rgba(56, 189, 248, 0.25)' : '#0f172a', borderColor: '#38bdf8' }}
-                          onClick={() => handleQuickProbe('psu')}
-                        >
-                          🔌 Measure Source Potential (Vs = 24.00 V)
-                        </button>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: (redTerminal === 'R1_A' && blackTerminal === 'R1_B') ? 'rgba(56, 189, 248, 0.25)' : '#0f172a', borderColor: '#38bdf8' }}
-                          onClick={() => handleQuickProbe('r1')}
-                        >
-                          🔌 Measure Resistor R1 Drop (V1 ≈ 3.69 V)
-                        </button>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: (redTerminal === 'R2_A' && blackTerminal === 'R2_B') ? 'rgba(56, 189, 248, 0.25)' : '#0f172a', borderColor: '#38bdf8' }}
-                          onClick={() => handleQuickProbe('r2')}
-                        >
-                          🔌 Measure Resistor R2 Drop (V2 ≈ 8.12 V)
-                        </button>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: (redTerminal === 'R3_A' && blackTerminal === 'R3_B') ? 'rgba(56, 189, 248, 0.25)' : '#0f172a', borderColor: '#38bdf8' }}
-                          onClick={() => handleQuickProbe('r3')}
-                        >
-                          🔌 Measure Resistor R3 Drop (V3 ≈ 12.18 V)
-                        </button>
-                      </div>
-
-                      <div className="live-meter-display" style={{ marginTop: '14px', padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <b>Parallel Potential Drop Verification (Fluke 87V):</b>
+                      <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>FLUKE 87V LCD READOUT (PARALLEL)</span>
-                          <div style={{ fontSize: '22px', fontFamily: 'monospace', fontWeight: 700, color: '#fef08a' }}>{dmmReading.displayString}</div>
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>FLUKE 87V LCD READOUT (PARALLEL)</span>
+                          <div style={{ fontSize: '24px', fontFamily: 'monospace', fontWeight: 700, color: '#fef08a' }}>{dmmReading.displayString}</div>
+                          <div style={{ fontSize: '11px', color: dmmReading.isValidMeasurement && dmmReading.unit === 'V' ? '#34d399' : '#f87171', marginTop: '2px' }}>
+                            {dmmReading.isValidMeasurement && dmmReading.unit === 'V' ? '✓ Valid parallel voltage measurement detected' : '⚠️ Place probes across circuit elements in 3D'}
+                          </div>
                         </div>
-                        <div>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Red Lead: <b>{redTerminal ?? 'Unconnected'}</b></span><br />
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Black Lead: <b>{blackTerminal ?? 'Unconnected'}</b></span>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Red Lead (+): <b style={{ color: '#fef08a' }}>{redTerminal ?? 'Unconnected'}</b></span><br />
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Black Lead (COM): <b style={{ color: '#fef08a' }}>{blackTerminal ?? 'Unconnected'}</b></span>
                         </div>
                       </div>
                     </div>
@@ -3198,44 +3438,17 @@ export default function Room3Experience() {
 
                   {stationId === 'optics' && (
                     <div style={{ marginTop: '16px' }}>
-                      <b>Practice Setting Object Positions along Optical Axis:</b>
-                      <div className="probe-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '10px' }}>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: Math.abs(optics.objectDistance - 30) < 1 ? 'rgba(16, 185, 129, 0.25)' : '#0f172a', borderColor: '#10b981' }}
-                          onClick={() => setOptics((prev) => ({ ...prev, objectDistance: 30 }))}
-                        >
-                          Set u = 30 cm (v ≈ 60.0 cm)
-                        </button>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: Math.abs(optics.objectDistance - 40) < 1 ? 'rgba(16, 185, 129, 0.25)' : '#0f172a', borderColor: '#10b981' }}
-                          onClick={() => setOptics((prev) => ({ ...prev, objectDistance: 40 }))}
-                        >
-                          Set u = 40 cm (2f, v = 40.0 cm)
-                        </button>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: Math.abs(optics.objectDistance - 60) < 1 ? 'rgba(16, 185, 129, 0.25)' : '#0f172a', borderColor: '#10b981' }}
-                          onClick={() => setOptics((prev) => ({ ...prev, objectDistance: 60 }))}
-                        >
-                          Set u = 60 cm (3f, v = 30.0 cm)
-                        </button>
-                      </div>
-
-                      <div className="live-meter-display" style={{ marginTop: '14px', padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <b>Optical Track Conjugate Focal Alignment:</b>
+                      <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>OPTICAL TRACK TELEMETRY</span>
-                          <div style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 700, color: '#10b981' }}>
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>OPTICAL TRACK TELEMETRY</span>
+                          <div style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 700, color: '#34d399' }}>
                             u = {optics.objectDistance.toFixed(1)} cm → v = {((optics.objectDistance * 20.0) / Math.max(0.1, optics.objectDistance - 20.0)).toFixed(1)} cm
                           </div>
                         </div>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Focal Length: <b>f = 20.0 cm</b></span><br />
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Magnification: <b>{(-((optics.objectDistance * 20.0) / Math.max(0.1, optics.objectDistance - 20.0)) / optics.objectDistance).toFixed(2)}x</b></span>
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Focal Length: <b>f = 20.0 cm</b></span><br />
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Magnification: <b>{(-((optics.objectDistance * 20.0) / Math.max(0.1, optics.objectDistance - 20.0)) / optics.objectDistance).toFixed(2)}x</b></span>
                         </div>
                       </div>
                     </div>
@@ -3243,54 +3456,37 @@ export default function Room3Experience() {
 
                   {stationId === 'relativity' && (
                     <div style={{ marginTop: '16px' }}>
-                      <b>Practice Exploring Relativistic Velocity & Time Dilation:</b>
-                      <div className="probe-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '10px' }}>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: Math.abs(relativity.beta - 0.20) < 0.05 ? 'rgba(124, 58, 237, 0.25)' : '#0f172a', borderColor: '#a78bfa' }}
-                          onClick={() => setRelativity((prev) => ({ ...prev, beta: 0.20 }))}
-                        >
-                          Set β = 0.20c (γ = 1.021)
-                        </button>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: Math.abs(relativity.beta - 0.50) < 0.05 ? 'rgba(124, 58, 237, 0.25)' : '#0f172a', borderColor: '#a78bfa' }}
-                          onClick={() => setRelativity((prev) => ({ ...prev, beta: 0.50 }))}
-                        >
-                          Set β = 0.50c (γ = 1.155)
-                        </button>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: Math.abs(relativity.beta - 0.80) < 0.05 ? 'rgba(124, 58, 237, 0.25)' : '#0f172a', borderColor: '#a78bfa' }}
-                          onClick={() => setRelativity((prev) => ({ ...prev, beta: 0.80 }))}
-                        >
-                          Set β = 0.80c (γ = 1.667)
-                        </button>
-                      </div>
-
-                      <div className="live-meter-display" style={{ marginTop: '14px', padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <b>Relativistic Velocity & Time Dilation Telemetry:</b>
+                      <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>DILATED TIME (FRAME S)</span>
-                          <div style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 700, color: '#a78bfa' }}>
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>DILATED TIME (FRAME S)</span>
+                          <div style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 700, color: '#fef08a' }}>
                             Δt = {((1 / Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2))) * 10.0).toFixed(2)} s
                           </div>
                         </div>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Lorentz Factor: <b>γ = {(1 / Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2))).toFixed(4)}</b></span><br />
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Proper Time: <b>Δt₀ = 10.0 s</b></span>
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Lorentz Factor: <b>γ = {(1 / Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2))).toFixed(4)}</b></span><br />
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Proper Time: <b>Δt₀ = 10.0 s</b></span>
                         </div>
                       </div>
                     </div>
                   )}
 
                   <div className="button-row" style={{ marginTop: '16px' }}>
+                    {stationId === 'circuits' && !(dmmReading.isValidMeasurement && dmmReading.unit === 'V' && dmmReading.value !== null && Math.abs(dmmReading.value) > 0.5) && (
+                      <button
+                        type="button"
+                        className="notebook-action"
+                        style={{ background: 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)', color: '#1a0b10', fontWeight: 800 }}
+                        onClick={() => setNotebookOpen(false)}
+                      >
+                        🔌 Close Notebook & Place Probes on 3D Breadboard
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="notebook-action"
-                      disabled={stationProgress.completed[4]}
+                      disabled={stationProgress.completed[4] || (stationId === 'circuits' && !(dmmReading.isValidMeasurement && dmmReading.unit === 'V' && dmmReading.value !== null && Math.abs(dmmReading.value) > 0.5))}
                       onClick={() => completeStep(4)}
                     >
                       {stationProgress.completed[4] ? '✓ Step 5 Complete (10/10 pts)' : stationId === 'circuits' ? 'Confirm Voltage Procedure (+10 pts)' : stationId === 'optics' ? 'Confirm Optical Ray Procedure (+10 pts)' : 'Confirm Time Dilation Procedure (+10 pts)'}
@@ -3338,35 +3534,22 @@ export default function Room3Experience() {
 
                   {stationId === 'circuits' && (
                     <div style={{ marginTop: '16px' }}>
-                      <div className="button-row">
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: '#0284c7', borderColor: '#38bdf8' }}
-                          onClick={() => handleQuickProbe('series')}
-                        >
-                          ⚡ Insert Ammeter Safely in Series Break (36.92 mA)
-                        </button>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: '#334155', borderColor: '#64748b' }}
-                          onClick={() => handleToggleJumper()}
-                        >
-                          Toggle Series Jumper ({jumperClosed ? 'Currently CLOSED' : 'Currently OPEN'})
-                        </button>
-                      </div>
-
-                      <div className="live-meter-display" style={{ marginTop: '14px', padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <b>True Series Ammeter Loop Verification (Fluke 87V):</b>
+                      <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>FLUKE 87V AMMETER READOUT (SERIES)</span>
-                          <div style={{ fontSize: '22px', fontFamily: 'monospace', fontWeight: 700, color: dmmReading.tripFuse ? '#ef4444' : '#10b981' }}>
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>FLUKE 87V AMMETER READOUT (SERIES)</span>
+                          <div style={{ fontSize: '24px', fontFamily: 'monospace', fontWeight: 700, color: dmmReading.tripFuse ? '#ef4444' : '#34d399' }}>
                             {dmmReading.displayString}
                           </div>
+                          <div style={{ fontSize: '11px', color: (!jumperClosed && dmmMode === 'a_dc' && dmmJack === 'ma_10a' && (redTerminal === 'SERIES_JACK_A' || blackTerminal === 'SERIES_JACK_A')) ? '#34d399' : '#f87171', marginTop: '2px' }}>
+                            {!jumperClosed && dmmMode === 'a_dc' && dmmJack === 'ma_10a' && (redTerminal === 'SERIES_JACK_A' || blackTerminal === 'SERIES_JACK_A')
+                              ? '✓ Ammeter inserted in series break — full loop completed'
+                              : '⚠️ Remove series jumper, set dial to A⎓, jack to mA/10A, and connect across break'}
+                          </div>
                         </div>
-                        <div>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Dial: <b>{dmmMode.toUpperCase()}</b> · Jack: <b>{dmmJack.toUpperCase()}</b></span><br />
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Series Loop: <b>{!jumperClosed && (redTerminal === 'SERIES_JACK_A' || blackTerminal === 'SERIES_JACK_A') ? 'COMPLETED BY AMMETER' : jumperClosed ? 'CLOSED BY JUMPER' : 'OPEN BREAK'}</b></span>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Dial: <b style={{ color: dmmMode === 'a_dc' ? '#34d399' : '#f87171' }}>{dmmMode.toUpperCase()}</b> · Jack: <b style={{ color: dmmJack === 'ma_10a' ? '#34d399' : '#f87171' }}>{dmmJack.toUpperCase()}</b></span><br />
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Series Jumper: <b style={{ color: !jumperClosed ? '#34d399' : '#f87171' }}>{jumperClosed ? 'CLOSED (Bypassing Ammeter)' : 'OPEN (Ammeter Completes Loop)'}</b></span>
                         </div>
                       </div>
                     </div>
@@ -3374,35 +3557,16 @@ export default function Room3Experience() {
 
                   {stationId === 'optics' && (
                     <div style={{ marginTop: '16px' }}>
-                      <b>Practice Focusing Observation Screen across Conjugate Distances:</b>
-                      <div className="probe-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '10px' }}>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: Math.abs(optics.objectDistance - 35) < 1 ? 'rgba(16, 185, 129, 0.25)' : '#0f172a', borderColor: '#10b981' }}
-                          onClick={() => setOptics((prev) => ({ ...prev, objectDistance: 35 }))}
-                        >
-                          Focus Screen for u = 35 cm (v ≈ 46.7 cm)
-                        </button>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: Math.abs(optics.objectDistance - 50) < 1 ? 'rgba(16, 185, 129, 0.25)' : '#0f172a', borderColor: '#10b981' }}
-                          onClick={() => setOptics((prev) => ({ ...prev, objectDistance: 50 }))}
-                        >
-                          Focus Screen for u = 50 cm (v ≈ 33.3 cm)
-                        </button>
-                      </div>
-
-                      <div className="live-meter-display" style={{ marginTop: '14px', padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <b>Conjugate Real Image Sharpness & Magnification:</b>
+                      <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>THIN LENS GAUSSIAN VERIFICATION</span>
-                          <div style={{ fontSize: '18px', fontFamily: 'monospace', fontWeight: 700, color: '#10b981' }}>
-                            1/f = 1/{optics.objectDistance.toFixed(0)} + 1/{((optics.objectDistance * 20.0) / (optics.objectDistance - 20.0)).toFixed(1)} = 0.050 cm⁻¹ (f = 20.0 cm)
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>THIN LENS GAUSSIAN VERIFICATION</span>
+                          <div style={{ fontSize: '18px', fontFamily: 'monospace', fontWeight: 700, color: '#34d399' }}>
+                            1/f = 1/{optics.objectDistance.toFixed(0)} + 1/{((optics.objectDistance * 20.0) / Math.max(0.1, optics.objectDistance - 20.0)).toFixed(1)} = 0.050 cm⁻¹ (f = 20.0 cm)
                           </div>
                         </div>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Image State: <b>Real &amp; Inverted</b></span>
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Image State: <b>Real &amp; Inverted</b></span>
                         </div>
                       </div>
                     </div>
@@ -3410,45 +3574,36 @@ export default function Room3Experience() {
 
                   {stationId === 'relativity' && (
                     <div style={{ marginTop: '16px' }}>
-                      <b>Practice Measuring Relativistic Length Contraction &amp; Energy:</b>
-                      <div className="probe-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '10px' }}>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: Math.abs(relativity.beta - 0.60) < 0.05 ? 'rgba(124, 58, 237, 0.25)' : '#0f172a', borderColor: '#a78bfa' }}
-                          onClick={() => setRelativity((prev) => ({ ...prev, beta: 0.60 }))}
-                        >
-                          Accelerate to β = 0.60c (L = 16.00 m)
-                        </button>
-                        <button
-                          type="button"
-                          className="notebook-action"
-                          style={{ background: Math.abs(relativity.beta - 0.866) < 0.05 ? 'rgba(124, 58, 237, 0.25)' : '#0f172a', borderColor: '#a78bfa' }}
-                          onClick={() => setRelativity((prev) => ({ ...prev, beta: 0.866 }))}
-                        >
-                          Accelerate to β = 0.866c (γ = 2.00, L = 10.00 m)
-                        </button>
-                      </div>
-
-                      <div className="live-meter-display" style={{ marginTop: '14px', padding: '12px', background: '#090d16', borderRadius: '8px', border: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <b>Lorentz Contraction & Relativistic Total Energy:</b>
+                      <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>CONTRACTED LENGTH (FRAME S)</span>
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>CONTRACTED LENGTH (FRAME S)</span>
                           <div style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 700, color: '#fef08a' }}>
                             L = {(20.0 * Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2))).toFixed(2)} m (Rest L₀ = 20.0 m)
                           </div>
                         </div>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Kinetic Energy: <b>{((1 / Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2)) - 1) * 3727.38).toFixed(1)} MeV</b></span>
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Kinetic Energy: <b>{((1 / Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2)) - 1) * 3727.38).toFixed(1)} MeV</b></span>
                         </div>
                       </div>
                     </div>
                   )}
 
                   <div className="button-row" style={{ marginTop: '16px' }}>
+                    {stationId === 'circuits' && !(!jumperClosed && dmmMode === 'a_dc' && dmmJack === 'ma_10a' && (redTerminal === 'SERIES_JACK_A' || blackTerminal === 'SERIES_JACK_A')) && (
+                      <button
+                        type="button"
+                        className="notebook-action"
+                        style={{ background: 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)', color: '#1a0b10', fontWeight: 800 }}
+                        onClick={() => setNotebookOpen(false)}
+                      >
+                        ⚡ Close Notebook & Configure Series Ammeter in 3D View
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="notebook-action"
-                      disabled={stationProgress.completed[5]}
+                      disabled={stationProgress.completed[5] || (stationId === 'circuits' && !(!jumperClosed && dmmMode === 'a_dc' && dmmJack === 'ma_10a' && (redTerminal === 'SERIES_JACK_A' || blackTerminal === 'SERIES_JACK_A')))}
                       onClick={() => completeStep(5)}
                     >
                       {stationProgress.completed[5] ? '✓ Step 6 Complete (10/10 pts)' : stationId === 'circuits' ? 'Confirm Current Procedure (+10 pts)' : stationId === 'optics' ? 'Confirm Focus Procedure (+10 pts)' : 'Confirm Contraction Procedure (+10 pts)'}
@@ -3519,14 +3674,9 @@ export default function Room3Experience() {
                               {stationId === 'relativity' && `Assigned Velocity Ratio: β = ${assigned.targetValue.toFixed(2)}c (Expected γ = ${assigned.expectedSecondary.toFixed(3)})`}
                             </h4>
                           </div>
-                          <button
-                            type="button"
-                            className="notebook-action"
-                            style={{ background: 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)', color: '#1a0b10', borderColor: '#fef08a', padding: '6px 12px', fontSize: '12px', fontWeight: 800 }}
-                            onClick={() => handleSetAssignedCondition(assigned.targetValue)}
-                          >
-                            ⚡ Set Target {assigned.targetParam} = {assigned.targetValue}{assigned.unit}
-                          </button>
+                          <span style={{ padding: '6px 12px', background: isAlreadyRecorded ? 'rgba(16, 185, 129, 0.25)' : 'rgba(212, 175, 55, 0.2)', border: isAlreadyRecorded ? '1px solid #10b981' : '1px solid #d4af37', borderRadius: '6px', fontSize: '12px', fontWeight: 700, color: isAlreadyRecorded ? '#34d399' : '#fef08a' }}>
+                            {isAlreadyRecorded ? `✓ Trial #${trialNum} Logged` : `Pending 3D Trial #${trialNum}`}
+                          </span>
                         </div>
 
                         <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#94a3b8' }}>
@@ -3549,43 +3699,51 @@ export default function Room3Experience() {
                           </div>
                         </div>
 
-                        {/* Action Buttons for Active Trial */}
-                        <div className="button-row" style={{ marginTop: '14px' }}>
-                          <button
-                            type="button"
-                            className="notebook-action"
-                            style={{ background: isAlreadyRecorded ? '#d97706' : '#059669', borderColor: isAlreadyRecorded ? '#f59e0b' : '#10b981' }}
-                            onClick={() => recordCurrentTrial(activeTrialTab)}
-                          >
-                            {isAlreadyRecorded ? `🔄 Replace / Retake Trial #${trialNum}` : `⚡ Record Trial #${trialNum} to Dataset`}
-                          </button>
-                          <button
-                            type="button"
-                            className="notebook-action"
-                            style={{ background: 'rgba(88, 28, 44, 0.7)', borderColor: 'rgba(212, 175, 55, 0.5)', color: '#fffbeb' }}
-                            onClick={() => handleQuickProbe('psu')}
-                          >
-                            Parallel Voltage Probes
-                          </button>
-                          <button
-                            type="button"
-                            className="notebook-action"
-                            style={{ background: 'rgba(88, 28, 44, 0.7)', borderColor: 'rgba(212, 175, 55, 0.5)', color: '#fffbeb' }}
-                            onClick={() => handleQuickProbe('series')}
-                          >
-                            Series Ammeter Probes
-                          </button>
-                          {stationProgress.trials.length > 0 && (
+                        {/* 3D Action Guidance - Trials must be performed physically in 3D */}
+                        {stationProgress.trials.length < TOTAL_TRIALS ? (
+                          <div style={{ marginTop: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
                             <button
                               type="button"
                               className="notebook-action"
-                              style={{ background: '#7f1d1d', borderColor: '#ef4444' }}
-                              onClick={handleResetTrials}
+                              style={{
+                                flex: 1,
+                                background: 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)',
+                                color: '#1a0b10',
+                                borderColor: '#fef08a',
+                                padding: '12px 18px',
+                                fontSize: '14px',
+                                fontWeight: 800,
+                              }}
+                              onClick={() => setNotebookOpen(false)}
                             >
-                              🗑️ Reset All Trials
+                              🔬 Close Notebook & Perform Trial #{stationProgress.trials.length + 1} in 3D View ({stationProgress.trials.length} / 5 Logged)
                             </button>
-                          )}
-                        </div>
+                            {stationProgress.trials.length > 0 && (
+                              <button
+                                type="button"
+                                className="notebook-action"
+                                style={{ background: '#7f1d1d', borderColor: '#ef4444', color: '#fef2f2' }}
+                                onClick={handleResetTrials}
+                              >
+                                🗑️ Reset Trials
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(16, 185, 129, 0.15)', border: '1.5px solid #10b981', borderRadius: '8px', padding: '12px 16px' }}>
+                            <span style={{ fontSize: '14px', color: '#34d399', fontWeight: 700 }}>
+                              ✓ All 5 Trials Recorded in 3D (+20 pts Earned)
+                            </span>
+                            <button
+                              type="button"
+                              className="notebook-action"
+                              style={{ background: '#059669', borderColor: '#10b981', color: '#fff', fontWeight: 800 }}
+                              onClick={() => setNotebookStep(7)}
+                            >
+                              Proceed to Step 8: Computation & Scientific Analysis →
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
@@ -4097,7 +4255,7 @@ export default function Room3Experience() {
                     </div>
                   )}
 
-                  <div className="button-row" style={{ marginTop: '16px' }}>
+                  <div className="button-row" style={{ marginTop: '16px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       className="notebook-action"
@@ -4108,9 +4266,19 @@ export default function Room3Experience() {
                     <button
                       type="button"
                       className="notebook-action"
+                      disabled={!reportReady}
+                      style={{
+                        background: reportReady ? 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' : 'rgba(51, 65, 85, 0.4)',
+                        borderColor: reportReady ? '#38bdf8' : '#475569',
+                        color: reportReady ? '#fff' : '#94a3b8',
+                        cursor: reportReady ? 'pointer' : 'not-allowed',
+                        opacity: reportReady ? 1 : 0.6,
+                        fontWeight: 700,
+                      }}
                       onClick={downloadReportPdf}
+                      title={!reportReady ? 'Complete all 5 3D trials, verify Step 8 computation, answer analysis questions, and fill student credentials to unlock report certification.' : 'Download Official Certified PDF Report'}
                     >
-                      📄 Download Certified PDF Report
+                      {reportReady ? '📄 Download Certified PDF Report' : '🔒 Certified Report Locked'}
                     </button>
                     <button
                       type="button"
@@ -4121,6 +4289,38 @@ export default function Room3Experience() {
                     >
                       {stationProgress.completed[7] ? '✓ Step 8 Complete (20/20 pts) · Certified' : 'Complete Step 8 & Certify Lab Notebook (+20 pts)'}
                     </button>
+                  </div>
+
+                  {/* Certification Prerequisites Checklist */}
+                  <div style={{
+                    marginTop: '14px',
+                    padding: '12px 14px',
+                    background: 'rgba(35, 12, 20, 0.85)',
+                    border: '1px solid rgba(212, 175, 55, 0.35)',
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                  }}>
+                    <b style={{ color: '#d4af37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Official Certification Prerequisites ({[allTrialsLogged, isComputationVerified, allGuideCorrect, isStudentInfoFilled].filter(Boolean).length} / 4 Met):
+                    </b>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', marginTop: '8px' }}>
+                      <span style={{ color: allTrialsLogged ? '#34d399' : '#f59e0b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>{allTrialsLogged ? '✅' : '⏳'}</span>
+                        <b>5 3D Trials Logged:</b> {stationProgress.trials.length} / 5
+                      </span>
+                      <span style={{ color: isComputationVerified ? '#34d399' : '#f59e0b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>{isComputationVerified ? '✅' : '⏳'}</span>
+                        <b>Step 8 Computation:</b> {isComputationVerified ? 'Verified' : 'Pending Verification'}
+                      </span>
+                      <span style={{ color: allGuideCorrect ? '#34d399' : '#f59e0b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>{allGuideCorrect ? '✅' : '⏳'}</span>
+                        <b>Analysis Questions:</b> {allGuideCorrect ? 'All Correct' : 'Pending 100%'}
+                      </span>
+                      <span style={{ color: isStudentInfoFilled ? '#34d399' : '#f59e0b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>{isStudentInfoFilled ? '✅' : '⏳'}</span>
+                        <b>Student Credentials:</b> {isStudentInfoFilled ? 'Complete' : 'Name, ID & Sec Required'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}
@@ -4149,7 +4349,7 @@ export default function Room3Experience() {
                 <button
                   type="button"
                   className="primary-button"
-                  disabled={notebookStep >= 7}
+                  disabled={notebookStep >= 7 || (notebookStep >= stationProgress.currentStep && !stationProgress.completed[notebookStep])}
                   onClick={() => setNotebookStep((s) => Math.min(7, s + 1))}
                 >
                   Next step →

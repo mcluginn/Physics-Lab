@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import {
   type CircuitSettings,
   type CircuitResult,
+  type TrialRecord,
 } from './room3Model';
 import {
   type MultimeterMode,
@@ -40,6 +41,8 @@ export interface Room3CircuitWorkspaceProps {
   stepValidation?: StepValidationResult;
   onContinueGuidedStep?: () => void;
   onRecordMeasurement?: (name: string, value: number, unit: string) => void;
+  trials?: TrialRecord[];
+  measurementWarning?: string | null;
 }
 
 export function Room3CircuitWorkspace({
@@ -64,6 +67,8 @@ export function Room3CircuitWorkspace({
   stepValidation,
   onContinueGuidedStep,
   onRecordMeasurement,
+  trials,
+  measurementWarning,
 }: Room3CircuitWorkspaceProps) {
   const [viewMode, setViewMode] = useState<'breadboard' | 'schematic'>('breadboard');
   const [selectedTerminal, setSelectedTerminal] = useState<TerminalId | null>(null);
@@ -1032,9 +1037,95 @@ export function Room3CircuitWorkspace({
                   onRecordMeasurement(param, dmmReading.value!, dmmReading.unit);
                 }}
               >
-                📝 Record to Lab Notebook (+10 pts)
+                📝 Record Reading to Notebook (+10 pts)
               </button>
             )}
+
+            {/* 5-Trial Experimental Data Collection Card */}
+            <div style={{
+              marginTop: '12px',
+              padding: '10px',
+              background: 'rgba(53, 18, 29, 0.85)',
+              border: '1.5px solid rgba(212, 175, 55, 0.45)',
+              borderRadius: '6px',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#fef08a' }}>
+                  📊 5-TRIAL DATASET: {(trials?.length ?? 0)} / 5
+                </span>
+                <span style={{ fontSize: '10px', color: (trials?.length ?? 0) >= 5 ? '#34d399' : '#d4af37', fontWeight: 700 }}>
+                  {(trials?.length ?? 0) >= 5 ? '✓ 5 Trials Done' : `Trial #${(trials?.length ?? 0) + 1}`}
+                </span>
+              </div>
+
+              {(trials?.length ?? 0) < 5 && (
+                <>
+                  <div style={{ fontSize: '10px', color: '#e2e8f0', marginBottom: '6px' }}>
+                    Assigned Target: <b style={{ color: '#fef08a' }}>Vs = {[4, 8, 12, 16, 20][trials?.length ?? 0]}.0 V</b>
+                  </div>
+                  <div style={{ display: 'flex', gap: '3px', marginBottom: '8px' }}>
+                    {[4, 8, 12, 16, 20].map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        style={{
+                          flex: 1,
+                          background: circuits.vs === v ? '#d4af37' : 'rgba(35, 12, 20, 0.8)',
+                          color: circuits.vs === v ? '#1a0b10' : '#fffbeb',
+                          border: '1px solid rgba(212, 175, 55, 0.5)',
+                          borderRadius: '3px',
+                          padding: '2px 0',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => onUpdateCircuits({ vs: v, powerOn: true })}
+                      >
+                        {v}V
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {measurementWarning && (
+                <div style={{
+                  marginBottom: '8px',
+                  padding: '6px 8px',
+                  background: 'rgba(127, 29, 29, 0.95)',
+                  border: '1px solid #ef4444',
+                  borderRadius: '4px',
+                  color: '#fef2f2',
+                  fontSize: '10px',
+                  lineHeight: '1.3',
+                  fontWeight: 600,
+                }}>
+                  ⚠️ {measurementWarning}
+                </div>
+              )}
+
+              {onRecordMeasurement && (
+                <button
+                  type="button"
+                  style={{
+                    width: '100%',
+                    background: (trials?.length ?? 0) >= 5 ? 'rgba(16, 185, 129, 0.25)' : 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)',
+                    color: (trials?.length ?? 0) >= 5 ? '#34d399' : '#1a0b10',
+                    border: (trials?.length ?? 0) >= 5 ? '1px solid #10b981' : '1px solid #fef08a',
+                    padding: '6px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => onRecordMeasurement('trial', circuits.vs, 'V')}
+                >
+                  {(trials?.length ?? 0) >= 5
+                    ? '✓ All 5 Trials Recorded'
+                    : `⚡ Record Trial #${(trials?.length ?? 0) + 1} (${circuits.vs}V)`}
+                </button>
+              )}
+            </div>
           </div>
         </aside>
       </div>
