@@ -321,22 +321,27 @@ export default function Room3Experience() {
 
   // Student-Centered Experience: Exclusively Guided Experiment
   const experienceMode: ExperienceMode = 'guided';
-  const [guidedStepIndex, setGuidedStepIndex] = useState(0);
+  const stationProgress = progress[stationId];
+  const [viewStepIndex, setViewStepIndex] = useState<number | null>(null);
+  const activeStepIdx = viewStepIndex !== null ? viewStepIndex : stationProgress.currentStep;
   const [showGuidedHint, setShowGuidedHint] = useState(false);
   const [retakeTrialIndex, setRetakeTrialIndex] = useState<number | null>(null);
   const [activeTrialTab, setActiveTrialTab] = useState<number>(0);
 
-  // Reset guided step on station change
+  // Reset step view on station or current step change
   useEffect(() => {
-    setGuidedStepIndex(0);
+    setViewStepIndex(null);
     setShowGuidedHint(false);
     setRetakeTrialIndex(null);
     setActiveTrialTab(0);
   }, [stationId]);
 
+  useEffect(() => {
+    setViewStepIndex(null);
+  }, [stationProgress.currentStep]);
+
   // Station Definitions & Telemetry Derived States
   const station = ROOM3_STATIONS[stationId];
-  const stationProgress = progress[stationId];
   const circuitResult = useMemo(() => calculateCircuit(circuits), [circuits]);
   const opticsResult = useMemo(() => calculateOptics(optics), [optics]);
   const relativityResult = useMemo(() => calculateRelativity(relativity), [relativity]);
@@ -348,7 +353,7 @@ export default function Room3Experience() {
 
   // Derived Curriculum & Guided Validation
   const currentCurriculum = STATION_CURRICULUM[stationId];
-  const currentGuidedStep = currentCurriculum?.steps[guidedStepIndex] ?? currentCurriculum?.steps[0];
+  const currentGuidedStep = currentCurriculum?.steps[activeStepIdx] ?? currentCurriculum?.steps[0];
 
   const guidedState: GuidedExperimentState = useMemo(() => ({
     stationId,
@@ -724,7 +729,7 @@ export default function Room3Experience() {
           updatedCompleted[0] = true;
           newCurrentStep = Math.max(st.currentStep, 1);
           playTone(880, 'sine', 0.25, 0.4);
-          setGuidedStepIndex(1);
+          setViewStepIndex(null);
           setEquipmentMessage(`🎉 Step 1 Complete (+10 pts)! All 4 apparatus instruments inspected. Advancing to Step 2.`);
         } else {
           playTone(587.33, 'triangle', 0.12, 0.3);
@@ -744,6 +749,97 @@ export default function Room3Experience() {
       return prev;
     });
   };
+
+  // Reactive Telemetry Auto-Advancement (Steps 3 through 7)
+  useEffect(() => {
+    const curStep = stationProgress.currentStep;
+    if (stationProgress.completed[curStep]) return;
+
+    // Step 3 (index 2: Setup / Power Configuration)
+    if (curStep === 2) {
+      if (stationId === 'circuits' && circuits.powerOn && Math.abs(circuits.vs - 24.0) < 1.5 && jumperClosed) {
+        completeStep(2);
+      } else if (stationId === 'optics' && optics.powerOn && optics.wavelength === 532) {
+        completeStep(2);
+      } else if (stationId === 'relativity' && relativity.massPreset === 'alpha' && relativity.beta <= 0.01) {
+        completeStep(2);
+      }
+    }
+    // Step 4 (index 3: Instrument Preparation)
+    else if (curStep === 3) {
+      if (stationId === 'circuits' && dmmMode === 'v_dc' && dmmJack === 'v_ohm' && !dmmReading.tripFuse) {
+        completeStep(3);
+      } else if (stationId === 'optics' && optics.subMode === 'imaging' && Math.abs(optics.focalLength - 20.0) < 1.0) {
+        completeStep(3);
+      } else if (stationId === 'relativity') {
+        completeStep(3);
+      }
+    }
+    // Step 5 (index 4: Voltage Measurement / Ray Tracing / Proper Frame)
+    else if (curStep === 4) {
+      if (
+        stationId === 'circuits' &&
+        circuits.powerOn &&
+        ((redTerminal === 'SRC_POS' && blackTerminal === 'SRC_NEG') ||
+          (redTerminal === 'R1_A' && blackTerminal === 'R1_B') ||
+          (redTerminal === 'R1_B' && blackTerminal === 'R1_A') ||
+          (dmmReading.isValidMeasurement && dmmReading.unit === 'V' && Math.abs(dmmReading.value ?? 0) > 1.0))
+      ) {
+        completeStep(4);
+      } else if (stationId === 'optics' && Math.abs(optics.objectDistance - 40.0) < 1.5) {
+        completeStep(4);
+      } else if (stationId === 'relativity' && Math.abs(relativity.beta - 0.60) < 0.03) {
+        completeStep(4);
+      }
+    }
+    // Step 6 (index 5: Current Measurement / Interference / Length Contraction)
+    else if (curStep === 5) {
+      if (
+        stationId === 'circuits' &&
+        (dmmMode === 'a_dc' || dmmMode === 'a_ac') &&
+        dmmJack === 'ma_10a' &&
+        !jumperClosed &&
+        ((redTerminal === 'SERIES_JACK_A' && blackTerminal === 'SERIES_JACK_B') ||
+          (redTerminal === 'SERIES_JACK_B' && blackTerminal === 'SERIES_JACK_A')) &&
+        circuits.powerOn &&
+        dmmReading.value !== null &&
+        Math.abs(dmmReading.value) > 0.005
+      ) {
+        completeStep(5);
+      } else if (stationId === 'optics') {
+        completeStep(5);
+      } else if (stationId === 'relativity' && Math.abs(relativity.beta - 0.60) < 0.03) {
+        completeStep(5);
+      }
+    }
+    // Step 7 (index 6: 5-Trial Loop)
+    else if (curStep === 6 && stationProgress.trials.length >= 5) {
+      completeStep(6);
+    }
+  }, [
+    stationId,
+    stationProgress.currentStep,
+    stationProgress.completed,
+    stationProgress.trials.length,
+    circuits.powerOn,
+    circuits.vs,
+    jumperClosed,
+    dmmMode,
+    dmmJack,
+    dmmReading.tripFuse,
+    dmmReading.isValidMeasurement,
+    dmmReading.unit,
+    dmmReading.value,
+    redTerminal,
+    blackTerminal,
+    optics.powerOn,
+    optics.wavelength,
+    optics.subMode,
+    optics.focalLength,
+    optics.objectDistance,
+    relativity.massPreset,
+    relativity.beta,
+  ]);
 
   const handleEquipmentAction = (id: string) => {
     playTone(440, 'triangle', 0.08, 0.2);
@@ -1149,45 +1245,13 @@ export default function Room3Experience() {
   const handleContinueGuidedStep = () => {
     if (!stepValidation.isPassed) return;
     playTone(523, 'sine', 0.15, 0.25);
+    completeStep(activeStepIdx);
+    setViewStepIndex(null);
+    setShowGuidedHint(false);
 
-    // Complete current guided step in progress
-    setProgress((prev) => {
-      const sp = { ...prev[stationId] };
-      const completed = [...sp.completed];
-      if (guidedStepIndex < 6) {
-        completed[guidedStepIndex] = true;
-      }
-      if (stationId === 'circuits') {
-        if (guidedStepIndex === 0) {
-          sp.inspected = Array.from(new Set([...sp.inspected, 'circuits-power-switch', 'circuits-multimeter', 'circuits-topology-selector']));
-        }
-      } else if (stationId === 'optics') {
-        if (guidedStepIndex === 0) {
-          sp.inspected = Array.from(new Set([...sp.inspected, 'optics-laser', 'optics-angle-dial', 'optics-screen']));
-        }
-      } else {
-        if (guidedStepIndex === 0) {
-          sp.inspected = Array.from(new Set([...sp.inspected, 'relativity-velocity-dial', 'relativity-light-clock', 'relativity-contracting-rod']));
-        }
-      }
-      return { ...prev, [stationId]: { ...sp, completed } };
-    });
-
-    const totalSteps = currentCurriculum?.steps.length ?? 8;
-    if (guidedStepIndex < totalSteps - 1) {
-      const nextIndex = guidedStepIndex + 1;
-      setGuidedStepIndex(nextIndex);
-      setShowGuidedHint(false);
-      if (nextIndex === 6) {
-        setNotebookOpen(true);
-        setNotebookStep(6);
-      } else if (nextIndex === 7) {
-        setNotebookOpen(true);
-        setNotebookStep(7);
-      }
-    } else {
+    if (activeStepIdx >= 5) {
       setNotebookOpen(true);
-      setNotebookStep(7);
+      setNotebookStep(Math.min(7, activeStepIdx + 1));
     }
   };
   const verifyPrediction = (choice: number) => {
@@ -2063,7 +2127,7 @@ export default function Room3Experience() {
             {/* Stepper Progress Dots */}
             <div className="guided-stepper-row" role="tablist" aria-label="Experiment Steps">
               {currentCurriculum.steps.map((st, idx) => {
-                const isCur = idx === guidedStepIndex;
+                const isCur = idx === activeStepIdx;
                 const isDone = Boolean(stationProgress.completed[idx]);
                 const isLocked = idx > stationProgress.currentStep && !isDone;
                 return (
@@ -2074,7 +2138,7 @@ export default function Room3Experience() {
                     className={`guided-step-dot ${isCur ? 'active' : ''} ${isDone ? 'completed' : ''} ${isLocked ? 'locked' : ''}`}
                     onClick={() => {
                       if (isLocked) return;
-                      setGuidedStepIndex(idx);
+                      setViewStepIndex(idx);
                       setShowGuidedHint(false);
                     }}
                     title={isLocked ? `Step ${idx + 1} is locked until previous steps are completed.` : st.title}
@@ -2089,7 +2153,7 @@ export default function Room3Experience() {
             <div className="guided-instruction-card">
               <div className="guided-step-title-row">
                 <h4>{currentGuidedStep.title}</h4>
-                <span className="step-points-pill">Step {guidedStepIndex + 1}/{currentCurriculum.steps.length}</span>
+                <span className="step-points-pill">Step {activeStepIdx + 1}/{currentCurriculum.steps.length}</span>
               </div>
 
               <div className="guided-action-box">
@@ -2106,6 +2170,96 @@ export default function Room3Experience() {
                 <b>👁️ EXPECTED RESULT:</b>
                 <span>{currentGuidedStep.expectedResult}</span>
               </div>
+
+              {/* Step 2: Formative Prediction Direct Card */}
+              {activeStepIdx === 1 && (
+                <div style={{ marginTop: '10px', background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(212,175,55,0.3)' }}>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: 'bold', color: '#fef08a' }}>
+                    🤔 Formative Prediction: {station.prediction.question}
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {station.prediction.options.map((opt, oIdx) => {
+                      const isChosen = currentPredictionAnswer === oIdx;
+                      const isCorrectChoice = oIdx === station.prediction.answer;
+                      let btnBg = 'rgba(255,255,255,0.06)';
+                      let borderColor = 'rgba(255,255,255,0.15)';
+                      if (stationProgress.completed[1] && isCorrectChoice) {
+                        btnBg = 'rgba(16,185,129,0.3)';
+                        borderColor = '#10b981';
+                      } else if (isChosen) {
+                        btnBg = isCorrectChoice ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
+                        borderColor = isCorrectChoice ? '#10b981' : '#ef4444';
+                      }
+                      return (
+                        <button
+                          key={oIdx}
+                          type="button"
+                          className="secondary-button"
+                          style={{ textAlign: 'left', padding: '6px 10px', fontSize: '11px', background: btnBg, borderColor }}
+                          onClick={() => verifyPrediction(oIdx)}
+                        >
+                          {opt} {stationProgress.completed[1] && isCorrectChoice ? '✓ (+10 pts)' : ''}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {predictionStatus === 'correct' && (
+                    <div style={{ color: '#34d399', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>
+                      ✓ Correct prediction! +10 Points awarded.
+                    </div>
+                  )}
+                  {predictionStatus === 'incorrect' && (
+                    <div style={{ color: '#f87171', fontSize: '11px', marginTop: '6px' }}>
+                      ❌ Incorrect prediction. Review the theory placard and try again.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step 7: 5-Trial Measurement Sweep Direct Card */}
+              {activeStepIdx === 6 && (
+                <div style={{ marginTop: '10px', background: 'rgba(56,189,248,0.1)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(56,189,248,0.4)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <b style={{ color: '#38bdf8', fontSize: '12px' }}>📊 5-Trial Data Collection ({stationProgress.trials.length}/5 Logged)</b>
+                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>Target Voltages</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginBottom: '8px' }}>
+                    {[4, 8, 12, 16, 20].map((v) => {
+                      const isDone = stationProgress.trials.some((tr) => Math.abs(Number(tr.vs ?? tr.paramA ?? 0) - v) < 1.0);
+                      const isCur = Math.abs(circuits.vs - v) < 1.0;
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          className="dmm-btn"
+                          style={{
+                            padding: '6px 2px',
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            background: isDone ? 'rgba(16,185,129,0.25)' : isCur ? '#0284c7' : 'rgba(255,255,255,0.06)',
+                            borderColor: isDone ? '#10b981' : isCur ? '#38bdf8' : 'rgba(255,255,255,0.15)',
+                            color: isDone ? '#34d399' : '#fff',
+                          }}
+                          onClick={() => {
+                            setCircuits((prev) => ({ ...prev, vs: v }));
+                            playTone(400 + v * 20, 'sine', 0.06, 0.15);
+                          }}
+                        >
+                          {isDone ? '✓ ' : ''}{v}V
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: 'bold' }}
+                    onClick={() => recordCurrentTrial()}
+                  >
+                    + Record Current Measurement to Lab Log ({stationProgress.trials.length}/5)
+                  </button>
+                </div>
+              )}
 
               {showGuidedHint && (
                 <div className="guided-hint-box">
@@ -2155,9 +2309,9 @@ export default function Room3Experience() {
                   type="button"
                   className="secondary-button"
                   style={{ padding: '6px 10px', fontSize: '11px' }}
-                  disabled={guidedStepIndex === 0}
+                  disabled={activeStepIdx === 0}
                   onClick={() => {
-                    setGuidedStepIndex((prev) => Math.max(0, prev - 1));
+                    setViewStepIndex(Math.max(0, activeStepIdx - 1));
                     setShowGuidedHint(false);
                   }}
                 >
@@ -2177,9 +2331,9 @@ export default function Room3Experience() {
                   disabled={!stepValidation.isPassed}
                   onClick={handleContinueGuidedStep}
                 >
-                  {guidedStepIndex === currentCurriculum.steps.length - 1
+                  {activeStepIdx === currentCurriculum.steps.length - 1
                     ? 'Complete & Open Notebook →'
-                    : `Continue Step ${guidedStepIndex + 2} →`}
+                    : `Continue Step ${activeStepIdx + 2} →`}
                 </button>
               </div>
             </div>
@@ -2374,6 +2528,24 @@ export default function Room3Experience() {
                   </select>
                 </div>
               </div>
+
+              {/* Flip Probe Polarity Button */}
+              <button
+                type="button"
+                className="secondary-button"
+                style={{ width: '100%', padding: '6px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'rgba(212,175,55,0.15)', borderColor: '#d4af37' }}
+                onClick={() => {
+                  sceneApi.current?.flipProbePolarity();
+                  const curRed = redTerminal;
+                  const curBlack = blackTerminal;
+                  setRedTerminalState(curBlack);
+                  setBlackTerminalState(curRed);
+                  playTone(660, 'sine', 0.08, 0.15);
+                }}
+                title="Swap Red (+) and Black (COM) multimeter leads to invert polarity"
+              >
+                <span>⇄ Flip Lead Polarity (Swap Red & Black)</span>
+              </button>
 
               {/* Quick Probe Placement Chips */}
               <div style={{ marginTop: '2px' }}>
@@ -3124,7 +3296,6 @@ export default function Room3Experience() {
                             key={tgt}
                             className={isInspected ? 'done' : ''}
                             style={{
-                              cursor: 'pointer',
                               padding: '10px 12px',
                               background: isInspected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(53, 18, 29, 0.9)',
                               border: isInspected ? '1.5px solid #10b981' : '1px solid rgba(212, 175, 55, 0.45)',
@@ -3136,15 +3307,14 @@ export default function Room3Experience() {
                               gap: '8px',
                               transition: 'all 0.2s ease',
                             }}
-                            onClick={() => handleInspectApparatus(tgt)}
-                            title={isInspected ? 'Component verified' : 'Click to inspect this apparatus component'}
+                            title={isInspected ? 'Component verified in 3D' : 'Approach and click this component in the 3D room to inspect'}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span style={{ fontSize: '14px' }}>{isInspected ? '✅' : '🔍'}</span>
                               <span style={{ fontSize: '12px', fontWeight: 600, color: isInspected ? '#34d399' : '#e9dfc9' }}>{label}</span>
                             </div>
                             <span style={{ fontSize: '10px', color: isInspected ? '#34d399' : '#d4af37', fontWeight: 700 }}>
-                              {isInspected ? '✓ Inspected' : 'Click to Inspect'}
+                              {isInspected ? '✓ Inspected' : '⏳ Inspect in 3D'}
                             </span>
                           </li>
                         );

@@ -424,6 +424,12 @@ export class Multimeter3D {
       new THREE.Vector3(-0.1188, 0.0118, -0.0273),
       new THREE.Vector3(-0.0180, 0.0118, -0.0273)
     );
+    r1Mesh.traverse((child) => {
+      child.userData.isTerminal = true;
+      child.userData.terminalId = 'R1_A';
+      child.userData.hoverTooltip = 'Resistor R1 (100 Ω) · Click to measure voltage drop (V1 ≈ 3.69 V)';
+      if (child instanceof THREE.Mesh) this.interactableMeshes.push(child);
+    });
     boardGroup.add(r1Mesh);
 
     // R2: Column 28 (x = -0.0180) to Column 38 (x = +0.0540), Row D (z = -0.0189)
@@ -435,6 +441,12 @@ export class Multimeter3D {
       new THREE.Vector3(-0.0180, 0.0118, -0.0189),
       new THREE.Vector3(0.0540, 0.0118, -0.0189)
     );
+    r2Mesh.traverse((child) => {
+      child.userData.isTerminal = true;
+      child.userData.terminalId = 'R2_A';
+      child.userData.hoverTooltip = 'Resistor R2 (220 Ω) · Click to measure voltage drop (V2 ≈ 8.12 V)';
+      if (child instanceof THREE.Mesh) this.interactableMeshes.push(child);
+    });
     boardGroup.add(r2Mesh);
 
     // R3: Column 38 (x = +0.0540) to Column 48 (x = +0.1260), Row C (z = -0.0273)
@@ -446,6 +458,12 @@ export class Multimeter3D {
       new THREE.Vector3(0.0540, 0.0118, -0.0273),
       new THREE.Vector3(0.1260, 0.0118, -0.0273)
     );
+    r3Mesh.traverse((child) => {
+      child.userData.isTerminal = true;
+      child.userData.terminalId = 'R3_A';
+      child.userData.hoverTooltip = 'Resistor R3 (330 Ω) · Click to measure voltage drop (V3 ≈ 12.18 V)';
+      if (child instanceof THREE.Mesh) this.interactableMeshes.push(child);
+    });
     boardGroup.add(r3Mesh);
 
     // 4. Build Realistic 3D Breadboard Jumper Wires (Solid-Core 22 AWG Arched Wires)
@@ -790,9 +808,9 @@ export class Multimeter3D {
       innerHole.position.y = 0.001;
       socketGroup.add(innerHole);
 
-      // Clickable Hitbox Mesh for Raycasting
+      // Clickable Hitbox Mesh for Raycasting (tight radius prevents cross-column overlap)
       const hitbox = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.016, 0.016, 0.035, 12),
+        new THREE.CylinderGeometry(0.009, 0.009, 0.025, 12),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0 })
       );
       hitbox.name = `Terminal_${tId}`;

@@ -49,6 +49,7 @@ export type Room3SceneApi = {
   setDmmMode: (mode: MultimeterMode) => void;
   setDmmJack: (jack: MultimeterJack) => void;
   setProbeTerminal: (probe: 'red' | 'black', terminal: TerminalId | null) => void;
+  flipProbePolarity: () => void;
   toggleSeriesJumper: () => void;
   resetDmmFuse: () => void;
   getDmmReading: () => MultimeterReading;
@@ -235,7 +236,7 @@ export function createRoom3Scene(
     // 3. Lighting Quality
     sconceLights.forEach((light) => {
       light.visible = currentGraphicsSettings.lightingQuality !== 'simple';
-      light.intensity = currentGraphicsSettings.lightingQuality === 'medium' ? 0.7 : 1.2;
+      light.intensity = currentGraphicsSettings.lightingQuality === 'medium' ? 0.30 : 0.45;
     });
     downlights.forEach((light) => {
       light.visible = currentGraphicsSettings.lightingQuality === 'full';
@@ -1367,47 +1368,33 @@ export function createRoom3Scene(
       scene.add(pier);
 
       if (p.hasPilaster) {
-        // Architectural Mahogany Pilaster Pier (satin matte finish, zero specular blowout or stippling)
-        const pilasterMat = new THREE.MeshStandardMaterial({
-          color: 0x3b1d14,
-          roughness: 0.82,
-          metalness: 0.02,
-        });
-        const pilasterX = isEast ? x - 0.18 : x + 0.18;
-        const pilaster = new THREE.Mesh(new THREE.BoxGeometry(0.04, 2.50, 1.80), pilasterMat);
-        pilaster.position.set(pilasterX, 2.40, p.centerZ);
-        pilaster.receiveShadow = false;
-        scene.add(pilaster);
-
-        // Antique Brass Side Edges on Pilaster
-        [-0.90, 0.90].forEach((ez) => {
-          const edge = new THREE.Mesh(new THREE.BoxGeometry(0.02, 2.50, 0.04), brassTrimMaterial);
-          edge.position.set(isEast ? x - 0.20 : x + 0.20, 2.40, p.centerZ + ez);
-          scene.add(edge);
-        });
-
-        // Wall Sconce on Pilaster - soft ambient warm accent
+        // Decorative Wall Sconces matching Room 04 (slender brass cylinder with warm glowing caps, zero wall blowout)
         const sconceGroup = new THREE.Group();
-        sconceGroup.position.set(isEast ? x - 0.28 : x + 0.28, 2.40, p.centerZ);
+        sconceGroup.position.set(isEast ? x - 0.20 : x + 0.20, 2.40, p.centerZ);
 
-        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 0.14), brassTrimMaterial);
-        sconceGroup.add(bracket);
-
-        const shade = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.08, 0.05, 0.20, 16),
-          new THREE.MeshStandardMaterial({
-            color: 0xffecd1,
-            emissive: 0xffb356,
-            emissiveIntensity: 1.1,
-            roughness: 0.5,
-          })
+        const sconceBody = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.035, 0.035, 0.42, 16),
+          brassTrimMaterial
         );
-        shade.position.set(0, 0.10, 0);
-        sconceGroup.add(shade);
+        sconceGroup.add(sconceBody);
 
-        // Soft accent point light positioned 12cm away from the wall to prevent specular artifacts
-        const sLight = new THREE.PointLight(0xffb766, 0.40, 3.8, 2.0);
-        sLight.position.set(isEast ? -0.12 : 0.12, 0.12, 0);
+        [-0.24, 0.24].forEach((capsY) => {
+          const lightCap = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.030, 0.030, 0.08, 16),
+            new THREE.MeshStandardMaterial({
+              color: 0xffedd5,
+              emissive: 0xffe4b5,
+              emissiveIntensity: 1.4,
+              roughness: 0.3,
+            })
+          );
+          lightCap.position.y = capsY;
+          sconceGroup.add(lightCap);
+        });
+
+        // Soft, balanced warm accent light with generous offset away from the wall to eliminate specular glare
+        const sLight = new THREE.PointLight(0xffe6c8, 0.35, 4.2, 1.8);
+        sLight.position.set(isEast ? -0.22 : 0.22, 0, 0);
         sconceGroup.add(sLight);
         sconceLights.push(sLight);
 
@@ -3561,6 +3548,8 @@ export function createRoom3Scene(
     e.preventDefault();
   };
 
+  let lastProbeMoved: 'red' | 'black' = 'black';
+
   const onCanvasClick = (e: MouseEvent) => {
     if (!container || !renderer.domElement) return;
 
@@ -3592,29 +3581,43 @@ export function createRoom3Scene(
           }
           if (hitObj.userData.terminalId) {
             const term = hitObj.userData.terminalId as TerminalId;
-            // Intuitive resistor & component lead probe snapping:
+            // Intuitive resistor & component lead probe snapping with positive polarity:
             if (term === 'R1_A' || term === 'R1_B') {
               multimeter3d.setProbeTerminal('red', 'R1_A');
               multimeter3d.setProbeTerminal('black', 'R1_B');
+              lastProbeMoved = 'black';
             } else if (term === 'R2_A' || term === 'R2_B') {
               multimeter3d.setProbeTerminal('red', 'R2_A');
               multimeter3d.setProbeTerminal('black', 'R2_B');
+              lastProbeMoved = 'black';
             } else if (term === 'R3_A' || term === 'R3_B') {
               multimeter3d.setProbeTerminal('red', 'R3_A');
               multimeter3d.setProbeTerminal('black', 'R3_B');
+              lastProbeMoved = 'black';
             } else if (term === 'SERIES_JACK_A' || term === 'SERIES_JACK_B') {
               multimeter3d.setProbeTerminal('red', 'SERIES_JACK_A');
               multimeter3d.setProbeTerminal('black', 'SERIES_JACK_B');
+              lastProbeMoved = 'black';
             } else if (term === 'SRC_POS' || term === 'SRC_NEG') {
               multimeter3d.setProbeTerminal('red', 'SRC_POS');
               multimeter3d.setProbeTerminal('black', 'SRC_NEG');
+              lastProbeMoved = 'black';
             } else {
-              if (!multimeter3d.dmmState.redProbeTerminal) {
+              // Clicked individual terminal socket: intelligent alternating placement
+              if (multimeter3d.dmmState.redProbeTerminal === term) {
+                multimeter3d.setProbeTerminal('red', null);
+              } else if (multimeter3d.dmmState.blackProbeTerminal === term) {
+                multimeter3d.setProbeTerminal('black', null);
+              } else if (!multimeter3d.dmmState.redProbeTerminal) {
                 multimeter3d.setProbeTerminal('red', term);
-              } else if (!multimeter3d.dmmState.blackProbeTerminal && multimeter3d.dmmState.redProbeTerminal !== term) {
+                lastProbeMoved = 'red';
+              } else if (!multimeter3d.dmmState.blackProbeTerminal) {
                 multimeter3d.setProbeTerminal('black', term);
+                lastProbeMoved = 'black';
               } else {
-                multimeter3d.setProbeTerminal('red', term);
+                const targetProbe = lastProbeMoved === 'red' ? 'black' : 'red';
+                multimeter3d.setProbeTerminal(targetProbe, term);
+                lastProbeMoved = targetProbe;
               }
             }
             playTone(720, 'sine', 0.05, 0.15);
@@ -4029,6 +4032,13 @@ export function createRoom3Scene(
     setDmmMode: (mode) => multimeter3d.setMode(mode),
     setDmmJack: (jack) => multimeter3d.setRedJack(jack),
     setProbeTerminal: (probe, term) => multimeter3d.setProbeTerminal(probe, term),
+    flipProbePolarity: () => {
+      const curRed = multimeter3d.dmmState.redProbeTerminal;
+      const curBlack = multimeter3d.dmmState.blackProbeTerminal;
+      multimeter3d.setProbeTerminal('red', curBlack);
+      multimeter3d.setProbeTerminal('black', curRed);
+      playTone(660, 'sine', 0.08, 0.15);
+    },
     toggleSeriesJumper: () => multimeter3d.toggleSeriesJumper(),
     resetDmmFuse: () => multimeter3d.resetFuse(),
     getDmmReading: () => multimeter3d.updateDisplay(),
