@@ -95,25 +95,28 @@ const GUIDANCE_LABELS: Record<string, string> = {
   'circuits-power-switch': 'power supply switch',
   'circuits-voltage-knob': 'voltage regulator dial',
   'circuits-multimeter': 'Fluke digital multimeter',
-  'circuits-oscilloscope': 'oscilloscope display',
-  'circuits-topology-selector': 'RLC breadboard matrix',
+  'circuits-dmm-dial': 'Fluke multimeter rotary dial',
+  'circuits-dmm-jack': 'multimeter input terminals',
+  'circuits-oscilloscope': 'Tektronix oscilloscope',
+  'circuits-topology-selector': 'breadboard resistor network',
   'circuits-probe-r1': 'resistor R1 probe point',
   'circuits-probe-r2': 'resistor R2 probe point',
   'circuits-probe-r3': 'resistor R3 probe point',
   'circuits-series-jumper': 'series ammeter jumper break',
-  'circuits-clipboard': 'circuit trials clipboard',
+  'circuits-clipboard': 'laboratory notebook & data log',
   'optics-placard': 'optics reference board',
   'optics-laser': 'tunable laser source',
   'optics-angle-dial': 'goniometer prism dial',
-  'optics-screen': 'interference observation screen',
+  'optics-screen': 'observation screen',
   'optics-rail': 'optical rail bench',
-  'optics-clipboard': 'optics trials clipboard',
+  'optics-lens-carrier': 'converging lens mount',
+  'optics-clipboard': 'laboratory notebook & data log',
   'relativity-placard': 'relativity reference board',
   'relativity-velocity-dial': 'relativistic velocity dial',
   'relativity-contracting-rod': 'contracting meter-rod',
   'relativity-light-clock': 'atomic light-clock',
   'relativity-accelerator': 'maglev particle accelerator',
-  'relativity-clipboard': 'relativity trials clipboard',
+  'relativity-clipboard': 'laboratory notebook & data log',
   'campus-door': 'corridor exit doors',
 };
 
@@ -240,6 +243,13 @@ export default function Room3Experience() {
   const [isThirdPerson, setIsThirdPerson] = useState(true);
   const [activeCharacter, setActiveCharacter] = useState<CharacterType>('female');
   const [proximateStation, setProximateStation] = useState<Room3StationId | null>(null);
+  const [guidanceIndicator, setGuidanceIndicator] = useState<{
+    screenX: number;
+    screenY: number;
+    isBehind: boolean;
+    angleDeg: number;
+    distanceM: number;
+  } | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState<Room3Progress>(createDefaultRoom3Progress);
@@ -456,17 +466,119 @@ export default function Room3Experience() {
   );
 
   const missingInspection = INSPECTION_TARGETS[stationId]?.find((id) => !stationProgress.inspected.includes(id));
-  const guidanceTarget = stationProgress.currentStep === 0
-    ? (missingInspection ?? INSPECTION_TARGET[stationId])
-    : stationProgress.currentStep === 1
-      ? `${stationId}-placard`
-      : stationProgress.currentStep === 2
-        ? RUN_TARGET[stationId]
-        : stationProgress.currentStep === 3
-          ? RUN_TARGET[stationId]
-          : stationProgress.currentStep === 4
-            ? `${stationId}-clipboard`
-            : `${stationId}-clipboard`;
+
+  // Dynamic, Real-Time Synchronized Guidance Target pointing to exactly what the student needs next
+  const guidanceTarget = useMemo(() => {
+    // 1. Station 01: Circuits (Ohm's Law)
+    if (stationId === 'circuits') {
+      // Step 1: Equipment Identification
+      if (activeStepIdx === 0) {
+        const missing = INSPECTION_TARGETS.circuits.find((id) => !stationProgress.inspected.includes(id));
+        return missing || 'circuits-power-switch';
+      }
+      // Step 2: Circuit Assembly & Inspection (DC series continuity & Req = 650 Ω)
+      if (activeStepIdx === 1) {
+        if (!jumperClosed) return 'circuits-series-jumper';
+        return 'circuits-topology-selector';
+      }
+      // Step 3: Power Supply Setup & Energization (24.0 V DC)
+      if (activeStepIdx === 2) {
+        if (!circuits.powerOn) return 'circuits-power-switch';
+        if (Math.abs(circuits.vs - 24.0) > 1.0) return 'circuits-voltage-knob';
+        return 'circuits-power-switch';
+      }
+      // Step 4: Multimeter Instrument Preparation (DC V mode, V·Ω jack)
+      if (activeStepIdx === 3) {
+        if (dmmJack !== 'v_ohm') return 'circuits-dmm-jack';
+        if (dmmMode !== 'v_dc') return 'circuits-dmm-dial';
+        return 'circuits-multimeter';
+      }
+      // Step 5: Voltage Measurement Procedure (Parallel across PSU or R1)
+      if (activeStepIdx === 4) {
+        if (!circuits.powerOn) return 'circuits-power-switch';
+        if (dmmMode !== 'v_dc') return 'circuits-dmm-dial';
+        const isParallelConnected =
+          (redTerminal === 'SRC_POS' && blackTerminal === 'SRC_NEG') ||
+          (redTerminal === 'R1_A' && blackTerminal === 'R1_B') ||
+          (redTerminal === 'R1_B' && blackTerminal === 'R1_A');
+        if (!isParallelConnected) return 'circuits-probe-r1';
+        return 'circuits-multimeter';
+      }
+      // Step 6: Current Measurement Procedure (Series ammeter insertion)
+      if (activeStepIdx === 5) {
+        // Safety: Power must be turned OFF before breaking circuit
+        if (circuits.powerOn && (jumperClosed || dmmJack !== 'ma_10a' || (dmmMode !== 'a_dc' && dmmMode !== 'a_ac'))) {
+          return 'circuits-power-switch';
+        }
+        if (dmmJack !== 'ma_10a') return 'circuits-dmm-jack';
+        if (dmmMode !== 'a_dc' && dmmMode !== 'a_ac') return 'circuits-dmm-dial';
+        if (jumperClosed) return 'circuits-series-jumper';
+        const isSeriesBreak =
+          (redTerminal === 'SERIES_JACK_A' && blackTerminal === 'SERIES_JACK_B') ||
+          (redTerminal === 'SERIES_JACK_B' && blackTerminal === 'SERIES_JACK_A');
+        if (!isSeriesBreak) return 'circuits-series-jumper';
+        if (!circuits.powerOn) return 'circuits-power-switch'; // Restore power
+        return 'circuits-multimeter';
+      }
+      // Step 7: Five-Trial Experimental Data Collection (sweep 4V, 8V, 12V, 16V, 20V)
+      if (activeStepIdx === 6) {
+        if (!circuits.powerOn) return 'circuits-power-switch';
+        return 'circuits-voltage-knob';
+      }
+      // Step 8: Computation & Scientific Analysis
+      if (activeStepIdx === 7) {
+        return 'circuits-clipboard';
+      }
+    }
+
+    // 2. Station 02: Optics (Thin Lens)
+    if (stationId === 'optics') {
+      if (activeStepIdx === 0) {
+        const missing = INSPECTION_TARGETS.optics.find((id) => !stationProgress.inspected.includes(id));
+        return missing || 'optics-laser';
+      }
+      if (activeStepIdx === 1) return 'optics-rail';
+      if (activeStepIdx === 2) {
+        if (!optics.powerOn || optics.wavelength !== 532) return 'optics-laser';
+        return 'optics-laser';
+      }
+      if (activeStepIdx === 3) return 'optics-lens-carrier';
+      if (activeStepIdx === 4) return 'optics-screen';
+      if (activeStepIdx === 5) return 'optics-screen';
+      if (activeStepIdx === 6) return 'optics-rail';
+      if (activeStepIdx === 7) return 'optics-clipboard';
+    }
+
+    // 3. Station 03: Special Relativity (Lorentz Transformations)
+    if (stationId === 'relativity') {
+      if (activeStepIdx === 0) {
+        const missing = INSPECTION_TARGETS.relativity.find((id) => !stationProgress.inspected.includes(id));
+        return missing || 'relativity-velocity-dial';
+      }
+      if (activeStepIdx === 1) return 'relativity-velocity-dial';
+      if (activeStepIdx === 2) return 'relativity-velocity-dial';
+      if (activeStepIdx === 3) return 'relativity-light-clock';
+      if (activeStepIdx === 4) return 'relativity-velocity-dial';
+      if (activeStepIdx === 5) return 'relativity-contracting-rod';
+      if (activeStepIdx === 6) return 'relativity-velocity-dial';
+      if (activeStepIdx === 7) return 'relativity-clipboard';
+    }
+
+    return 'circuits-power-switch';
+  }, [
+    stationId,
+    activeStepIdx,
+    stationProgress.inspected,
+    circuits.powerOn,
+    circuits.vs,
+    jumperClosed,
+    dmmJack,
+    dmmMode,
+    redTerminal,
+    blackTerminal,
+    optics.powerOn,
+    optics.wavelength,
+  ]);
 
   useEffect(() => {
     sceneApi.current?.setGuidance(guidanceTarget);
@@ -577,6 +689,7 @@ export default function Room3Experience() {
         onPointerLockChange: setPointerLocked,
         onStationProximityChange: (st) => setProximateStation(st),
         onPerfStatsChange: (fps, frameTimeMs) => setPerfStats({ fps, frameTimeMs }),
+        onGuidanceIndicator: (info) => setGuidanceIndicator(info),
       });
       sceneApi.current = api;
       api.setGraphicsSettings(graphicsSettings);
@@ -719,36 +832,42 @@ export default function Room3Experience() {
 
     setProgress((prev) => {
       const st = { ...prev[stationId] };
-      if (!st.inspected.includes(canonicalId)) {
-        const nextInspected = [...st.inspected, canonicalId];
-        const allDone = required.every((id) => nextInspected.includes(id));
-        const updatedCompleted = [...st.completed];
-        let newCurrentStep = st.currentStep;
+      const nextInspected = st.inspected.includes(canonicalId) ? st.inspected : [...st.inspected, canonicalId];
+      const allDone = required.every((id) => nextInspected.includes(id));
+      const updatedCompleted = [...st.completed];
+      let newCurrentStep = st.currentStep;
 
-        if (allDone && !st.completed[0]) {
-          updatedCompleted[0] = true;
-          newCurrentStep = Math.max(st.currentStep, 1);
-          playTone(880, 'sine', 0.25, 0.4);
-          setViewStepIndex(null);
-          setEquipmentMessage(`🎉 Step 1 Complete (+10 pts)! All 4 apparatus instruments inspected. Advancing to Step 2.`);
-        } else {
-          playTone(587.33, 'triangle', 0.12, 0.3);
-          setEquipmentMessage(`✓ ${INSPECTION_LABELS[canonicalId] || canonicalId} inspected (${nextInspected.length}/${required.length}).`);
-        }
-
-        return {
-          ...prev,
-          [stationId]: {
-            ...st,
-            inspected: nextInspected,
-            completed: updatedCompleted,
-            currentStep: newCurrentStep,
-          },
-        };
+      if (allDone && !st.completed[0]) {
+        updatedCompleted[0] = true;
+        newCurrentStep = Math.max(st.currentStep, 1);
+        playTone(880, 'sine', 0.25, 0.4);
+        setViewStepIndex(null);
+        setEquipmentMessage(`🎉 Step 1 Complete (+10 pts)! All 4 apparatus instruments inspected. Advancing to Step 2.`);
+      } else if (!st.inspected.includes(canonicalId)) {
+        playTone(587.33, 'triangle', 0.12, 0.3);
+        setEquipmentMessage(`✓ ${INSPECTION_LABELS[canonicalId] || canonicalId} inspected (${nextInspected.length}/${required.length}).`);
       }
-      return prev;
+
+      return {
+        ...prev,
+        [stationId]: {
+          ...st,
+          inspected: nextInspected,
+          completed: updatedCompleted,
+          currentStep: newCurrentStep,
+        },
+      };
     });
   };
+
+  // Entering workbench closeup automatically verifies all instruments at this station
+  useEffect(() => {
+    if (cameraMode === 'closeup') {
+      INSPECTION_TARGETS[stationId]?.forEach((tgt) => {
+        handleInspectApparatus(tgt);
+      });
+    }
+  }, [cameraMode, stationId]);
 
   // Reactive Telemetry Auto-Advancement (Steps 3 through 7)
   useEffect(() => {
@@ -2084,11 +2203,50 @@ export default function Room3Experience() {
             <span>↳</span><b>Open notebook:</b> {station.steps[stationProgress.currentStep]?.target || `Step ${stationProgress.currentStep + 1}: ${STEP_NAMES[stationProgress.currentStep]}`}
           </button>
           {guidanceTarget && (
-            <div className="guidance-line">
-              <span>↓</span>
+            <div className="guidance-line" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)',
+                  color: '#1a0b10',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '15px',
+                  fontWeight: 900,
+                  boxShadow: '0 0 10px rgba(212,175,55,0.6)',
+                  flexShrink: 0,
+                  transform: guidanceIndicator?.isBehind
+                    ? 'rotate(180deg)'
+                    : guidanceIndicator?.screenX !== undefined
+                      ? `rotate(${Math.round(guidanceIndicator.angleDeg - 90)}deg)`
+                      : 'none',
+                  transition: 'transform 0.12s ease-out',
+                }}
+              >
+                ↑
+              </div>
               <div>
-                <b>IN-WORLD GUIDE ACTIVE</b>
-                <small>Follow the pulsing marker to the {GUIDANCE_LABELS[guidanceTarget] || 'apparatus'}.</small>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <b style={{ color: '#fef08a' }}>IN-WORLD GUIDE ACTIVE</b>
+                  {guidanceIndicator && (
+                    <span style={{ fontSize: '10px', color: '#38bdf8', fontWeight: 700 }}>
+                      {guidanceIndicator.isBehind
+                        ? '↻ Behind you'
+                        : guidanceIndicator.screenX < -0.15
+                          ? '← Turn Left'
+                          : guidanceIndicator.screenX > 0.15
+                            ? 'Turn Right →'
+                            : '↓ Directly Ahead'}{' '}
+                      ({guidanceIndicator.distanceM.toFixed(1)}m)
+                    </span>
+                  )}
+                </div>
+                <small style={{ color: '#cbd5e1' }}>
+                  Follow the pulsing marker to the <b>{GUIDANCE_LABELS[guidanceTarget] || 'apparatus'}</b>.
+                </small>
               </div>
             </div>
           )}
@@ -2170,6 +2328,68 @@ export default function Room3Experience() {
                 <b>👁️ EXPECTED RESULT:</b>
                 <span>{currentGuidedStep.expectedResult}</span>
               </div>
+
+              {/* Step 1: Physical Apparatus Inspection Checklist Card */}
+              {activeStepIdx === 0 && (
+                <div style={{ marginTop: '10px', background: 'rgba(0,0,0,0.35)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(212,175,55,0.4)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#fef08a' }}>
+                      🔍 Apparatus Checklist ({stationProgress.inspected.filter((id) => INSPECTION_TARGETS[stationId].includes(id)).length} / {INSPECTION_TARGETS[stationId].length} Verified)
+                    </p>
+                    <span style={{ fontSize: '10px', color: '#d4af37', fontWeight: 700 }}>+10 pts</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                    {INSPECTION_TARGETS[stationId].map((tgt) => {
+                      const isInspected = stationProgress.inspected.includes(tgt);
+                      const label = INSPECTION_LABELS[tgt] || tgt.replace(`${stationId}-`, '').replace(/-/g, ' ').toUpperCase();
+                      return (
+                        <button
+                          key={tgt}
+                          type="button"
+                          className="secondary-button"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '6px 8px',
+                            fontSize: '11px',
+                            textAlign: 'left',
+                            background: isInspected ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.06)',
+                            borderColor: isInspected ? '#10b981' : 'rgba(212,175,55,0.4)',
+                            color: isInspected ? '#34d399' : '#e9dfc9',
+                          }}
+                          onClick={() => {
+                            handleInspectApparatus(tgt);
+                            handleSetCloseup('closeup');
+                            playTone(isInspected ? 520 : 660, 'sine', 0.1, 0.2);
+                          }}
+                          title={isInspected ? 'Component verified' : `Click to inspect ${label}`}
+                        >
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '85px' }}>{label}</span>
+                          <b style={{ color: isInspected ? '#34d399' : '#d4af37' }}>{isInspected ? '✓' : 'Inspect'}</b>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {!allInspected ? (
+                    <button
+                      type="button"
+                      className="primary-button"
+                      style={{ width: '100%', marginTop: '8px', padding: '6px', fontSize: '11px', fontWeight: 'bold' }}
+                      onClick={() => {
+                        INSPECTION_TARGETS[stationId].forEach((t) => handleInspectApparatus(t));
+                        playTone(880, 'sine', 0.2, 0.3);
+                      }}
+                    >
+                      ✓ Verify & Complete Inspection (+10 pts)
+                    </button>
+                  ) : (
+                    <div style={{ color: '#34d399', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>
+                      ✓ All instruments inspected! Step 1 Complete (+10 pts).
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Step 2: Formative Prediction Direct Card */}
               {activeStepIdx === 1 && (
@@ -3305,16 +3525,21 @@ export default function Room3Experience() {
                               alignItems: 'center',
                               justifyContent: 'space-between',
                               gap: '8px',
+                              cursor: 'pointer',
                               transition: 'all 0.2s ease',
                             }}
-                            title={isInspected ? 'Component verified in 3D' : 'Approach and click this component in the 3D room to inspect'}
+                            onClick={() => {
+                              handleInspectApparatus(tgt);
+                              playTone(isInspected ? 520 : 660, 'sine', 0.1, 0.2);
+                            }}
+                            title={isInspected ? 'Component verified' : `Click to verify ${label}`}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span style={{ fontSize: '14px' }}>{isInspected ? '✅' : '🔍'}</span>
                               <span style={{ fontSize: '12px', fontWeight: 600, color: isInspected ? '#34d399' : '#e9dfc9' }}>{label}</span>
                             </div>
                             <span style={{ fontSize: '10px', color: isInspected ? '#34d399' : '#d4af37', fontWeight: 700 }}>
-                              {isInspected ? '✓ Inspected' : '⏳ Inspect in 3D'}
+                              {isInspected ? '✓ Inspected' : 'Click to Verify'}
                             </span>
                           </li>
                         );
@@ -3324,11 +3549,11 @@ export default function Room3Experience() {
 
                   {!allInspected ? (
                     <div className="feedback-alert incorrect" style={{ marginTop: '14px' }}>
-                      ⚠️ Physical Inspection Required: Explore the 3D laboratory and click / approach all apparatus instruments in 3D to complete inspection ({stationProgress.inspected.length} / {INSPECTION_TARGETS[stationId].length} completed).
+                      ⚠️ Physical Inspection Required: Explore the 3D laboratory and approach all apparatus instruments in 3D, or click the items above ({stationProgress.inspected.length} / {INSPECTION_TARGETS[stationId].length} completed).
                     </div>
                   ) : (
                     <div className="feedback-alert correct" style={{ marginTop: '14px' }}>
-                      ✓ All apparatus components have been inspected in the 3D environment.
+                      ✓ All apparatus components have been inspected and verified!
                     </div>
                   )}
 
@@ -3337,10 +3562,14 @@ export default function Room3Experience() {
                       <button
                         type="button"
                         className="notebook-action"
-                        style={{ background: 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)', color: '#1a0b10', fontWeight: 800 }}
-                        onClick={() => setNotebookOpen(false)}
+                        style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: '#fff', fontWeight: 800 }}
+                        onClick={() => {
+                          INSPECTION_TARGETS[stationId].forEach((tgt) => handleInspectApparatus(tgt));
+                          completeStep(0);
+                          playTone(880, 'sine', 0.25, 0.4);
+                        }}
                       >
-                        🔬 Close Notebook & Inspect Apparatus in 3D View ({stationProgress.inspected.length} / {INSPECTION_TARGETS[stationId].length})
+                        ✓ Verify & Complete All Inspection (+10 pts)
                       </button>
                     )}
                     <button

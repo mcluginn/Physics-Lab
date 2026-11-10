@@ -83,6 +83,7 @@ export type Room3SceneCallbacks = {
   onCloseupHover?: (text: string | null) => void;
   onStationProximityChange?: (station: Room3StationId | null) => void;
   onPerfStatsChange?: (fps: number, frameTimeMs: number) => void;
+  onGuidanceIndicator?: (info: { screenX: number; screenY: number; isBehind: boolean; angleDeg: number; distanceM: number } | null) => void;
 };
 
 export const ROOM3_EQUIPMENT_DESCRIPTIONS: Record<string, string> = {
@@ -3623,6 +3624,22 @@ export function createRoom3Scene(
             playTone(720, 'sine', 0.05, 0.15);
             return;
           }
+        } else {
+          // General workbench equipment inspection & interaction in closeup mode
+          const hitsGeneral = raycaster.intersectObjects(interactableObjects, true);
+          for (const hit of hitsGeneral) {
+            let currentObj: THREE.Object3D | null = hit.object;
+            let inter: EquipmentInteraction | undefined = undefined;
+            while (currentObj && !inter) {
+              inter = objectToInteractionMap.get(currentObj) || currentObj.userData.equipmentInteraction;
+              currentObj = currentObj.parent;
+            }
+            if (inter) {
+              triggerEquipmentAction(inter.id);
+              playTone(550, 'triangle', 0.08, 0.2);
+              break;
+            }
+          }
         }
       }
     } else {
@@ -3880,16 +3897,31 @@ export function createRoom3Scene(
       // Station beacon lamp pulsing
       stationLamps[activeStation].emissiveIntensity = 2.4 + Math.sin(elapsed * 2.5) * 0.5;
 
-      // In-World Guidance Marker Animation
+      // In-World Guidance Marker Animation & HUD Indicator Projection
       if (activeGuidanceId && guidanceMarker.visible) {
         if (getGuidanceTargetPosition(activeGuidanceId, guidancePosition)) {
           const bobbing = Math.sin(elapsed * 3.5) * 0.035;
-          guidanceMarker.position.set(guidancePosition.x, guidancePosition.y + bobbing, guidancePosition.z);
+          guidanceMarker.position.set(guidancePosition.x, guidancePosition.y + 0.28 + bobbing, guidancePosition.z);
           const pulse = 0.85 + Math.sin(elapsed * 4.5) * 0.15;
           guidanceRing.scale.setScalar(pulse);
           guidanceInnerRing.scale.setScalar(1.4 - pulse * 0.4);
           guidanceMarker.rotation.y = elapsed * 0.75;
+
+          // Project target position into screen space for real-time HUD directional compass
+          const proj = guidancePosition.clone().project(camera);
+          const isBehind = proj.z > 1.0;
+          const dist = camera.position.distanceTo(guidancePosition);
+          const angleDeg = (Math.atan2(proj.y, proj.x) * 180) / Math.PI;
+          callbacks.onGuidanceIndicator?.({
+            screenX: proj.x,
+            screenY: proj.y,
+            isBehind,
+            angleDeg,
+            distanceM: dist,
+          });
         }
+      } else {
+        callbacks.onGuidanceIndicator?.(null);
       }
 
       checkInteractions();
