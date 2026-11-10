@@ -468,6 +468,7 @@ export function calculateRelativity(settings: RelativitySettings): RelativityRes
 export type TrialRecord = Record<string, number | string | boolean>;
 
 export const TOTAL_TRIALS = 5;
+export const TOTAL_STEPS = 9;
 
 export type StationProgress = {
   currentStep: number;
@@ -477,12 +478,21 @@ export type StationProgress = {
   inspected: string[];
   setupActions: string[];
   calculations: string[];
+  calculationStatus?: 'unattempted' | 'submitted' | 'validated';
+  calculationFeedback?: string;
+  observations: string;
+  scientificInterpretation: string;
+  claim: string;
+  evidence: string;
+  reasoning: string;
   analysis: string;
   conclusion: string;
   recommendations: string;
   errors: string[];
   guideAnswers?: number[];
   predictionAnswer?: number | null;
+  assistedSteps?: number[];
+  hintLevel?: number;
 };
 
 export type Room3Progress = Record<Room3StationId, StationProgress>;
@@ -492,39 +502,56 @@ export const STEP_NAMES = [
   'Assembly',
   'Power Config',
   'Instrument Prep',
-  'Voltage Proc',
-  'Current Proc',
+  'Initial Investigation',
+  'Measurement Safety',
   'Data Collection',
   'Computation',
+  'Observations & Conclusion',
 ];
-export const STEP_POINTS = [10, 10, 10, 10, 10, 10, 20, 20]; // Sum = 100 pts per station (3 stations = 300 pts)
+
+// 100 Points Distribution per Station:
+// Steps 1-6 (Prep & Verification): 3+3+3+3+4+4 = 20 pts
+// Step 7 (Five Valid 3D Trials): 25 pts (5 pts/trial)
+// Step 8 (Student Calculations): 25 pts
+// Step 9 (Observations & CER Conclusion): 30 pts (10 pts obs + 20 pts CER)
+// Total per station = 100 pts · 3 stations = 300 pts room total
+export const STEP_POINTS = [3, 3, 3, 3, 4, 4, 25, 25, 30];
 
 export function createDefaultRoom3Progress(): Room3Progress {
   const station = (): StationProgress => ({
     currentStep: 0,
-    completed: Array(8).fill(false),
-    skipped: Array(8).fill(false),
+    completed: Array(TOTAL_STEPS).fill(false),
+    skipped: Array(TOTAL_STEPS).fill(false),
     trials: [],
     inspected: [],
     setupActions: [],
     calculations: ['', '', '', '', ''],
+    calculationStatus: 'unattempted',
+    calculationFeedback: '',
+    observations: '',
+    scientificInterpretation: '',
+    claim: '',
+    evidence: '',
+    reasoning: '',
     analysis: '',
     conclusion: '',
     recommendations: '',
     errors: [],
     guideAnswers: [-1, -1, -1],
     predictionAnswer: null,
+    assistedSteps: [],
+    hintLevel: 0,
   });
   return { circuits: station(), optics: station(), relativity: station() };
 }
 
 export function isStationFinished(progress: StationProgress) {
   if (!progress) return false;
-  return Boolean(progress.completed?.[7]) || progress.completed.every((comp, index) => comp || Boolean(progress.skipped?.[index]));
+  return Boolean(progress.completed?.[8]) || progress.completed.every((comp, index) => comp || Boolean(progress.skipped?.[index]));
 }
 
 export function stationScore(progress: StationProgress) {
-  return progress.completed.reduce((total, complete, index) => total + (complete ? STEP_POINTS[index] : 0), 0);
+  return progress.completed.reduce((total, complete, index) => total + (complete ? (STEP_POINTS[index] ?? 0) : 0), 0);
 }
 
 // -------------------------------------------------------------
@@ -571,7 +598,8 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
       { title: 'Voltage Measurement Procedure (Parallel)', prompt: 'Practice non-intrusive potential difference measurement by placing test probes in parallel across the power supply rails and across resistor components.', target: 'Observe parallel potential difference measurement without breaking the circuit.' },
       { title: 'Current Measurement Procedure (Series)', prompt: 'De-energize the supply, open the series break (remove jumper), move red lead to mA jack, switch dial to A⎓, connect in series across break terminals, and re-energize to measure loop current.', target: 'Execute proper series ammeter insertion with burden shunt protection.' },
       { title: 'Five-Trial Experimental Data Collection', prompt: 'Conduct five experimental measurement trials across assigned operating voltages (2 V, 4 V, 6 V, 8 V, 10 V) using the nominal 330 Ω resistor. For each trial, measure resistor voltage and loop current.', target: 'Record five distinct voltage-current trials into the experimental dataset.' },
-      { title: 'Experimental Data Computation & Analysis', prompt: 'Compute experimental resistance (Ri = Vi / Ii), power (Pi = Vi · Ii), average resistance Rmean, sample standard deviation across operating points, percentage error vs. nominal 330 Ω, and perform linear regression analysis (V vs. I, slope = 330 Ω).', target: 'Complete scientific calculations, regression analysis, and certify lab notebook.' },
+      { title: 'Student-Performed Data Computation', prompt: 'Compute experimental resistance (Ri = Vi / Ii), power (Pi = Vi · Ii), average resistance Rmean, sample standard deviation across operating points, percentage error vs. nominal 330 Ω, and perform linear regression analysis (V vs. I, slope = 330 Ω).', target: 'Complete scientific calculations, regression analysis, and certify lab notebook.' },
+      { title: 'Observations, Scientific Interpretation & Conclusion', prompt: 'Formulate evidence-based observations from your 5-trial dataset, connect results to Ohm\'s and Kirchhoff\'s laws, and write a complete Claim–Evidence–Reasoning scientific conclusion.', target: 'Complete observations and submit Claim–Evidence–Reasoning conclusion.' },
     ],
     prediction: {
       question: 'In an AC series RLC circuit, what condition achieves resonance where total impedance Z is minimized?',
@@ -610,7 +638,8 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
       { title: 'Real Image Formation Procedure', prompt: 'Position object lamp in front of lens and observe inverted real image formation on opposite side according to Gaussian optics (1/f = 1/u + 1/v).', target: 'Observe real inverted image projection.' },
       { title: 'Screen Focusing & Sharpness Adjustment Procedure', prompt: 'Slide observation screen along the rail until sharp focus is achieved. Confirm image sharpness indicator is at 100%.', target: 'Verify image sharpness focusing criteria.' },
       { title: 'Five-Trial Experimental Data Collection', prompt: 'Record five experimental trials at assigned object distances u = [30, 35, 40, 50, 60] cm. For each condition, adjust screen for sharp focus and record image distance v.', target: 'Log five sharp-focus thin lens trials.' },
-      { title: 'Experimental Data Computation & Analysis', prompt: 'Calculate experimental focal length (fi = uv/(u+v)), mean focal length fmean, standard deviation, percentage error vs. nominal 20.0 cm, and plot 1/v vs. 1/u regression.', target: 'Complete focal length calculations, regression fit, and certify optics report.' },
+      { title: 'Student-Performed Data Computation', prompt: 'Calculate experimental focal length (fi = uv/(u+v)), mean focal length fmean, standard deviation, percentage error vs. nominal 20.0 cm, and plot 1/v vs. 1/u regression.', target: 'Complete focal length calculations, regression fit, and certify optics report.' },
+      { title: 'Observations, Scientific Interpretation & Conclusion', prompt: 'Record optical observations of image distance, inversion, and focal behavior, interpret findings via Gaussian thin lens theory, and formulate a Claim–Evidence–Reasoning scientific conclusion.', target: 'Complete observations and submit Claim–Evidence–Reasoning conclusion.' },
     ],
     prediction: {
       question: 'When light travels from an optically denser medium to a less dense medium (n₁ > n₂) at an incident angle exceeding the critical angle (θ₁ > θ_c), what optical phenomenon occurs?',
@@ -650,7 +679,8 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
       { title: 'Investigate Relativistic Time Dilation', prompt: 'Observe how the extended diagonal path in the laboratory frame causes the moving clock\'s tick interval to dilate: Δt = γ Δτ.', target: 'Validate time dilation Δt = γ Δτ.' },
       { title: 'Investigate Length Contraction & Simultaneity', prompt: 'Activate the moving-rod demonstration (L₀ = 10.00 m). Observe contracted length L = L₀/γ measured by simultaneous endpoint detection in the laboratory frame.', target: 'Understand longitudinal length contraction and frame simultaneity.' },
       { title: 'Five-Condition Simulation Data Collection', prompt: 'Run five simulation conditions across assigned relative velocities β = [0.10, 0.30, 0.50, 0.70, 0.90]c. Record Lorentz factor γ, dilated time Δt, and contracted length L.', target: 'Record five simulation conditions into dataset.' },
-      { title: 'Computation of Relativistic Data & Scientific Analysis', prompt: 'Compute theoretical Lorentz factors, time dilation, length contraction, verify zero numerical residual, analyze the 3 relativistic graphs, and complete the 7 interpretation questions.', target: 'Complete relativistic computations, graphs, and certified report.' },
+      { title: 'Student-Performed Relativistic Computation', prompt: 'Compute theoretical Lorentz factors, time dilation, length contraction, verify zero numerical residual, and analyze the 3 relativistic graphs.', target: 'Complete relativistic computations, graphs, and certified report.' },
+      { title: 'Observations, Scientific Interpretation & Conclusion', prompt: 'Document relativistic observations of time dilation, length contraction, and invariant light speed c, interpret spacetime structure, and formulate a Claim–Evidence–Reasoning scientific conclusion.', target: 'Complete observations and submit Claim–Evidence–Reasoning conclusion.' },
     ],
     prediction: {
       question: 'As an inertial frame moves at relativistic velocity v relative to an observer, how does the elapsed time interval Δt measured by the stationary observer compare to the proper time interval Δt₀ measured in the moving frame?',

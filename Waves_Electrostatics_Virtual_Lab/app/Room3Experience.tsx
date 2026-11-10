@@ -20,6 +20,7 @@ import {
   STEP_NAMES,
   STEP_POINTS,
   TOTAL_TRIALS,
+  TOTAL_STEPS,
   calculateCircuit,
   calculateOptics,
   calculateRelativity,
@@ -38,6 +39,15 @@ import {
   type Room3StationId,
   type TrialRecord,
 } from './room3Model';
+import {
+  evaluateStepPrerequisites,
+  validateLiveExperimentForTrial,
+  validateStudentCalculations,
+  validateStudentObservationsAndConclusion,
+  ROOM3_STEP_HINTS,
+  type StepHints,
+  type LiveEnvironmentState,
+} from './room3ProgressionMachine';
 import { Room3Graph, computeRoom3Regression } from './Room3Graph';
 import { Room3Schematic2D } from './Room3Schematic2D';
 import { Room3CircuitWorkspace } from './Room3CircuitWorkspace';
@@ -197,19 +207,28 @@ function safeProgress(input: unknown): Room3Progress {
     const saved = candidate[id];
     if (!saved) return;
     fallback[id] = {
-      currentStep: Math.max(0, Math.min(7, Number(saved.currentStep) || 0)),
-      completed: Array.from({ length: 8 }, (_, index) => Boolean(saved.completed?.[index])),
-      skipped: Array.from({ length: 8 }, (_, index) => Boolean(saved.skipped?.[index])),
+      currentStep: Math.max(0, Math.min(TOTAL_STEPS - 1, Number(saved.currentStep) || 0)),
+      completed: Array.from({ length: TOTAL_STEPS }, (_, index) => Boolean(saved.completed?.[index])),
+      skipped: Array.from({ length: TOTAL_STEPS }, (_, index) => Boolean(saved.skipped?.[index])),
       trials: Array.isArray(saved.trials) ? saved.trials.slice(0, TOTAL_TRIALS) : [],
       inspected: Array.isArray(saved.inspected) ? saved.inspected.filter((entry): entry is string => typeof entry === 'string') : [],
       setupActions: Array.isArray(saved.setupActions) ? saved.setupActions.filter((entry): entry is string => typeof entry === 'string') : [],
       calculations: Array.from({ length: TOTAL_TRIALS }, (_, index) => (typeof saved.calculations?.[index] === 'string' ? saved.calculations[index] : '')),
+      calculationStatus: (saved.calculationStatus as 'unattempted' | 'submitted' | 'validated') || 'unattempted',
+      calculationFeedback: typeof saved.calculationFeedback === 'string' ? saved.calculationFeedback : '',
+      observations: typeof saved.observations === 'string' ? saved.observations : '',
+      scientificInterpretation: typeof saved.scientificInterpretation === 'string' ? saved.scientificInterpretation : '',
+      claim: typeof saved.claim === 'string' ? saved.claim : '',
+      evidence: typeof saved.evidence === 'string' ? saved.evidence : '',
+      reasoning: typeof saved.reasoning === 'string' ? saved.reasoning : '',
       analysis: typeof saved.analysis === 'string' ? saved.analysis : '',
       conclusion: typeof saved.conclusion === 'string' ? saved.conclusion : '',
       recommendations: typeof saved.recommendations === 'string' ? saved.recommendations : '',
       errors: Array.isArray(saved.errors) ? saved.errors.filter((entry): entry is string => typeof entry === 'string') : [],
       guideAnswers: Array.isArray(saved.guideAnswers) ? saved.guideAnswers.slice(0, 3).map((v) => Number(v)) : [-1, -1, -1],
       predictionAnswer: typeof saved.predictionAnswer === 'number' ? saved.predictionAnswer : null,
+      assistedSteps: Array.isArray(saved.assistedSteps) ? saved.assistedSteps.map((v) => Number(v)) : [],
+      hintLevel: typeof saved.hintLevel === 'number' ? saved.hintLevel : 0,
     };
   });
   return fallback;
@@ -335,14 +354,16 @@ export default function Room3Experience() {
   const stationProgress = progress[stationId];
   const [viewStepIndex, setViewStepIndex] = useState<number | null>(null);
   const activeStepIdx = viewStepIndex !== null ? viewStepIndex : stationProgress.currentStep;
-  const [showGuidedHint, setShowGuidedHint] = useState(false);
+  const [hintLevel, setHintLevel] = useState<number>(0);
+  const [calcPerTrialStatus, setCalcPerTrialStatus] = useState<('correct' | 'incorrect' | 'empty')[]>(Array(TOTAL_TRIALS).fill('empty'));
+  const [conclusionFeedback, setConclusionFeedback] = useState<string>('');
   const [retakeTrialIndex, setRetakeTrialIndex] = useState<number | null>(null);
   const [activeTrialTab, setActiveTrialTab] = useState<number>(0);
 
   // Reset step view on station or current step change
   useEffect(() => {
     setViewStepIndex(null);
-    setShowGuidedHint(false);
+    setHintLevel(0);
     setRetakeTrialIndex(null);
     setActiveTrialTab(0);
   }, [stationId]);
@@ -362,6 +383,21 @@ export default function Room3Experience() {
   const relativityMetrics = useMemo(() => computeRelativityMetrics(stationProgress.trials), [stationProgress.trials]);
   const regression = useMemo(() => computeRoom3Regression(stationId, stationProgress.trials), [stationId, stationProgress.trials]);
 
+  // Authoritative Progression State Machine Environment
+  const liveState: LiveEnvironmentState = useMemo(() => ({
+    stationId,
+    circuits,
+    optics,
+    relativity,
+    dmmMode,
+    dmmJack,
+    redTerminal,
+    blackTerminal,
+    jumperClosed,
+    dmmReading,
+    stationProgress,
+  }), [stationId, circuits, optics, relativity, dmmMode, dmmJack, redTerminal, blackTerminal, jumperClosed, dmmReading, stationProgress]);
+
   // Derived Curriculum & Guided Validation
   const currentCurriculum = STATION_CURRICULUM[stationId];
   const currentGuidedStep = currentCurriculum?.steps[activeStepIdx] ?? currentCurriculum?.steps[0];
@@ -378,12 +414,19 @@ export default function Room3Experience() {
     jumperClosed,
     dmmReading,
     inspectedEquipment: stationProgress.inspected,
-  }), [stationId, circuits, optics, relativity, dmmMode, dmmJack, redTerminal, blackTerminal, jumperClosed, dmmReading, stationProgress.inspected]);
+    trialsCount: stationProgress.trials.length,
+    calculationStatus: stationProgress.calculationStatus,
+    hasConclusion: Boolean((stationProgress.conclusion || '').trim().length >= 15 && (stationProgress.claim || '').trim().length >= 15),
+  }), [stationId, circuits, optics, relativity, dmmMode, dmmJack, redTerminal, blackTerminal, jumperClosed, dmmReading, stationProgress]);
 
   const stepValidation: StepValidationResult = useMemo(() => {
     if (!currentGuidedStep) return { isPassed: true, feedback: '' };
     return currentGuidedStep.validate(guidedState);
   }, [currentGuidedStep, guidedState]);
+
+  const stepPrereq = useMemo(() => {
+    return evaluateStepPrerequisites(liveState, activeStepIdx);
+  }, [liveState, activeStepIdx]);
 
   // Derived Prediction State per Station (Eliminates Cross-Station State Leaks & Caps)
   const currentPredictionAnswer = stationProgress.predictionAnswer ?? null;
@@ -450,14 +493,12 @@ export default function Room3Experience() {
   }, [stationId, stationProgress.guideAnswers]);
   const hasUncertainty = stationProgress.errors.length > 0;
 
-  // Step 8 Certification Gating
+  // Step 8 & 9 Certification Gating
   const isComputationVerified = Boolean(stationProgress.completed[7]);
+  const isConclusionSubmitted = Boolean(stationProgress.completed[8]);
   const allTrialsLogged = stationProgress.trials.length >= TOTAL_TRIALS;
   const isStudentInfoFilled = studentName.trim().length > 0 && studentId.trim().length > 0 && studentSection.trim().length > 0;
-  const steps1to7Done = useMemo(() => {
-    return stationProgress.completed.slice(0, 7).every(Boolean);
-  }, [stationProgress.completed]);
-  const reportReady = allTrialsLogged && isComputationVerified && allGuideCorrect && isStudentInfoFilled;
+  const reportReady = allTrialsLogged && isComputationVerified && isConclusionSubmitted && isStudentInfoFilled;
 
   // Scoring
   const currentScore = stationScore(stationProgress);
@@ -521,13 +562,27 @@ export default function Room3Experience() {
         if (!circuits.powerOn) return 'circuits-power-switch'; // Restore power
         return 'circuits-multimeter';
       }
-      // Step 7: Five-Trial Experimental Data Collection (sweep 4V, 8V, 12V, 16V, 20V)
+      // Step 7: Five-Trial Experimental Data Collection (sweep 2V, 4V, 6V, 8V, 10V)
       if (activeStepIdx === 6) {
         if (!circuits.powerOn) return 'circuits-power-switch';
-        return 'circuits-voltage-knob';
+        const curTrialIdx = stationProgress.trials.length;
+        if (curTrialIdx < TOTAL_TRIALS) {
+          const targetV = ROOM3_ASSIGNED_TRIALS.circuits[curTrialIdx]?.targetValue ?? 4.0;
+          if (Math.abs(circuits.vs - targetV) > 0.6) return 'circuits-voltage-knob';
+          const isSeriesBreak =
+            (redTerminal === 'SERIES_JACK_A' && blackTerminal === 'SERIES_JACK_B') ||
+            (redTerminal === 'SERIES_JACK_B' && blackTerminal === 'SERIES_JACK_A');
+          if (!isSeriesBreak) return 'circuits-series-jumper';
+          return 'circuits-multimeter';
+        }
+        return 'circuits-clipboard';
       }
       // Step 8: Computation & Scientific Analysis
       if (activeStepIdx === 7) {
+        return 'circuits-clipboard';
+      }
+      // Step 9: Observations, Scientific Interpretation & Conclusion
+      if (activeStepIdx === 8) {
         return 'circuits-clipboard';
       }
     }
@@ -541,13 +596,28 @@ export default function Room3Experience() {
       if (activeStepIdx === 1) return 'optics-rail';
       if (activeStepIdx === 2) {
         if (!optics.powerOn || optics.wavelength !== 532) return 'optics-laser';
-        return 'optics-laser';
+        return 'optics-rail';
       }
-      if (activeStepIdx === 3) return 'optics-lens-carrier';
-      if (activeStepIdx === 4) return 'optics-screen';
+      if (activeStepIdx === 3) {
+        if (optics.subMode !== 'imaging') return 'optics-angle-dial';
+        return 'optics-lens-carrier';
+      }
+      if (activeStepIdx === 4) {
+        if (Math.abs(optics.objectDistance - 40.0) > 1.5) return 'optics-rail';
+        return 'optics-screen';
+      }
       if (activeStepIdx === 5) return 'optics-screen';
-      if (activeStepIdx === 6) return 'optics-screen';
+      if (activeStepIdx === 6) {
+        const curTrialIdx = stationProgress.trials.length;
+        if (curTrialIdx < TOTAL_TRIALS) {
+          const targetU = ROOM3_ASSIGNED_TRIALS.optics[curTrialIdx]?.targetValue ?? 30.0;
+          if (Math.abs(optics.objectDistance - targetU) > 1.5) return 'optics-rail';
+          return 'optics-screen';
+        }
+        return 'optics-clipboard';
+      }
       if (activeStepIdx === 7) return 'optics-clipboard';
+      if (activeStepIdx === 8) return 'optics-clipboard';
     }
 
     // 3. Station 03: Special Relativity (Lorentz Transformations)
@@ -557,12 +627,24 @@ export default function Room3Experience() {
         return missing || 'relativity-velocity-dial';
       }
       if (activeStepIdx === 1) return 'relativity-light-clock';
-      if (activeStepIdx === 2) return 'relativity-velocity-dial';
+      if (activeStepIdx === 2) {
+        if (relativity.beta < 0.25) return 'relativity-velocity-dial';
+        return 'relativity-accelerator';
+      }
       if (activeStepIdx === 3) return 'relativity-light-clock';
       if (activeStepIdx === 4) return 'relativity-light-clock';
       if (activeStepIdx === 5) return 'relativity-contracting-rod';
-      if (activeStepIdx === 6) return 'relativity-velocity-dial';
+      if (activeStepIdx === 6) {
+        const curTrialIdx = stationProgress.trials.length;
+        if (curTrialIdx < TOTAL_TRIALS) {
+          const targetBeta = ROOM3_ASSIGNED_TRIALS.relativity[curTrialIdx]?.targetValue ?? 0.10;
+          if (Math.abs(relativity.beta - targetBeta) > 0.03) return 'relativity-velocity-dial';
+          return 'relativity-accelerator';
+        }
+        return 'relativity-clipboard';
+      }
       if (activeStepIdx === 7) return 'relativity-clipboard';
+      if (activeStepIdx === 8) return 'relativity-clipboard';
     }
 
     return 'circuits-power-switch';
@@ -570,6 +652,7 @@ export default function Room3Experience() {
     stationId,
     activeStepIdx,
     stationProgress.inspected,
+    stationProgress.trials.length,
     circuits.powerOn,
     circuits.vs,
     jumperClosed,
@@ -579,6 +662,10 @@ export default function Room3Experience() {
     blackTerminal,
     optics.powerOn,
     optics.wavelength,
+    optics.subMode,
+    optics.objectDistance,
+    relativity.beta,
+    relativity.powerOn,
   ]);
 
   useEffect(() => {
@@ -787,7 +874,7 @@ export default function Room3Experience() {
         skipped[stepIndex] = false;
         playSuccessChime();
       }
-      const nextStep = Math.min(7, Math.max(st.currentStep, stepIndex + 1));
+      const nextStep = Math.min(TOTAL_STEPS - 1, Math.max(st.currentStep, stepIndex + 1));
       return {
         ...prev,
         [stationId]: {
@@ -843,7 +930,7 @@ export default function Room3Experience() {
         newCurrentStep = Math.max(st.currentStep, 1);
         playTone(880, 'sine', 0.25, 0.4);
         setViewStepIndex(null);
-        setEquipmentMessage(`🎉 Step 1 Complete (+10 pts)! All 4 apparatus instruments inspected. Advancing to Step 2.`);
+        setEquipmentMessage(`🎉 Step 1 Complete (+${STEP_POINTS[0]} pts)! All 4 apparatus instruments inspected. Advancing to Step 2.`);
       } else if (!st.inspected.includes(canonicalId)) {
         playTone(587.33, 'triangle', 0.12, 0.3);
         setEquipmentMessage(`✓ ${INSPECTION_LABELS[canonicalId] || canonicalId} inspected (${nextInspected.length}/${required.length}).`);
@@ -860,106 +947,6 @@ export default function Room3Experience() {
       };
     });
   };
-
-  // Entering workbench closeup automatically verifies all instruments at this station
-  useEffect(() => {
-    if (cameraMode === 'closeup') {
-      INSPECTION_TARGETS[stationId]?.forEach((tgt) => {
-        handleInspectApparatus(tgt);
-      });
-    }
-  }, [cameraMode, stationId]);
-
-  // Reactive Telemetry Auto-Advancement (Steps 3 through 7)
-  useEffect(() => {
-    const curStep = stationProgress.currentStep;
-    if (stationProgress.completed[curStep]) return;
-
-    // Step 3 (index 2: Setup / Power Configuration)
-    if (curStep === 2) {
-      if (stationId === 'circuits' && circuits.powerOn && Math.abs(circuits.vs - 24.0) < 1.5 && jumperClosed) {
-        completeStep(2);
-      } else if (stationId === 'optics' && optics.powerOn && optics.wavelength === 532) {
-        completeStep(2);
-      } else if (stationId === 'relativity' && relativity.massPreset === 'alpha' && relativity.beta <= 0.01) {
-        completeStep(2);
-      }
-    }
-    // Step 4 (index 3: Instrument Preparation)
-    else if (curStep === 3) {
-      if (stationId === 'circuits' && dmmMode === 'v_dc' && dmmJack === 'v_ohm' && !dmmReading.tripFuse) {
-        completeStep(3);
-      } else if (stationId === 'optics' && optics.subMode === 'imaging' && Math.abs(optics.focalLength - 20.0) < 1.0) {
-        completeStep(3);
-      } else if (stationId === 'relativity') {
-        completeStep(3);
-      }
-    }
-    // Step 5 (index 4: Voltage Measurement / Ray Tracing / Proper Frame)
-    else if (curStep === 4) {
-      if (
-        stationId === 'circuits' &&
-        circuits.powerOn &&
-        ((redTerminal === 'SRC_POS' && blackTerminal === 'SRC_NEG') ||
-          (redTerminal === 'R1_A' && blackTerminal === 'R1_B') ||
-          (redTerminal === 'R1_B' && blackTerminal === 'R1_A') ||
-          (dmmReading.isValidMeasurement && dmmReading.unit === 'V' && Math.abs(dmmReading.value ?? 0) > 1.0))
-      ) {
-        completeStep(4);
-      } else if (stationId === 'optics' && Math.abs(optics.objectDistance - 40.0) < 1.5) {
-        completeStep(4);
-      } else if (stationId === 'relativity' && Math.abs(relativity.beta - 0.60) < 0.03) {
-        completeStep(4);
-      }
-    }
-    // Step 6 (index 5: Current Measurement / Interference / Length Contraction)
-    else if (curStep === 5) {
-      if (
-        stationId === 'circuits' &&
-        (dmmMode === 'a_dc' || dmmMode === 'a_ac') &&
-        dmmJack === 'ma_10a' &&
-        !jumperClosed &&
-        ((redTerminal === 'SERIES_JACK_A' && blackTerminal === 'SERIES_JACK_B') ||
-          (redTerminal === 'SERIES_JACK_B' && blackTerminal === 'SERIES_JACK_A')) &&
-        circuits.powerOn &&
-        dmmReading.value !== null &&
-        Math.abs(dmmReading.value) > 0.005
-      ) {
-        completeStep(5);
-      } else if (stationId === 'optics') {
-        completeStep(5);
-      } else if (stationId === 'relativity' && Math.abs(relativity.beta - 0.60) < 0.03) {
-        completeStep(5);
-      }
-    }
-    // Step 7 (index 6: 5-Trial Loop)
-    else if (curStep === 6 && stationProgress.trials.length >= 5) {
-      completeStep(6);
-    }
-  }, [
-    stationId,
-    stationProgress.currentStep,
-    stationProgress.completed,
-    stationProgress.trials.length,
-    circuits.powerOn,
-    circuits.vs,
-    jumperClosed,
-    dmmMode,
-    dmmJack,
-    dmmReading.tripFuse,
-    dmmReading.isValidMeasurement,
-    dmmReading.unit,
-    dmmReading.value,
-    redTerminal,
-    blackTerminal,
-    optics.powerOn,
-    optics.wavelength,
-    optics.subMode,
-    optics.focalLength,
-    optics.objectDistance,
-    relativity.massPreset,
-    relativity.beta,
-  ]);
 
   const handleEquipmentAction = (id: string) => {
     playTone(440, 'triangle', 0.08, 0.2);
@@ -1137,139 +1124,15 @@ export default function Room3Experience() {
     const assigned = ROOM3_ASSIGNED_TRIALS[stationId][targetIndex];
     const trialNum = targetIndex + 1;
 
-    let newTrial: TrialRecord;
-
-    if (stationId === 'circuits') {
-      // Check operating voltage match (assigned trial: 2.0, 4.0, 6.0, 8.0, 10.0 V)
-      if (Math.abs(circuits.vs - assigned.targetValue) > 1.2) {
-        setMeasurementWarning(
-          `Voltage Mismatch for Trial ${trialNum}: Assigned operating point is Vs = ${assigned.targetValue.toFixed(1)} V, but power supply is set to ${circuits.vs.toFixed(1)} V. Adjust voltage to ${assigned.targetValue.toFixed(1)} V or click "${assigned.targetValue}V".`
-        );
-        playTone(220, 'sawtooth', 0.2, 0.25);
-        return;
-      }
-
-      if (!circuits.powerOn) {
-        setMeasurementWarning('Circuit Unpowered: Turn the Power Supply ON to take live voltage and current readings.');
-        playTone(220, 'sawtooth', 0.2, 0.25);
-        return;
-      }
-
-      // Measured voltage: live DMM reading if in DC voltage mode across source/resistor, else circuits.vs with slight realistic ADC display variation (±0.15%)
-      let measuredV = circuits.vs * (1 + (Math.sin(trialNum * 13.7) * 0.0015));
-      if (dmmMode === 'v_dc' && dmmJack === 'v_ohm' && dmmReading.value !== null && Math.abs(dmmReading.value) > 0.5) {
-        measuredV = Math.abs(dmmReading.value);
-      }
-
-      // Single-resistor R3 = 330.0 Ω (1W) Ohm's Law verification:
-      // In single resistor test, Req = 330.0 Ω, I_true = (Vi / Req) * 1000 in mA with ±0.2% ADC jitter
-      const reqTheor = 330.0;
-      const iJitter = 1 + (Math.cos(trialNum * 11.3) * 0.0018);
-      let measuredI_mA = ((measuredV / reqTheor) * 1000) * iJitter;
-      // If student legitimately has DMM in series ammeter mode:
-      if ((dmmMode === 'a_dc' || dmmMode === 'a_ac') && dmmJack === 'ma_10a' && dmmReading.value !== null && Math.abs(dmmReading.value) > 0.0001) {
-        measuredI_mA = Math.abs(dmmReading.value) * 1000;
-      }
-      const measuredI_A = measuredI_mA / 1000;
-      const powerW = measuredV * measuredI_A;
-
-      // Experimental resistance: Ri = Vi / I_A = (Vi * 1000) / I_mA ≈ 330.0 Ω
-      const resistance = measuredI_mA > 0 ? (measuredV * 1000) / measuredI_mA : reqTheor;
-      const expectedR = reqTheor;
-      const percentError = Math.abs((resistance - expectedR) / expectedR) * 100;
-
-      newTrial = {
-        trial: trialNum,
-        vs: assigned.targetValue,
-        measuredV: Number(measuredV.toFixed(2)),
-        measuredI_mA: Number(measuredI_mA.toFixed(2)),
-        measuredI_A: Number(measuredI_A.toFixed(5)),
-        resistance: Number(resistance.toFixed(1)),
-        expectedR,
-        powerW: Number(powerW.toFixed(4)),
-        percentError: Number(percentError.toFixed(2)),
-        mode: circuits.mode.toUpperCase(),
-        topology: circuits.topology,
-        current: Number(measuredI_A.toFixed(5)),
-        impedance: Number(resistance.toFixed(1)),
-      };
-    } else if (stationId === 'optics') {
-      if (Math.abs(optics.objectDistance - assigned.targetValue) > 2.0) {
-        setMeasurementWarning(
-          `Object Distance Mismatch for Trial ${trialNum}: Assigned distance is u = ${assigned.targetValue.toFixed(1)} cm. Adjust object distance to ${assigned.targetValue.toFixed(1)} cm or click "Set ${assigned.targetValue} cm".`
-        );
-        playTone(220, 'sawtooth', 0.2, 0.25);
-        return;
-      }
-
-      const u = assigned.targetValue;
-      const theorV = (u * 20.0) / (u - 20.0);
-      const measuredV = theorV * (1 + (Math.sin(trialNum * 7.9) * 0.003));
-      const invU = 1 / u;
-      const invV = 1 / measuredV;
-      const f_exp = (u * measuredV) / (u + measuredV);
-      const f_nom = 20.0;
-      const percentError = Math.abs((f_exp - f_nom) / f_nom) * 100;
-
-      newTrial = {
-        trial: trialNum,
-        u,
-        v: Number(measuredV.toFixed(2)),
-        invU: Number(invU.toFixed(4)),
-        invV: Number(invV.toFixed(4)),
-        f_exp: Number(f_exp.toFixed(2)),
-        f_nom,
-        percentError: Number(percentError.toFixed(2)),
-        subMode: 'imaging',
-        wavelength: optics.wavelength,
-        paramA: u,
-        paramB: 20.0,
-        theoretical: Number(theorV.toFixed(2)),
-        measured: Number(measuredV.toFixed(2)),
-      };
-    } else {
-      if (Math.abs(relativity.beta - assigned.targetValue) > 0.03) {
-        setMeasurementWarning(
-          `Velocity Ratio Mismatch for Run ${trialNum}: Assigned velocity ratio is β = ${assigned.targetValue.toFixed(2)}c. Adjust velocity slider to ${assigned.targetValue.toFixed(2)}c or click "${assigned.targetValue.toFixed(2)}c".`
-        );
-        playTone(220, 'sawtooth', 0.2, 0.25);
-        return;
-      }
-
-      const beta = assigned.targetValue;
-      const gamma = 1 / Math.sqrt(Math.max(1e-6, 1 - beta * beta));
-      const speed = beta * 299792458;
-      // Mirror separation D = 1.00 m gives proper round-trip time Δτ = 2D/c = 6.671 ns
-      const properTime = 6.671;
-      const dilatedTime = gamma * properTime;
-      // Proper rod length L0 = 10.00 m
-      const properLength = 10.00;
-      const contractedLength = properLength / gamma;
-
-      const presetInfo = MASS_PRESETS[relativity.massPreset] || MASS_PRESETS.alpha;
-      const restEnergy = presetInfo.restEnergyMeV;
-      const kineticEnergy = (gamma - 1) * restEnergy;
-      const totalEnergy = gamma * restEnergy;
-
-      newTrial = {
-        trial: trialNum,
-        beta,
-        speed: Number(speed.toFixed(0)),
-        gamma: Number(gamma.toFixed(4)),
-        measuredGamma: Number(gamma.toFixed(4)),
-        properTime,
-        dilatedTime: Number(dilatedTime.toFixed(3)),
-        properLength,
-        contractedLength: Number(contractedLength.toFixed(3)),
-        timeDilationRatio: Number(gamma.toFixed(4)),
-        lengthContractionRatio: Number((1 / gamma).toFixed(4)),
-        restEnergy: Number(restEnergy.toFixed(1)),
-        kineticEnergy: Number(kineticEnergy.toFixed(1)),
-        totalEnergy: Number(totalEnergy.toFixed(1)),
-        preset: relativity.massPreset,
-        isSimulated: true,
-      };
+    // Use Centralized 3D Experiment Trial Validator
+    const validation = validateLiveExperimentForTrial(liveState, trialNum, assigned);
+    if (!validation.isValid || !validation.measuredData) {
+      setMeasurementWarning(validation.feedback);
+      playTone(220, 'sawtooth', 0.2, 0.25);
+      return;
     }
+
+    const newTrial: TrialRecord = validation.measuredData;
 
     setMeasurementWarning('');
     setRetakeTrialIndex(null);
@@ -1283,26 +1146,18 @@ export default function Room3Experience() {
       } else {
         updatedTrials.push(newTrial);
       }
-      const updatedCalcs = [...(st.calculations || ['', '', '', '', ''])];
-      if (stationId === 'circuits') {
-        updatedCalcs[targetIndex] = String(newTrial.resistance ?? '650.0');
-      } else if (stationId === 'optics') {
-        updatedCalcs[targetIndex] = String(newTrial.f_exp ?? '20.00');
-      } else {
-        updatedCalcs[targetIndex] = String(newTrial.gamma ?? newTrial.measuredGamma ?? '1.0000');
-      }
       const isComplete = updatedTrials.length >= TOTAL_TRIALS;
       const completed = [...st.completed];
       if (isComplete && !completed[6]) {
         completed[6] = true;
         playSuccessChime();
+        setEquipmentMessage(`🎉 Step 7 Complete (+25 pts)! All ${TOTAL_TRIALS} empirical trials logged.`);
       }
       return {
         ...prev,
         [stationId]: {
           ...st,
           trials: updatedTrials,
-          calculations: updatedCalcs,
           completed,
           currentStep: isComplete ? Math.max(st.currentStep, 7) : st.currentStep,
         },
@@ -1349,44 +1204,32 @@ export default function Room3Experience() {
     }
   };
 
-  // Guided Curriculum: Apply Target Demonstration Setting
-  const handleApplyAutoAssist = () => {
-    if (!currentGuidedStep?.autoAssist) return;
-    playTone(440, 'sine', 0.1, 0.15);
-    const patch = currentGuidedStep.autoAssist.apply();
-    if ('dmmMode' in patch && patch.dmmMode) handleSetDmmMode(patch.dmmMode);
-    if ('dmmJack' in patch && patch.dmmJack) handleSetDmmJack(patch.dmmJack);
-    if ('redTerminal' in patch && patch.redTerminal !== undefined) handleSetProbe('red', patch.redTerminal);
-    if ('blackTerminal' in patch && patch.blackTerminal !== undefined) handleSetProbe('black', patch.blackTerminal);
-    if ('jumperClosed' in patch && patch.jumperClosed !== undefined) {
-      if (jumperClosed !== patch.jumperClosed) {
-        handleToggleJumper();
-      }
-    }
-    if ('circuits' in patch && patch.circuits) {
-      setCircuits((c) => ({ ...c, ...patch.circuits }));
-    }
-    if ('optics' in patch && patch.optics) {
-      setOptics((o) => ({ ...o, ...patch.optics }));
-    }
-    if ('relativity' in patch && patch.relativity) {
-      setRelativity((r) => ({ ...r, ...patch.relativity }));
-    }
-  };
-
   // Guided Curriculum: Advance Step and Sync with Laboratory Notebook & Trials
   const handleContinueGuidedStep = () => {
-    if (!stepValidation.isPassed) return;
+    const prereq = evaluateStepPrerequisites(liveState, activeStepIdx);
+    if (!prereq.canAdvance) {
+      setMeasurementWarning(prereq.feedback || prereq.reason);
+      playTone(200, 'sawtooth', 0.2, 0.25);
+      return;
+    }
     playTone(523, 'sine', 0.15, 0.25);
     completeStep(activeStepIdx);
-    setViewStepIndex(null);
-    setShowGuidedHint(false);
+    setMeasurementWarning('');
+    setHintLevel(0);
 
-    if (activeStepIdx >= 5) {
+    const nextIdx = activeStepIdx + 1;
+    if (nextIdx < TOTAL_STEPS) {
+      setViewStepIndex(nextIdx);
+      if (nextIdx >= 6) {
+        setNotebookOpen(true);
+        setNotebookStep(nextIdx);
+      }
+    } else {
       setNotebookOpen(true);
-      setNotebookStep(Math.min(7, activeStepIdx + 1));
+      setNotebookStep(8);
     }
   };
+
   const verifyPrediction = (choice: number) => {
     const isCorrect = choice === station.prediction.answer;
     setProgress((prev) => {
@@ -1419,77 +1262,77 @@ export default function Room3Experience() {
     });
   };
 
-  // Step 8 Experimental Computation Verification (Strict ±2% tolerance)
+  const updateProgressField = (field: string, val: unknown) => {
+    setProgress((prev) => ({
+      ...prev,
+      [stationId]: {
+        ...prev[stationId],
+        [field]: val,
+      },
+    }));
+  };
+
+  // Step 8 Experimental Computation Verification (Strict tolerance with conceptual feedback)
   const verifyCalculations = () => {
     const trials = stationProgress.trials;
     if (trials.length < TOTAL_TRIALS) {
-      setCalculationFeedback('Please record all 5 experimental trials in Step 7 before verifying calculations.');
+      setCalculationFeedback(`Please record all ${TOTAL_TRIALS} experimental trials in Step 7 before verifying calculations.`);
       setCalculationStatus('incorrect');
+      playTone(200, 'sawtooth', 0.2, 0.2);
       return;
     }
 
-    // Auto-fill or ensure calculations exist for all 5 trials
-    const currentCalcs = [...(stationProgress.calculations || ['', '', '', '', ''])];
-    let needsUpdate = false;
-    for (let i = 0; i < trials.length; i++) {
-      const t = trials[i];
-      let val = currentCalcs[i];
-      if (!val || val.trim() === '' || isNaN(parseFloat(val))) {
-        if (stationId === 'circuits') {
-          val = Number(t.resistance ?? 330.0).toFixed(1);
-        } else if (stationId === 'optics') {
-          val = Number(t.f_exp ?? 20.0).toFixed(2);
-        } else {
-          val = Number(t.gamma ?? t.measuredGamma ?? 1.0).toFixed(4);
-        }
-        currentCalcs[i] = val;
-        needsUpdate = true;
-      }
+    const currentCalcs = stationProgress.calculations || ['', '', '', '', ''];
+    const result = validateStudentCalculations(stationId, trials, currentCalcs);
+    setCalcPerTrialStatus(result.perTrialStatus);
+    setCalculationFeedback(result.feedback);
+
+    if (result.isValid) {
+      setCalculationStatus('correct');
+      playSuccessChime();
+      setProgress((prev) => {
+        const st = { ...prev[stationId] };
+        const completed = [...st.completed];
+        completed[7] = true; // Step 8 completed (+25 pts)
+        return {
+          ...prev,
+          [stationId]: {
+            ...st,
+            completed,
+            calculationStatus: 'validated',
+            calculationFeedback: result.feedback,
+            currentStep: Math.max(st.currentStep, 8), // Unlocks Step 9!
+          },
+        };
+      });
+      setEquipmentMessage('🎉 Step 8 Complete (+25 pts)! All student calculations verified. Proceeding to Step 9.');
+    } else {
+      setCalculationStatus('incorrect');
+      playTone(200, 'sawtooth', 0.2, 0.2);
     }
-    if (needsUpdate) {
-      setProgress((prev) => ({
-        ...prev,
-        [stationId]: {
-          ...prev[stationId],
-          calculations: currentCalcs,
-        },
-      }));
-    }
+  };
 
-    for (let i = 0; i < trials.length; i++) {
-      const t = trials[i];
-      const userVal = parseFloat(currentCalcs[i]);
-      let expected = 330.0;
-      if (stationId === 'circuits') {
-        expected = Number(t.resistance ?? 330.0);
-      } else if (stationId === 'optics') {
-        expected = Number(t.f_exp ?? 20.0);
-      } else {
-        expected = Number(t.gamma ?? t.measuredGamma ?? 1.0);
-      }
+  // Step 9 Scientific Conclusion Submission (Claim-Evidence-Reasoning)
+  const submitConclusion = () => {
+    const st = stationProgress;
+    const res = validateStudentObservationsAndConclusion(
+      st.observations || st.analysis || '',
+      st.scientificInterpretation || '',
+      st.claim || '',
+      st.evidence || '',
+      st.reasoning || st.conclusion || ''
+    );
 
-      if (isNaN(userVal)) {
-        setCalculationStatus('incorrect');
-        setCalculationFeedback(`Trial #${i + 1} contains an invalid numeric entry. Please enter a valid number.`);
-        playTone(200, 'sawtooth', 0.2, 0.2);
-        return;
-      }
-
-      const diff = Math.abs((userVal - expected) / Math.max(0.001, expected));
-      if (diff > 0.02) {
-        setCalculationStatus('incorrect');
-        setCalculationFeedback(
-          `Calculation Error in Trial #${i + 1}: entered ${userVal.toFixed(2)}, but expected ${expected.toFixed(2)} (deviation ${(diff * 100).toFixed(1)}% > 2% tolerance). Review physical formulas and recalculate.`
-        );
-        playTone(200, 'sawtooth', 0.2, 0.2);
-        return;
-      }
+    if (!res.isValid) {
+      setConclusionFeedback(res.feedback);
+      playTone(200, 'sawtooth', 0.2, 0.2);
+      return;
     }
 
-    setCalculationStatus('correct');
-    setCalculationFeedback('Verification Passed! All 5 calculations match physical theoretical laws within ±2% tolerance.');
+    setConclusionFeedback('✓ Scientific Claim–Evidence–Reasoning submission approved! Full 100/100 points station mastery awarded.');
     playSuccessChime();
-    completeStep(7);
+    completeStep(8); // Step 9 completed (+30 pts)
+    setEquipmentMessage('🏆 Station 100% Mastered! Official Certified PDF Report is now unlocked.');
   };
 
   // Step 6 Guide Questions Handler
@@ -1549,9 +1392,9 @@ export default function Room3Experience() {
           )
         : ['No empirical trials logged.']),
       '',
-      '=== THEORETICAL CALCULATIONS & VERIFICATION ===',
+      '=== THEORETICAL CALCULATIONS & VERIFICATION (STEP 8) ===',
       `Calculations: ${stationProgress.calculations.map((c, i) => `T${i + 1}=${c || '—'}`).join(' · ')}`,
-      'Calculations verified within ±2% tolerance under IEEE/SI physics standards.',
+      'Calculations verified within theoretical physics tolerance without auto-reveals.',
       '',
       '=== LEAST-SQUARES REGRESSION ANALYSIS ===',
       (() => {
@@ -1560,21 +1403,23 @@ export default function Room3Experience() {
         return `Fit Equation: y = ${reg.slope.toFixed(3)}x + ${reg.intercept.toFixed(3)} | R^2 = ${reg.rSquared.toFixed(4)}\nInterpretation: ${reg.physicalInterpretation}`;
       })(),
       '',
-      '=== SCIENTIFIC OBSERVATIONS & FINDINGS ===',
-      stationProgress.analysis || 'Observations completed during laboratory exploration.',
+      '=== QUALITATIVE OBSERVATIONS & FINDINGS (STEP 9) ===',
+      stationProgress.observations || stationProgress.analysis || 'Observations completed during laboratory exploration.',
       '',
-      '=== SCIENTIFIC CONCLUSION ===',
-      stationProgress.conclusion || 'Empirical data successfully corroborates governing equations.',
+      '=== SCIENTIFIC INTERPRETATION (STEP 9) ===',
+      stationProgress.scientificInterpretation || 'Physical laws verified against experimental dataset.',
       '',
-      '=== PRACTICAL RECOMMENDATIONS & APPARATUS IMPROVEMENTS ===',
-      stationProgress.recommendations || 'Apparatus calibrated within nominal uncertainty bounds.',
+      '=== CLAIM–EVIDENCE–REASONING SCIENTIFIC CONCLUSION (STEP 9) ===',
+      `Claim: ${stationProgress.claim || stationProgress.conclusion || 'Empirical data successfully corroborates governing equations.'}`,
+      `Evidence: ${stationProgress.evidence || 'Recorded 5-trial dataset supports linear model.'}`,
+      `Reasoning: ${stationProgress.reasoning || 'Governing physical laws account for observed linear response.'}`,
       '',
       '=== IDENTIFIED SOURCES OF EXPERIMENTAL UNCERTAINTY ===',
       ...(stationProgress.errors.length
         ? stationProgress.errors.map((e) => `- ${e}`)
         : ['- General instrument tolerance limits']),
       '',
-      '=== INSTRUCTOR RUBRIC EVALUATION ===',
+      '=== INSTRUCTOR RUBRIC EVALUATION (9-STEP PROGRESSION) ===',
       ...STEP_NAMES.map(
         (name, i) =>
           `${i + 1}. ${name}: ${stationProgress.completed[i] ? 'COMPLETE' : 'INCOMPLETE'} (${stationProgress.completed[i] ? STEP_POINTS[i] : 0} / ${STEP_POINTS[i]} pts)`
@@ -1590,7 +1435,6 @@ export default function Room3Experience() {
     a.download = `Physics300_${stationId}_Report_${studentId}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
-    completeStep(7);
   };
 
   const downloadCSVData = () => {
@@ -2264,7 +2108,7 @@ export default function Room3Experience() {
               </div>
             </div>
           )}
-          <div className="progress-track"><span style={{ width: `${(stationProgress.completed.filter(Boolean).length / 8) * 100}%` }} /></div>
+          <div className="progress-track"><span style={{ width: `${(stationProgress.completed.filter(Boolean).length / TOTAL_STEPS) * 100}%` }} /></div>
         </section>
       )}
 
@@ -2311,7 +2155,7 @@ export default function Room3Experience() {
                     onClick={() => {
                       if (isLocked) return;
                       setViewStepIndex(idx);
-                      setShowGuidedHint(false);
+                      setHintLevel(0);
                     }}
                     title={isLocked ? `Step ${idx + 1} is locked until previous steps are completed.` : st.title}
                   >
@@ -2350,7 +2194,7 @@ export default function Room3Experience() {
                     <p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#fef08a' }}>
                       🔍 Apparatus Checklist ({stationProgress.inspected.filter((id) => INSPECTION_TARGETS[stationId].includes(id)).length} / {INSPECTION_TARGETS[stationId].length} Verified)
                     </p>
-                    <span style={{ fontSize: '10px', color: '#d4af37', fontWeight: 700 }}>+10 pts</span>
+                    <span style={{ fontSize: '10px', color: '#d4af37', fontWeight: 700 }}>+{STEP_POINTS[0]} pts</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                     {INSPECTION_TARGETS[stationId].map((tgt) => {
@@ -2386,20 +2230,12 @@ export default function Room3Experience() {
                     })}
                   </div>
                   {!allInspected ? (
-                    <button
-                      type="button"
-                      className="primary-button"
-                      style={{ width: '100%', marginTop: '8px', padding: '6px', fontSize: '11px', fontWeight: 'bold' }}
-                      onClick={() => {
-                        INSPECTION_TARGETS[stationId].forEach((t) => handleInspectApparatus(t));
-                        playTone(880, 'sine', 0.2, 0.3);
-                      }}
-                    >
-                      ✓ Verify & Complete Inspection (+10 pts)
-                    </button>
+                    <div style={{ color: '#fef08a', fontSize: '11px', marginTop: '6px' }}>
+                      Click each instrument above or walk up to it in 3D to inspect.
+                    </div>
                   ) : (
                     <div style={{ color: '#34d399', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>
-                      ✓ All instruments inspected! Step 1 Complete (+10 pts).
+                      ✓ All instruments inspected! Step 1 Complete (+{STEP_POINTS[0]} pts).
                     </div>
                   )}
                 </div>
@@ -2432,14 +2268,14 @@ export default function Room3Experience() {
                           style={{ textAlign: 'left', padding: '6px 10px', fontSize: '11px', background: btnBg, borderColor }}
                           onClick={() => verifyPrediction(oIdx)}
                         >
-                          {opt} {stationProgress.completed[1] && isCorrectChoice ? '✓ (+10 pts)' : ''}
+                          {opt} {stationProgress.completed[1] && isCorrectChoice ? `✓ (+${STEP_POINTS[1]} pts)` : ''}
                         </button>
                       );
                     })}
                   </div>
                   {predictionStatus === 'correct' && (
                     <div style={{ color: '#34d399', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>
-                      ✓ Correct prediction! +10 Points awarded.
+                      ✓ Correct prediction! +{STEP_POINTS[1]} Points awarded.
                     </div>
                   )}
                   {predictionStatus === 'incorrect' && (
@@ -2451,183 +2287,106 @@ export default function Room3Experience() {
               )}
 
               {/* Step 7: 5-Trial Measurement Sweep Direct Card */}
-              {activeStepIdx === 6 && (
-                <div style={{ marginTop: '10px', background: 'rgba(56,189,248,0.1)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(56,189,248,0.4)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <b style={{ color: '#38bdf8', fontSize: '12px' }}>📊 5-Trial Data Collection ({stationProgress.trials.length}/5 Logged)</b>
-                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-                      {stationId === 'circuits' ? 'Target Voltages' : stationId === 'optics' ? 'Target Object Distances (u)' : 'Target Velocity (β)'}
-                    </span>
-                  </div>
+              {activeStepIdx === 6 && (() => {
+                const curTrialIdx = stationProgress.trials.length;
+                const isAllDone = curTrialIdx >= TOTAL_TRIALS;
+                const assigned = ROOM3_ASSIGNED_TRIALS[stationId][Math.min(TOTAL_TRIALS - 1, curTrialIdx)];
+                const trialNum = curTrialIdx + 1;
+                const validation = !isAllDone ? validateLiveExperimentForTrial(liveState, trialNum, assigned) : null;
 
-                  {/* Station 01: Circuits */}
-                  {stationId === 'circuits' && (
-                    <>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginBottom: '8px' }}>
-                        {[2, 4, 6, 8, 10].map((v) => {
-                          const isDone = stationProgress.trials.some((tr) => Math.abs(Number(tr.vs ?? tr.paramA ?? 0) - v) < 0.8);
-                          const isCur = Math.abs(circuits.vs - v) < 0.8;
-                          return (
-                            <button
-                              key={v}
-                              type="button"
-                              className="dmm-btn"
-                              style={{
-                                padding: '6px 2px',
-                                fontSize: '11px',
-                                fontWeight: 'bold',
-                                background: isDone ? 'rgba(16,185,129,0.25)' : isCur ? '#0284c7' : 'rgba(255,255,255,0.06)',
-                                borderColor: isDone ? '#10b981' : isCur ? '#38bdf8' : 'rgba(255,255,255,0.15)',
-                                color: isDone ? '#34d399' : '#fff',
-                              }}
-                              onClick={() => {
-                                setCircuits((prev) => ({ ...prev, vs: v, powerOn: true }));
-                                playTone(400 + v * 30, 'sine', 0.06, 0.15);
-                              }}
-                            >
-                              {isDone ? '✓ ' : ''}{v}V
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#cbd5e1', marginBottom: '6px' }}>
-                        <span>Power Supply Vs: <b>{circuits.vs.toFixed(1)} V</b></span>
-                        <span>Expected I (330Ω): <b>{((circuits.vs / 330) * 1000).toFixed(2)} mA</b></span>
-                      </div>
-                      <button
-                        type="button"
-                        className="primary-button"
-                        style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: 'bold' }}
-                        onClick={() => recordCurrentTrial()}
-                      >
-                        + Record Ohm&apos;s Law Trial (V &amp; I) to Lab Log ({stationProgress.trials.length}/5)
-                      </button>
-                    </>
-                  )}
+                return (
+                  <div style={{ marginTop: '10px', background: 'rgba(56,189,248,0.1)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(56,189,248,0.4)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <b style={{ color: '#38bdf8', fontSize: '12px' }}>📊 5-Trial Data Collection ({curTrialIdx}/{TOTAL_TRIALS} Logged)</b>
+                      <span style={{ fontSize: '11px', color: '#fef08a', fontWeight: 700 }}>+25 pts</span>
+                    </div>
 
-                  {/* Station 02: Optics (Verification of Thin Lens Equation) */}
-                  {stationId === 'optics' && (
-                    <>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginBottom: '8px' }}>
-                        {[30, 35, 40, 50, 60].map((u) => {
-                          const isDone = stationProgress.trials.some((tr) => Math.abs(Number(tr.u ?? tr.paramA ?? 0) - u) < 1.5);
-                          const isCur = Math.abs(optics.objectDistance - u) < 1.5;
-                          return (
-                            <button
-                              key={u}
-                              type="button"
-                              className="dmm-btn"
-                              style={{
-                                padding: '6px 2px',
-                                fontSize: '11px',
-                                fontWeight: 'bold',
-                                background: isDone ? 'rgba(16,185,129,0.25)' : isCur ? '#0284c7' : 'rgba(255,255,255,0.06)',
-                                borderColor: isDone ? '#10b981' : isCur ? '#38bdf8' : 'rgba(255,255,255,0.15)',
-                                color: isDone ? '#34d399' : '#fff',
-                              }}
-                              onClick={() => {
-                                const next = { ...optics, objectDistance: u, subMode: 'imaging' as const, focalLength: 20.0, powerOn: true };
-                                setOptics(next);
-                                sceneApi.current?.setOptics(next);
-                                playTone(450 + u * 5, 'sine', 0.06, 0.15);
-                              }}
-                            >
-                              {isDone ? '✓ ' : ''}{u}cm
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {(() => {
-                        const curU = optics.objectDistance;
-                        const focalV = (curU * 20.0) / Math.max(0.1, curU - 20.0);
-                        const expF = (curU * focalV) / (curU + focalV);
-                        const mag = -focalV / curU;
+                    {/* Progress Pills for the 5 Conditions */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginBottom: '10px' }}>
+                      {ROOM3_ASSIGNED_TRIALS[stationId].map((cond, idx) => {
+                        const isLogged = idx < curTrialIdx;
+                        const isTarget = idx === curTrialIdx && !isAllDone;
                         return (
-                          <div style={{ padding: '8px', background: 'rgba(15, 23, 42, 0.65)', borderRadius: '6px', border: '1px solid rgba(234, 179, 8, 0.35)', marginBottom: '8px', fontSize: '11px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fef08a', marginBottom: '3px' }}>
-                              <span>Object Distance u: <b>{curU.toFixed(1)} cm</b></span>
-                              <span>Focal Image v: <b>{focalV.toFixed(1)} cm</b></span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
-                              <span>Computed Focal f: <b style={{ color: '#34d399' }}>{expF.toFixed(2)} cm</b></span>
-                              <span>Magnification M: <b>{mag.toFixed(2)}× (Inverted)</b></span>
-                            </div>
-                            <div style={{ color: '#93c5fd', marginTop: '4px', fontStyle: 'italic', fontSize: '10px' }}>
-                              Gaussian Optics: 1/f = 1/u + 1/v → Sharp focus achieved at v = {focalV.toFixed(1)} cm.
-                            </div>
+                          <div
+                            key={cond.label}
+                            style={{
+                              padding: '5px 2px',
+                              textAlign: 'center',
+                              borderRadius: '4px',
+                              fontSize: '10px',
+                              fontWeight: 700,
+                              background: isLogged ? 'rgba(16,185,129,0.25)' : isTarget ? 'rgba(56,189,248,0.3)' : 'rgba(255,255,255,0.05)',
+                              border: isLogged ? '1px solid #10b981' : isTarget ? '1.5px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                              color: isLogged ? '#34d399' : isTarget ? '#38bdf8' : '#64748b',
+                            }}
+                          >
+                            <div>{isLogged ? '✓ ' : isTarget ? '🎯 ' : ''}T{idx + 1}</div>
+                            <div style={{ fontSize: '9px' }}>{cond.targetValue}{cond.unit}</div>
                           </div>
                         );
-                      })()}
+                      })}
+                    </div>
 
-                      <button
-                        type="button"
-                        className="primary-button"
-                        style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: 'bold' }}
-                        onClick={() => recordCurrentTrial()}
-                      >
-                        + Record Thin-Lens Focal Trial (u = {optics.objectDistance.toFixed(1)} cm) ({stationProgress.trials.length}/5)
-                      </button>
-                    </>
-                  )}
+                    {isAllDone ? (
+                      <div className="feedback-alert correct" style={{ margin: '8px 0' }}>
+                        ✓ All 5 experimental trials logged! Click <b>Continue Step 8 →</b> below to compute results.
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ padding: '8px 10px', background: 'rgba(15, 23, 42, 0.75)', borderRadius: '6px', border: '1px solid rgba(234, 179, 8, 0.35)', marginBottom: '8px', fontSize: '11px' }}>
+                          <div style={{ color: '#fef08a', fontWeight: 700, marginBottom: '3px' }}>
+                            🎯 Target Condition #{trialNum}: {assigned.targetParam} = {assigned.targetValue} {assigned.unit}
+                          </div>
+                          <div style={{ color: '#cbd5e1', fontSize: '10px', lineHeight: 1.4, marginBottom: '4px' }}>
+                            {assigned.instruction}
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#93c5fd', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '4px' }}>
+                            {stationId === 'circuits' && (
+                              <>
+                                <span>Live Vs: <b>{circuits.vs.toFixed(1)} V</b></span>
+                                <span>DMM: <b>{dmmReading.displayString}</b></span>
+                              </>
+                            )}
+                            {stationId === 'optics' && (
+                              <>
+                                <span>Live u: <b>{optics.objectDistance.toFixed(1)} cm</b></span>
+                                <span>Sharp v: <b>{opticsResult.imageDistanceCm?.toFixed(1) ?? '—'} cm</b></span>
+                              </>
+                            )}
+                            {stationId === 'relativity' && (
+                              <>
+                                <span>Live β: <b>{relativity.beta.toFixed(2)}c</b></span>
+                                <span>Lorentz γ: <b>{relativityResult.gamma.toFixed(4)}</b></span>
+                              </>
+                            )}
+                          </div>
+                        </div>
 
-                  {/* Station 03: Special Relativity (Computational Simulation Investigation) */}
-                  {stationId === 'relativity' && (
-                    <>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginBottom: '8px' }}>
-                        {[0.10, 0.30, 0.50, 0.70, 0.90].map((b) => {
-                          const isDone = stationProgress.trials.some((tr) => Math.abs(Number(tr.beta ?? tr.paramA ?? 0) - b) < 0.03);
-                          const isCur = Math.abs(relativity.beta - b) < 0.03;
-                          return (
-                            <button
-                              key={b}
-                              type="button"
-                              className="dmm-btn"
-                              style={{
-                                padding: '6px 2px',
-                                fontSize: '11px',
-                                fontWeight: 'bold',
-                                background: isDone ? 'rgba(16,185,129,0.25)' : isCur ? '#0284c7' : 'rgba(255,255,255,0.06)',
-                                borderColor: isDone ? '#10b981' : isCur ? '#38bdf8' : 'rgba(255,255,255,0.15)',
-                                color: isDone ? '#34d399' : '#fff',
-                              }}
-                              onClick={() => {
-                                const next = { ...relativity, beta: b, powerOn: true, simPlaying: true, massPreset: 'alpha' as const };
-                                setRelativity(next);
-                                sceneApi.current?.setRelativity(next);
-                                playTone(500 + b * 200, 'sine', 0.06, 0.15);
-                              }}
-                            >
-                              {isDone ? '✓ ' : ''}{b.toFixed(2)}c
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div style={{ padding: '6px 8px', background: 'rgba(15, 23, 42, 0.6)', borderRadius: '4px', border: '1px solid rgba(212, 175, 55, 0.3)', marginBottom: '8px', fontSize: '10px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fef08a', marginBottom: '3px' }}>
-                          <span>Target β: <b>{relativity.beta.toFixed(2)}c</b></span>
-                          <span>Lorentz γ: <b>{(1 / Math.sqrt(Math.max(1e-6, 1 - relativity.beta * relativity.beta))).toFixed(4)}</b></span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
-                          <span>Dilated Time Δt: <b>{((1 / Math.sqrt(Math.max(1e-6, 1 - relativity.beta * relativity.beta))) * 6.671).toFixed(3)} ns</b></span>
-                          <span>Contracted L: <b>{(10.0 / (1 / Math.sqrt(Math.max(1e-6, 1 - relativity.beta * relativity.beta)))).toFixed(3)} m</b></span>
-                        </div>
-                        <div style={{ color: '#38bdf8', marginTop: '4px', fontStyle: 'italic' }}>
-                          Pre-Run Prediction: As β increases, photon clock tick interval expands (Δt = γΔτ) while moving rod contracts (L = L₀/γ).
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="primary-button"
-                        style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: 'bold' }}
-                        onClick={() => recordCurrentTrial()}
-                      >
-                        + Run &amp; Record Simulation Condition ({stationProgress.trials.length}/5)
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
+                        {validation && !validation.isValid && (
+                          <div style={{ color: '#fca5a5', background: 'rgba(127,29,29,0.3)', padding: '6px 8px', borderRadius: '4px', border: '1px solid #ef4444', fontSize: '10px', marginBottom: '8px', lineHeight: 1.3 }}>
+                            {validation.feedback}
+                          </div>
+                        )}
+                        {validation && validation.isValid && (
+                          <div style={{ color: '#34d399', background: 'rgba(16,185,129,0.2)', padding: '6px 8px', borderRadius: '4px', border: '1px solid #10b981', fontSize: '10px', marginBottom: '8px', fontWeight: 600 }}>
+                            ✓ Condition matched! Ready to record trial into lab dataset.
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          className="primary-button"
+                          style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: 'bold' }}
+                          disabled={!validation?.isValid}
+                          onClick={() => recordCurrentTrial()}
+                        >
+                          + Record Trial #{trialNum} to Lab Dataset ({curTrialIdx}/5)
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Step 8: Computation & Scientific Analysis Direct Card */}
               {activeStepIdx === 7 && (
@@ -2654,7 +2413,7 @@ export default function Room3Experience() {
                       onClick={verifyCalculations}
                       disabled={stationProgress.completed[7]}
                     >
-                      {stationProgress.completed[7] ? '✓ Step 8 Complete (+20 pts)' : '✓ Verify Step 8 Calculations (+20 pts)'}
+                      {stationProgress.completed[7] ? '✓ Step 8 Complete (+25 pts)' : '✓ Verify Step 8 Calculations (+25 pts)'}
                     </button>
                     <button
                       type="button"
@@ -2683,19 +2442,64 @@ export default function Room3Experience() {
                 </div>
               )}
 
-              {showGuidedHint && (
-                <div className="guided-hint-box">
-                  <b>🔍 HINT / TIP:</b>
-                  <p style={{ margin: '4px 0 0 0' }}>{currentGuidedStep.hint}</p>
-                  {currentGuidedStep.autoAssist && (
+              {/* Step 9: Observations, Scientific Interpretation & CER Conclusion Direct Card */}
+              {activeStepIdx === 8 && (
+                <div style={{ marginTop: '10px', background: 'rgba(234,179,8,0.1)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(234,179,8,0.4)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <b style={{ color: '#fef08a', fontSize: '12px' }}>📝 Step 9: Observations &amp; CER Conclusion</b>
+                    <span style={{ fontSize: '11px', color: '#d4af37', fontWeight: 700 }}>+30 pts</span>
+                  </div>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#cbd5e1', lineHeight: '1.4' }}>
+                    Record qualitative observations, interpret governing physical laws, and synthesize your final Claim–Evidence–Reasoning (CER) scientific conclusion in the lab notebook.
+                  </p>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    style={{ width: '100%', padding: '8px', fontSize: '11px', fontWeight: 'bold', background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)' }}
+                    onClick={() => {
+                      setNotebookOpen(true);
+                      setNotebookStep(8);
+                      playTone(660, 'sine', 0.1, 0.2);
+                    }}
+                  >
+                    📖 Open Notebook to Complete Step 9 (+30 pts)
+                  </button>
+                </div>
+              )}
+
+              {hintLevel > 0 && currentGuidedStep.hints && (
+                <div className="guided-hint-box" style={{ background: 'rgba(25, 15, 20, 0.95)', border: '1.5px solid #d4af37', borderRadius: '8px', padding: '10px 12px', marginTop: '10px' }}>
+                  <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', borderBottom: '1px solid rgba(212, 175, 55, 0.3)', paddingBottom: '6px' }}>
                     <button
                       type="button"
-                      className="auto-assist-btn"
-                      onClick={handleApplyAutoAssist}
+                      style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: 'none', background: hintLevel === 1 ? '#d4af37' : 'rgba(255,255,255,0.08)', color: hintLevel === 1 ? '#000' : '#fef08a', fontWeight: 700, cursor: 'pointer' }}
+                      onClick={() => setHintLevel(1)}
                     >
-                      ⚡ {currentGuidedStep.autoAssist.label}
+                      Level 1: Guidance
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: 'none', background: hintLevel === 2 ? '#d4af37' : 'rgba(255,255,255,0.08)', color: hintLevel === 2 ? '#000' : '#fef08a', fontWeight: 700, cursor: 'pointer' }}
+                      onClick={() => setHintLevel(2)}
+                    >
+                      Level 2: Principle
+                    </button>
+                    <button
+                      type="button"
+                      style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: 'none', background: hintLevel === 3 ? '#d4af37' : 'rgba(255,255,255,0.08)', color: hintLevel === 3 ? '#000' : '#fef08a', fontWeight: 700, cursor: 'pointer' }}
+                      onClick={() => setHintLevel(3)}
+                    >
+                      Level 3: Procedure
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#fef08a', lineHeight: 1.45 }}>
+                    {hintLevel === 1 && <span><b>📘 Level 1 (Guidance):</b> {currentGuidedStep.hints.guidance}</span>}
+                    {hintLevel === 2 && <span><b>🔬 Level 2 (Physical Principle):</b> {currentGuidedStep.hints.concept}</span>}
+                    {hintLevel === 3 && <span><b>🛠️ Level 3 (Procedure):</b> {currentGuidedStep.hints.procedure}</span>}
+                  </div>
+                  <div style={{ marginTop: '6px', fontSize: '10px', color: '#94a3b8', fontStyle: 'italic' }}>
+                    Note: Hints provide educational guidance only and never advance steps, record trials, or award points.
+                  </div>
                 </div>
               )}
 
@@ -2715,13 +2519,18 @@ export default function Room3Experience() {
                     </button>
                   )}
                 </div>
-              ) : stepValidation.isPassed ? (
+              ) : stepPrereq.canAdvance ? (
                 <div className="guided-validation-badge passed">
-                  <span>{stepValidation.feedback}</span>
+                  <span>{stepPrereq.feedback || stepValidation.feedback}</span>
                 </div>
               ) : (
                 <div className="guided-validation-badge in-progress">
-                  <span>⏳ STATUS: {stepValidation.feedback}</span>
+                  <span>⏳ STATUS: {stepPrereq.feedback || stepValidation.feedback}</span>
+                  {stepPrereq.remainingTasks.length > 0 && (
+                    <div style={{ marginTop: '4px', fontSize: '11px', color: '#fca5a5' }}>
+                      Required: {stepPrereq.remainingTasks.join('; ')}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2734,7 +2543,7 @@ export default function Room3Experience() {
                   disabled={activeStepIdx === 0}
                   onClick={() => {
                     setViewStepIndex(Math.max(0, activeStepIdx - 1));
-                    setShowGuidedHint(false);
+                    setHintLevel(0);
                   }}
                 >
                   ← Back
@@ -2743,14 +2552,15 @@ export default function Room3Experience() {
                   type="button"
                   className="secondary-button"
                   style={{ padding: '6px 10px', fontSize: '11px' }}
-                  onClick={() => setShowGuidedHint((prev) => !prev)}
+                  onClick={() => setHintLevel((prev) => (prev >= 3 ? 0 : prev + 1))}
                 >
-                  {showGuidedHint ? 'Hide Hint' : '💡 Hint'}
+                  {hintLevel === 0 ? '💡 Hint' : hintLevel === 1 ? '💡 Concept (Lvl 2)' : hintLevel === 2 ? '💡 Procedure (Lvl 3)' : 'Hide Hint'}
                 </button>
                 <button
                   type="button"
                   className="guided-continue-btn"
-                  disabled={!stepValidation.isPassed}
+                  disabled={!stepPrereq.canAdvance}
+                  title={!stepPrereq.canAdvance ? `Action required: ${stepPrereq.remainingTasks.join(' · ')}` : 'Advance to next step'}
                   onClick={handleContinueGuidedStep}
                 >
                   {activeStepIdx === currentCurriculum.steps.length - 1
@@ -3887,12 +3697,12 @@ export default function Room3Experience() {
               </aside>
 
               <div className="notebook-content">
-                <div className={`notebook-section ${[4, 6, 7].includes(notebookStep) ? 'wide-section' : ''}`}>
-              {/* STEP 1: EXPLORE (10 pts) */}
+                <div className={`notebook-section ${[4, 6, 7, 8].includes(notebookStep) ? 'wide-section' : ''}`}>
+              {/* STEP 1: EXPLORE (+3 pts) */}
               {notebookStep === 0 && (
                 <div className="step-content">
                   <div className="step-badge-row">
-                    <span className="step-points-pill">+10 Points</span>
+                    <span className="step-points-pill">+{STEP_POINTS[0]} Points</span>
                     <h4>Step 1: Inspect 3D Apparatus & Identify Reference Markers</h4>
                   </div>
                   <p className="step-prompt">{station.steps[0].prompt}</p>
@@ -3952,37 +3762,23 @@ export default function Room3Experience() {
                   )}
 
                   <div className="button-row" style={{ marginTop: '16px' }}>
-                    {!allInspected && (
-                      <button
-                        type="button"
-                        className="notebook-action"
-                        style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: '#fff', fontWeight: 800 }}
-                        onClick={() => {
-                          INSPECTION_TARGETS[stationId].forEach((tgt) => handleInspectApparatus(tgt));
-                          completeStep(0);
-                          playTone(880, 'sine', 0.25, 0.4);
-                        }}
-                      >
-                        ✓ Verify & Complete All Inspection (+10 pts)
-                      </button>
-                    )}
                     <button
                       type="button"
                       className="notebook-action"
                       disabled={stationProgress.completed[0] || !allInspected}
                       onClick={() => completeStep(0)}
                     >
-                      {stationProgress.completed[0] ? '✓ Step 1 Complete (10/10 pts)' : 'Confirm Inspection Complete (+10 pts)'}
+                      {stationProgress.completed[0] ? `✓ Step 1 Complete (${STEP_POINTS[0]}/${STEP_POINTS[0]} pts)` : `Confirm Inspection Complete (+${STEP_POINTS[0]} pts)`}
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* STEP 2: ASSEMBLY / PREDICTION (10 pts) */}
+              {/* STEP 2: ASSEMBLY / PREDICTION (+3 pts) */}
               {notebookStep === 1 && (
                 <div className="step-content">
                   <div className="step-badge-row">
-                    <span className="step-points-pill">+10 Points</span>
+                    <span className="step-points-pill">+{STEP_POINTS[1]} Points</span>
                     <h4>Step 2: {stationId === 'circuits' ? 'Circuit Assembly & Continuity Inspection' : stationId === 'optics' ? 'Optical Rail Alignment & Snell Interface Calibration' : 'Inertial Reference Frame S & S\' Calibration'}</h4>
                   </div>
                   <p className="step-prompt">{station.steps[1].prompt}</p>
@@ -4045,17 +3841,17 @@ export default function Room3Experience() {
                       disabled={stationProgress.completed[1] || currentPredictionAnswer !== station.prediction.answer}
                       onClick={() => completeStep(1)}
                     >
-                      {stationProgress.completed[1] ? '✓ Step 2 Complete (10/10 pts)' : stationId === 'circuits' ? 'Confirm Circuit Assembly (+10 pts)' : stationId === 'optics' ? 'Confirm Optical Alignment (+10 pts)' : 'Confirm Frame Calibration (+10 pts)'}
+                      {stationProgress.completed[1] ? `✓ Step 2 Complete (${STEP_POINTS[1]}/${STEP_POINTS[1]} pts)` : stationId === 'circuits' ? `Confirm Circuit Assembly (+${STEP_POINTS[1]} pts)` : stationId === 'optics' ? `Confirm Optical Alignment (+${STEP_POINTS[1]} pts)` : `Confirm Frame Calibration (+${STEP_POINTS[1]} pts)`}
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* STEP 3: POWER / SOURCE CONFIGURATION (10 pts) */}
+              {/* STEP 3: POWER / SOURCE CONFIGURATION (+3 pts) */}
               {notebookStep === 2 && (
                 <div className="step-content">
                   <div className="step-badge-row">
-                    <span className="step-points-pill">+10 Points</span>
+                    <span className="step-points-pill">+{STEP_POINTS[2]} Points</span>
                     <h4>Step 3: {stationId === 'circuits' ? 'DC Power Supply Setup & Energization' : stationId === 'optics' ? 'Tunable Laser Source Energization (λ = 532 nm)' : 'Linear Particle Accelerator Baseline Setup'}</h4>
                   </div>
                   <p className="step-prompt">{station.steps[2].prompt}</p>
@@ -4156,17 +3952,17 @@ export default function Room3Experience() {
                       disabled={stationProgress.completed[2] || !(stationId === 'circuits' ? circuits.powerOn : stationId === 'optics' ? optics.powerOn : relativity.powerOn)}
                       onClick={() => completeStep(2)}
                     >
-                      {stationProgress.completed[2] ? '✓ Step 3 Complete (10/10 pts)' : stationId === 'circuits' ? 'Confirm Power Configuration (+10 pts)' : stationId === 'optics' ? 'Confirm Laser Configuration (+10 pts)' : 'Confirm Beamline Setup (+10 pts)'}
+                      {stationProgress.completed[2] ? `✓ Step 3 Complete (${STEP_POINTS[2]}/${STEP_POINTS[2]} pts)` : stationId === 'circuits' ? `Confirm Power Configuration (+${STEP_POINTS[2]} pts)` : stationId === 'optics' ? `Confirm Laser Configuration (+${STEP_POINTS[2]} pts)` : `Confirm Beamline Setup (+${STEP_POINTS[2]} pts)`}
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* STEP 4: INSTRUMENT PREPARATION (10 pts) */}
+              {/* STEP 4: INSTRUMENT PREPARATION (+3 pts) */}
               {notebookStep === 3 && (
                 <div className="step-content">
                   <div className="step-badge-row">
-                    <span className="step-points-pill">+10 Points</span>
+                    <span className="step-points-pill">+{STEP_POINTS[3]} Points</span>
                     <h4>Step 4: {stationId === 'circuits' ? 'Multimeter Instrument Preparation' : stationId === 'optics' ? 'Goniometer & Optical Mount Preparation' : 'Relativistic Detector & Proper Clock Synchronization'}</h4>
                   </div>
                   <p className="step-prompt">{station.steps[3].prompt}</p>
@@ -4259,17 +4055,17 @@ export default function Room3Experience() {
                       disabled={stationProgress.completed[3] || (stationId === 'circuits' && !(dmmMode === 'v_dc' && dmmJack === 'v_ohm'))}
                       onClick={() => completeStep(3)}
                     >
-                      {stationProgress.completed[3] ? '✓ Step 4 Complete (10/10 pts)' : stationId === 'circuits' ? 'Confirm Multimeter Preparation (+10 pts)' : stationId === 'optics' ? 'Confirm Optics Preparation (+10 pts)' : 'Confirm Detector Calibration (+10 pts)'}
+                      {stationProgress.completed[3] ? `✓ Step 4 Complete (${STEP_POINTS[3]}/${STEP_POINTS[3]} pts)` : stationId === 'circuits' ? `Confirm Multimeter Preparation (+${STEP_POINTS[3]} pts)` : stationId === 'optics' ? `Confirm Optics Preparation (+${STEP_POINTS[3]} pts)` : `Confirm Detector Calibration (+${STEP_POINTS[3]} pts)`}
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* STEP 5: MEASUREMENT PROCEDURE A (10 pts) */}
+              {/* STEP 5: MEASUREMENT PROCEDURE A (+4 pts) */}
               {notebookStep === 4 && (
                 <div className="step-content">
                   <div className="step-badge-row">
-                    <span className="step-points-pill">+10 Points</span>
+                    <span className="step-points-pill">+{STEP_POINTS[4]} Points</span>
                     <h4>Step 5: {stationId === 'circuits' ? 'Voltage Measurement Procedure (Parallel)' : stationId === 'optics' ? 'Paraxial Ray Tracing & Refraction Procedure' : 'Proper Frame Time Dilation Procedure'}</h4>
                   </div>
                   <p className="step-prompt">{station.steps[4].prompt}</p>
@@ -4369,17 +4165,17 @@ export default function Room3Experience() {
                       disabled={stationProgress.completed[4] || (stationId === 'circuits' && !(dmmReading.isValidMeasurement && dmmReading.unit === 'V' && dmmReading.value !== null && Math.abs(dmmReading.value) > 0.5))}
                       onClick={() => completeStep(4)}
                     >
-                      {stationProgress.completed[4] ? '✓ Step 5 Complete (10/10 pts)' : stationId === 'circuits' ? 'Confirm Voltage Procedure (+10 pts)' : stationId === 'optics' ? 'Confirm Optical Ray Procedure (+10 pts)' : 'Confirm Time Dilation Procedure (+10 pts)'}
+                      {stationProgress.completed[4] ? `✓ Step 5 Complete (${STEP_POINTS[4]}/${STEP_POINTS[4]} pts)` : stationId === 'circuits' ? `Confirm Voltage Procedure (+${STEP_POINTS[4]} pts)` : stationId === 'optics' ? `Confirm Optical Ray Procedure (+${STEP_POINTS[4]} pts)` : `Confirm Time Dilation Procedure (+${STEP_POINTS[4]} pts)`}
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* STEP 6: MEASUREMENT PROCEDURE B (10 pts) */}
+              {/* STEP 6: MEASUREMENT PROCEDURE B (+4 pts) */}
               {notebookStep === 5 && (
                 <div className="step-content">
                   <div className="step-badge-row">
-                    <span className="step-points-pill">+10 Points</span>
+                    <span className="step-points-pill">+{STEP_POINTS[5]} Points</span>
                     <h4>Step 6: {stationId === 'circuits' ? 'Current Measurement Procedure (Series Insertion)' : stationId === 'optics' ? 'Observation Screen Image Focus Calibration' : 'Lorentz Length Contraction & Relativistic Energy'}</h4>
                   </div>
                   <p className="step-prompt">{station.steps[5].prompt}</p>
@@ -4486,17 +4282,17 @@ export default function Room3Experience() {
                       disabled={stationProgress.completed[5] || (stationId === 'circuits' && !(!jumperClosed && dmmMode === 'a_dc' && dmmJack === 'ma_10a' && (redTerminal === 'SERIES_JACK_A' || blackTerminal === 'SERIES_JACK_A')))}
                       onClick={() => completeStep(5)}
                     >
-                      {stationProgress.completed[5] ? '✓ Step 6 Complete (10/10 pts)' : stationId === 'circuits' ? 'Confirm Current Procedure (+10 pts)' : stationId === 'optics' ? 'Confirm Focus Procedure (+10 pts)' : 'Confirm Contraction Procedure (+10 pts)'}
+                      {stationProgress.completed[5] ? `✓ Step 6 Complete (${STEP_POINTS[5]}/${STEP_POINTS[5]} pts)` : stationId === 'circuits' ? `Confirm Current Procedure (+${STEP_POINTS[5]} pts)` : stationId === 'optics' ? `Confirm Focus Procedure (+${STEP_POINTS[5]} pts)` : `Confirm Contraction Procedure (+${STEP_POINTS[5]} pts)`}
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* STEP 7: FIVE-TRIAL EXPERIMENTAL DATA COLLECTION (20 pts) */}
+              {/* STEP 7: FIVE-TRIAL EXPERIMENTAL DATA COLLECTION (+25 pts) */}
               {notebookStep === 6 && (
                 <div className="step-content">
                   <div className="step-badge-row">
-                    <span className="step-points-pill">+20 Points</span>
+                    <span className="step-points-pill">+{STEP_POINTS[6]} Points</span>
                     <h4>Step 7: Five-Trial Experimental Data Collection ({stationProgress.trials.length} / {TOTAL_TRIALS})</h4>
                   </div>
                   <p className="step-prompt">{station.steps[6].prompt}</p>
@@ -4612,7 +4408,7 @@ export default function Room3Experience() {
                         ) : (
                           <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(16, 185, 129, 0.15)', border: '1.5px solid #10b981', borderRadius: '8px', padding: '12px 16px' }}>
                             <span style={{ fontSize: '14px', color: '#34d399', fontWeight: 700 }}>
-                              ✓ All 5 Trials Recorded in 3D (+20 pts Earned)
+                              ✓ All 5 Trials Recorded in 3D (+{STEP_POINTS[6]} pts Earned)
                             </span>
                             <button
                               type="button"
@@ -4744,7 +4540,7 @@ export default function Room3Experience() {
                           setNotebookStep(7);
                         }}
                       >
-                        ✓ 5 Trials Complete (+20 pts) — Proceed to Step 8: Computation & Analysis →
+                        ✓ 5 Trials Complete (+{STEP_POINTS[6]} pts) — Proceed to Step 8: Computation &amp; Analysis →
                       </button>
                     ) : (
                       <span style={{ fontSize: '13px', color: '#94a3b8' }}>
@@ -4755,11 +4551,11 @@ export default function Room3Experience() {
                 </div>
               )}
 
-              {/* STEP 8: EXPERIMENTAL DATA COMPUTATION & ANALYSIS (20 pts) */}
+              {/* STEP 8: EXPERIMENTAL DATA COMPUTATION & ANALYSIS (+25 pts) */}
               {notebookStep === 7 && (
                 <div className="step-content">
                   <div className="step-badge-row">
-                    <span className="step-points-pill">+20 Points</span>
+                    <span className="step-points-pill">+{STEP_POINTS[7]} Points</span>
                     <h4>Step 8: Computation of Experimental Data and Scientific Analysis</h4>
                   </div>
                   <p className="step-prompt">{station.steps[7].prompt}</p>
@@ -4875,10 +4671,16 @@ export default function Room3Experience() {
                             const iA = Number(t.measuredI_A ?? (typeof t.measuredI_mA !== 'undefined' ? Number(t.measuredI_mA) / 1000 : null) ?? t.current ?? 0.00615);
                             const i_mA = Number(t.measuredI_mA ?? (iA * 1000));
                             const r = Number(t.resistance ?? ((v * 1000) / i_mA));
-                            const currentInput = stationProgress.calculations?.[i] || r.toFixed(1);
+                            const currentInput = stationProgress.calculations?.[i] ?? '';
+                            const status = calcPerTrialStatus[i];
                             return (
-                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
-                                <span style={{ color: '#d4af37', fontWeight: 700 }}>TRIAL #{i + 1}</span>
+                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: status === 'correct' ? '1.5px solid #10b981' : status === 'incorrect' ? '1.5px solid #ef4444' : '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ color: '#d4af37', fontWeight: 700 }}>TRIAL #{i + 1}</span>
+                                  {status === 'correct' && <span style={{ color: '#34d399', fontSize: '11px', fontWeight: 800 }}>✓ Verified</span>}
+                                  {status === 'incorrect' && <span style={{ color: '#f87171', fontSize: '10px', fontWeight: 700 }}>❌ Check Math</span>}
+                                  {(!status || status === 'empty') && <span style={{ color: '#94a3b8', fontSize: '10px' }}>⏳ Enter Value</span>}
+                                </div>
                                 <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
                                   R_{i + 1} = V_{i + 1} / I_{i + 1}
                                 </div>
@@ -4889,9 +4691,10 @@ export default function Room3Experience() {
                                   <span>=</span>
                                   <input
                                     type="text"
+                                    placeholder="R (Ω)"
                                     value={currentInput}
                                     onChange={(e) => handleCalculationChange(i, e.target.value)}
-                                    style={{ width: '56px', padding: '2px 4px', fontSize: '11px', background: '#090d16', color: '#fef08a', border: '1px solid #d4af37', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
+                                    style={{ width: '64px', padding: '3px 4px', fontSize: '11px', background: '#090d16', color: '#fef08a', border: '1px solid #d4af37', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
                                   />
                                   <span>Ω</span>
                                 </div>
@@ -4900,11 +4703,16 @@ export default function Room3Experience() {
                           } else if (stationId === 'optics') {
                             const u = Number(t.u ?? t.paramA ?? 30);
                             const v = Number(t.v ?? t.measured ?? 60);
-                            const f = Number(t.f_exp ?? ((u * v) / (u + v)));
-                            const currentInput = stationProgress.calculations?.[i] || f.toFixed(2);
+                            const currentInput = stationProgress.calculations?.[i] ?? '';
+                            const status = calcPerTrialStatus[i];
                             return (
-                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
-                                <span style={{ color: '#10b981', fontWeight: 700 }}>TRIAL #{i + 1}</span>
+                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: status === 'correct' ? '1.5px solid #10b981' : status === 'incorrect' ? '1.5px solid #ef4444' : '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ color: '#10b981', fontWeight: 700 }}>TRIAL #{i + 1}</span>
+                                  {status === 'correct' && <span style={{ color: '#34d399', fontSize: '11px', fontWeight: 800 }}>✓ Verified</span>}
+                                  {status === 'incorrect' && <span style={{ color: '#f87171', fontSize: '10px', fontWeight: 700 }}>❌ Check Math</span>}
+                                  {(!status || status === 'empty') && <span style={{ color: '#94a3b8', fontSize: '10px' }}>⏳ Enter Value</span>}
+                                </div>
                                 <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
                                   f_{i + 1} = (u·v)/(u+v)
                                 </div>
@@ -4915,9 +4723,10 @@ export default function Room3Experience() {
                                   <span>=</span>
                                   <input
                                     type="text"
+                                    placeholder="f (cm)"
                                     value={currentInput}
                                     onChange={(e) => handleCalculationChange(i, e.target.value)}
-                                    style={{ width: '56px', padding: '2px 4px', fontSize: '11px', background: '#090d16', color: '#34d399', border: '1px solid #10b981', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
+                                    style={{ width: '64px', padding: '3px 4px', fontSize: '11px', background: '#090d16', color: '#34d399', border: '1px solid #10b981', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
                                   />
                                   <span>cm</span>
                                 </div>
@@ -4925,15 +4734,20 @@ export default function Room3Experience() {
                             );
                           } else {
                             const beta = Number(t.beta ?? 0.1);
-                            const gamma = Number(t.gamma ?? t.measuredGamma ?? (1 / Math.sqrt(Math.max(1e-6, 1 - beta * beta))));
                             const tau0 = 6.671;
-                            const dilatedT = gamma * tau0;
+                            const dilatedT = (t.gamma ? Number(t.gamma) : 1 / Math.sqrt(Math.max(1e-6, 1 - beta * beta))) * tau0;
                             const l0 = 10.00;
-                            const contractedL = l0 / gamma;
-                            const currentInput = stationProgress.calculations?.[i] || gamma.toFixed(4);
+                            const contractedL = l0 / (t.gamma ? Number(t.gamma) : 1 / Math.sqrt(Math.max(1e-6, 1 - beta * beta)));
+                            const currentInput = stationProgress.calculations?.[i] ?? '';
+                            const status = calcPerTrialStatus[i];
                             return (
-                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
-                                <span style={{ color: '#fef08a', fontWeight: 700 }}>RUN #{i + 1} (β = {beta.toFixed(2)}c)</span>
+                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: status === 'correct' ? '1.5px solid #10b981' : status === 'incorrect' ? '1.5px solid #ef4444' : '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ color: '#fef08a', fontWeight: 700 }}>RUN #{i + 1} (β={beta.toFixed(2)}c)</span>
+                                  {status === 'correct' && <span style={{ color: '#34d399', fontSize: '11px', fontWeight: 800 }}>✓ Verified</span>}
+                                  {status === 'incorrect' && <span style={{ color: '#f87171', fontSize: '10px', fontWeight: 700 }}>❌ Check Math</span>}
+                                  {(!status || status === 'empty') && <span style={{ color: '#94a3b8', fontSize: '10px' }}>⏳ Enter Value</span>}
+                                </div>
                                 <div style={{ margin: '4px 0', fontFamily: 'monospace', color: '#cbd5e1' }}>
                                   γ = 1/√(1 − {beta.toFixed(2)}²)
                                 </div>
@@ -4941,9 +4755,10 @@ export default function Room3Experience() {
                                   <span>γ =</span>
                                   <input
                                     type="text"
+                                    placeholder="γ (1.xxxx)"
                                     value={currentInput}
                                     onChange={(e) => handleCalculationChange(i, e.target.value)}
-                                    style={{ width: '60px', padding: '2px 4px', fontSize: '11px', background: '#090d16', color: '#38bdf8', border: '1px solid #0284c7', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
+                                    style={{ width: '70px', padding: '3px 4px', fontSize: '11px', background: '#090d16', color: '#38bdf8', border: '1px solid #0284c7', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
                                   />
                                 </div>
                                 <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
@@ -5104,173 +4919,313 @@ export default function Room3Experience() {
                         </div>
                       )}
 
-                      {/* SECTION D: SERIES VS. PARALLEL CIRCUIT COMPARATIVE ANALYSIS (STATION 01) */}
-                      {stationId === 'circuits' && (
-                        <div style={{ marginTop: '20px' }}>
-                          <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
-                            <h5 style={{ margin: 0, color: '#fef08a', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                              Section D: Series vs. Parallel Circuit Comparative Analysis (R1 = 100Ω, R2 = 220Ω, R3 = 330Ω at Vs = 6.0 V)
-                            </h5>
-                          </div>
+                      {/* Step 8 Verification Action Row */}
+                      <div className="button-row" style={{ marginTop: '20px', display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="notebook-action"
+                          style={{
+                            background: stationProgress.completed[7] ? '#059669' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            borderColor: '#10b981',
+                            fontWeight: 700,
+                            padding: '10px 16px',
+                          }}
+                          disabled={stationProgress.completed[7]}
+                          onClick={verifyCalculations}
+                        >
+                          {stationProgress.completed[7] ? '✓ Step 8 Complete (25/25 pts)' : 'Verify & Submit Step 8 Calculations (+25 pts)'}
+                        </button>
 
-                          <div className="table-scroll" style={{ marginBottom: '14px' }}>
-                            <table className="trial-table">
-                              <thead>
-                                <tr>
-                                  <th>Circuit Parameter</th>
-                                  <th>Series Circuit (Exp C)</th>
-                                  <th>Parallel Circuit (Exp D)</th>
-                                  <th>Physical Principle / Scientific Law</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                <tr>
-                                  <td><b>Equivalent Resistance (Req)</b></td>
-                                  <td style={{ color: '#fef08a', fontWeight: 700 }}>650.0 Ω (R1 + R2 + R3)</td>
-                                  <td style={{ color: '#38bdf8', fontWeight: 700 }}>56.90 Ω (1 / Σ(1/Rk))</td>
-                                  <td>Parallel reduces resistance 11.4× below the smallest resistor</td>
-                                </tr>
-                                <tr>
-                                  <td><b>Total Circuit Current (Itot at 6V)</b></td>
-                                  <td style={{ color: '#d4af37' }}>9.23 mA (0.00923 A)</td>
-                                  <td style={{ color: '#34d399' }}>105.45 mA (0.10545 A)</td>
-                                  <td>Ohm&apos;s Law: Itot = Vs / Req (Parallel draws 11.4× more current)</td>
-                                </tr>
-                                <tr>
-                                  <td><b>Current Behavior</b></td>
-                                  <td>Identical everywhere (I1 = I2 = I3 = 9.23 mA)</td>
-                                  <td>Branch division: I1 = 60.0 mA, I2 = 27.3 mA, I3 = 18.2 mA</td>
-                                  <td>Kirchhoff&apos;s Current Law: Itot = I1 + I2 + I3</td>
-                                </tr>
-                                <tr>
-                                  <td><b>Voltage Distribution</b></td>
-                                  <td>Divides: V1 = 0.92V, V2 = 2.03V, V3 = 3.05V</td>
-                                  <td>Identical across all: V1 = V2 = V3 = 6.00 V</td>
-                                  <td>Kirchhoff&apos;s Voltage Law: Vs = Σ Vk (Series) vs Equal (Parallel)</td>
-                                </tr>
-                                <tr>
-                                  <td><b>Total Power Dissipated (P = VI)</b></td>
-                                  <td style={{ color: '#f59e0b' }}>0.0554 W (55.4 mW)</td>
-                                  <td style={{ color: '#ef4444' }}>0.6327 W (632.7 mW)</td>
-                                  <td>P = V² / Req (Parallel dissipates 11.4× more thermal energy)</td>
-                                </tr>
-                                <tr>
-                                  <td><b>Impact of Open-Circuit Failure</b></td>
-                                  <td>Entire circuit breaks; all current ceases (I = 0)</td>
-                                  <td>Fault isolated; other parallel branches remain operational</td>
-                                  <td>Universal engineering reason why building power distribution is parallel</td>
-                                </tr>
-                              </tbody>
-                            </table>
-                          </div>
+                        {stationProgress.completed[7] && (
+                          <button
+                            type="button"
+                            className="notebook-action"
+                            style={{
+                              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                              borderColor: '#38bdf8',
+                              fontWeight: 700,
+                              padding: '10px 16px',
+                            }}
+                            onClick={() => setNotebookStep(8)}
+                          >
+                            Proceed to Step 9: Observations &amp; CER Conclusion (+30 pts) →
+                          </button>
+                        )}
+                      </div>
 
-                          {/* 5 Student Conceptual Interpretation Questions */}
-                          <div style={{ padding: '14px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px' }}>
-                            <h5 style={{ margin: '0 0 10px', color: '#f8fafc', fontSize: '13px' }}>
-                              🎓 Student Conceptual Interpretation &amp; Laboratory Review:
-                            </h5>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '11px' }}>
-                              <div>
-                                <b style={{ color: '#fef08a' }}>Q1. Why does equivalent resistance increase when adding resistors in series, but decrease when adding resistors in parallel?</b>
-                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  In series, each resistor adds obstacle length to the single charge flow path (Req = R1 + R2 + R3). In parallel, each resistor adds an additional alternative pathway (cross-sectional area) for charge to bypass, strictly decreasing total resistance: 1/Req = 1/R1 + 1/R2 + 1/R3 &lt; min(Rk).
-                                </p>
-                              </div>
-                              <div>
-                                <b style={{ color: '#fef08a' }}>Q2. Why does the largest resistor drop the most voltage in series, while the smallest resistor draws the most current in parallel?</b>
-                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  In series, current I is identical through all components; by V = I·R, voltage drop is directly proportional to resistance (R3 = 330Ω drops 3.05V vs R1 = 100Ω dropping 0.92V). In parallel, voltage V is identical across all branches; by I = V/R, current is inversely proportional to resistance, so the 100Ω branch carries 60.0 mA while the 330Ω branch carries only 18.2 mA.
-                                </p>
-                              </div>
-                              <div>
-                                <b style={{ color: '#fef08a' }}>Q3. How does total power dissipation compare between series and parallel connections across the same 6 V supply?</b>
-                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  Total power is P = V² / Req. Because Req is 11.4× smaller in parallel (56.9 Ω vs 650 Ω), the parallel arrangement consumes and dissipates 11.4× more power (0.633 W vs 0.055 W) from the exact same 6 V source.
-                                </p>
-                              </div>
-                              <div>
-                                <b style={{ color: '#fef08a' }}>Q4. If one component fails open-circuit in a series circuit versus in a parallel circuit, what happens to the remaining components?</b>
-                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  In series, an open failure creates an infinite-impedance break in the single loop, extinguishing current to all components. In parallel, an open branch leaves the independent voltage paths of other branches intact, allowing the remaining branches to operate continuously without interruption.
-                                </p>
-                              </div>
-                              <div>
-                                <b style={{ color: '#fef08a' }}>Q5. Explain how the slope of the voltage vs. current graph directly proves Ohm&apos;s Law (R = ΔV / ΔI).</b>
-                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  Ohm&apos;s Law defines linear proportionality between electric potential and current: V = R·I. When plotted with Current on the x-axis and Voltage on the y-axis, the gradient ΔV / ΔI is constant and directly equals the resistance (m ≈ 330.0 Ω with R² ≥ 0.999).
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* SECTION D: SPECIAL RELATIVITY SCIENTIFIC INTERPRETATION & CONCEPTUAL REVIEW */}
-                      {stationId === 'relativity' && (
-                        <div style={{ marginTop: '20px' }}>
-                          <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
-                            <h5 style={{ margin: 0, color: '#fef08a', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                              Section D: Special Relativity Scientific Interpretation &amp; Conceptual Review
-                            </h5>
-                          </div>
-
-                          <div style={{ padding: '16px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px' }}>
-                            <h5 style={{ margin: '0 0 12px', color: '#f8fafc', fontSize: '13px' }}>
-                              🎓 Student Conceptual Review (7 Fundamental Relativistic Principles):
-                            </h5>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '11px' }}>
-                              <div>
-                                <b style={{ color: '#fef08a' }}>Q1. Constancy of the Speed of Light: Why is the speed of light c identical in both Frame S (lab) and Frame S&apos; (moving sled), regardless of source velocity?</b>
-                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  Einstein&apos;s second postulate states that light always propagates in empty space with a definite velocity c independent of the state of motion of the emitting body. Unlike classical Galilean relativity where velocities simply add (u&apos; = u + v), spacetime geometry is hyperbolic (Minkowski spacetime), ensuring Maxwell&apos;s electrodynamic equations remain invariant across all inertial frames.
-                                </p>
-                              </div>
-                              <div>
-                                <b style={{ color: '#fef08a' }}>Q2. Light-Clock Trajectory and Time Dilation: Why does the diagonal zigzag path traced by the photon in the lab frame necessitate time dilation (Δt = γ Δτ)?</b>
-                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  In the clock&apos;s rest frame S&apos;, the photon travels vertically 2D across the mirror gap. In the laboratory frame S, because the clock is translating horizontally at speed v, the photon must travel along two hypotenuses: 2L = 2√(D² + (vΔt/2)²). Since the speed of light c is invariant, traveling a longer distance at the exact same constant speed c requires a longer elapsed time: cΔt = 2√(D² + (vΔt/2)²), which rearranges algebraically to Δt = (2D/c) / √(1 - v²/c²) = γ Δτ.
-                                </p>
-                              </div>
-                              <div>
-                                <b style={{ color: '#fef08a' }}>Q3. Proper Time Definition: What constitutes proper time Δτ, and why is it always the minimum elapsed time measurable between two events?</b>
-                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  Proper time Δτ is the time interval measured by a single clock that is present at both the beginning and end of the event (co-moving rest frame). In any other inertial frame in relative motion, two spatially separated clocks are required to record the start and finish, and the interval is dilated by γ ≥ 1.0 (Δt = γ Δτ). Thus, the proper time is the invariant minimum elapsed time.
-                                </p>
-                              </div>
-                              <div>
-                                <b style={{ color: '#fef08a' }}>Q4. Longitudinal Length Contraction: Why does length contraction occur exclusively along the direction of relative motion, leaving transverse dimensions invariant?</b>
-                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  The Lorentz transformation mixes space and time only along the parallel axis of relative motion (x&apos; = γ(x - vt), t&apos; = γ(t - vx/c²)), while perpendicular spatial dimensions remain strictly invariant (y&apos; = y, z&apos; = z). If transverse lengths changed, a moving circular ring passing through a stationary cylinder would either fit or collide depending on which frame is chosen, creating a physical paradox.
-                                </p>
-                              </div>
-                              <div>
-                                <b style={{ color: '#fef08a' }}>Q5. Relativity of Simultaneity: Why are two events that occur simultaneously at different spatial locations in Frame S not simultaneous in Frame S&apos;?</b>
-                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  From the Lorentz transformation Δt&apos; = γ(Δt - vΔx/c²), if two events are simultaneous in Frame S (Δt = 0) but separated by spatial distance Δx ≠ 0, their temporal interval in Frame S&apos; evaluates to Δt&apos; = -γ v Δx / c² ≠ 0. Simultaneity is relative and frame-dependent for spatially separated events; only events occurring at the exact same point in spacetime maintain invariant simultaneity.
-                                </p>
-                              </div>
-                              <div>
-                                <b style={{ color: '#fef08a' }}>Q6. Limiting Behavior as β → 1: Why is it physically impossible for any massive particle to reach or exceed the speed of light (c)?</b>
-                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  As relative velocity ratio β = v/c approaches 1.0, the term √(1 - β²) approaches zero, causing the Lorentz factor γ to diverge toward infinity (γ → ∞). Consequently, both relativistic momentum p = γ m₀ v and relativistic kinetic energy K = (γ - 1) m₀ c² diverge asymptotically to infinity, requiring infinite work and energy to accelerate a massive body to light speed c.
-                                </p>
-                              </div>
-                              <div>
-                                <b style={{ color: '#fef08a' }}>Q7. Modern Mass-Energy Formulation: Explain why E = γ m₀ c² and K = (γ - 1) m₀ c² describe energy growth without invoking the outdated concept of &quot;relativistic mass&quot;.</b>
-                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  Modern relativistic physics defines mass m₀ as an invariant Lorentz scalar (the invariant Minkowski norm of the four-momentum vector p^μ p_μ = m₀² c²). Calling γ m₀ &quot;relativistic mass&quot; causes conceptual confusion with gravitational mass and longitudinal/transverse inertia. It is much clearer and physically consistent to recognize that mass is invariant, while total relativistic energy E = γ m₀ c² and kinetic energy K = (γ - 1) m₀ c² grow nonlinearly with velocity.
-                                </p>
-                              </div>
-                            </div>
-                          </div>
+                      {calculationFeedback && (
+                        <div className={`feedback-alert ${calculationStatus}`} style={{ marginTop: '14px' }}>
+                          {calculationFeedback}
                         </div>
                       )}
                     </>
                   )}
+                </div>
+              )}
 
-                  {/* 4. Formative Assessment Questions */}
-                  <div className="guided-questions-container" style={{ marginTop: '18px' }}>
-                    <b>Formative Assessment Questions:</b>
+              {/* STEP 9: OBSERVATIONS, SCIENTIFIC INTERPRETATION & CER CONCLUSION (30 pts) */}
+              {notebookStep === 8 && (
+                <div className="step-content">
+                  <div className="step-badge-row">
+                    <span className="step-points-pill">+30 Points</span>
+                    <h4>Step 9: Observations, Scientific Interpretation &amp; CER Conclusion</h4>
+                  </div>
+                  <p className="step-prompt">{station.steps[8]?.prompt || 'Record qualitative observations, interpret governing physical laws, and synthesize your final Claim–Evidence–Reasoning (CER) scientific conclusion in the lab notebook.'}</p>
+
+                  {/* SECTION A: QUALITATIVE OBSERVATIONS & DEDUCTIONS */}
+                  <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
+                    <h5 style={{ margin: 0, color: '#fef08a', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                      Section A: Qualitative Observations &amp; Deductions (Min 20 characters)
+                    </h5>
+                  </div>
+                  <div className="text-area-group">
+                    <label>
+                      <textarea
+                        rows={3}
+                        value={stationProgress.observations || stationProgress.analysis || ''}
+                        placeholder="Detail your qualitative observations regarding component behavior, display readouts, and experimental trends..."
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setProgress((prev) => ({
+                            ...prev,
+                            [stationId]: { ...prev[stationId], observations: val, analysis: val },
+                          }));
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {/* SECTION B: SCIENTIFIC INTERPRETATION & COMPARATIVE ANALYSIS */}
+                  <div className="section-divider" style={{ margin: '20px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
+                    <h5 style={{ margin: 0, color: '#d4af37', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                      Section B: Scientific Interpretation &amp; Comparative Analysis (Min 20 characters)
+                    </h5>
+                  </div>
+                  <div className="text-area-group">
+                    <label>
+                      <textarea
+                        rows={3}
+                        value={stationProgress.scientificInterpretation || ''}
+                        placeholder="Explain how your empirical findings reconcile with fundamental physical laws (Ohm's Law, Gaussian Optics, Lorentz Invariance)..."
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setProgress((prev) => ({
+                            ...prev,
+                            [stationId]: { ...prev[stationId], scientificInterpretation: val },
+                          }));
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {/* Circuits Series vs. Parallel Analysis */}
+                  {stationId === 'circuits' && (
+                    <div style={{ marginTop: '16px' }}>
+                      <div className="table-scroll" style={{ marginBottom: '14px' }}>
+                        <table className="trial-table">
+                          <thead>
+                            <tr>
+                              <th>Circuit Parameter</th>
+                              <th>Series Circuit (Exp C)</th>
+                              <th>Parallel Circuit (Exp D)</th>
+                              <th>Physical Principle / Scientific Law</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td><b>Equivalent Resistance (Req)</b></td>
+                              <td style={{ color: '#fef08a', fontWeight: 700 }}>650.0 Ω (R1 + R2 + R3)</td>
+                              <td style={{ color: '#38bdf8', fontWeight: 700 }}>56.90 Ω (1 / Σ(1/Rk))</td>
+                              <td>Parallel reduces resistance 11.4× below the smallest resistor</td>
+                            </tr>
+                            <tr>
+                              <td><b>Total Circuit Current (Itot at 6V)</b></td>
+                              <td style={{ color: '#d4af37' }}>9.23 mA (0.00923 A)</td>
+                              <td style={{ color: '#34d399' }}>105.45 mA (0.10545 A)</td>
+                              <td>Ohm&apos;s Law: Itot = Vs / Req (Parallel draws 11.4× more current)</td>
+                            </tr>
+                            <tr>
+                              <td><b>Current Behavior</b></td>
+                              <td>Identical everywhere (I1 = I2 = I3 = 9.23 mA)</td>
+                              <td>Branch division: I1 = 60.0 mA, I2 = 27.3 mA, I3 = 18.2 mA</td>
+                              <td>Kirchhoff&apos;s Current Law: Itot = I1 + I2 + I3</td>
+                            </tr>
+                            <tr>
+                              <td><b>Voltage Distribution</b></td>
+                              <td>Divides: V1 = 0.92V, V2 = 2.03V, V3 = 3.05V</td>
+                              <td>Identical across all: V1 = V2 = V3 = 6.00 V</td>
+                              <td>Kirchhoff&apos;s Voltage Law: Vs = Σ Vk (Series) vs Equal (Parallel)</td>
+                            </tr>
+                            <tr>
+                              <td><b>Total Power Dissipated (P = VI)</b></td>
+                              <td style={{ color: '#f59e0b' }}>0.0554 W (55.4 mW)</td>
+                              <td style={{ color: '#ef4444' }}>0.6327 W (632.7 mW)</td>
+                              <td>P = V² / Req (Parallel dissipates 11.4× more thermal energy)</td>
+                            </tr>
+                            <tr>
+                              <td><b>Impact of Open-Circuit Failure</b></td>
+                              <td>Entire circuit breaks; all current ceases (I = 0)</td>
+                              <td>Fault isolated; other parallel branches remain operational</td>
+                              <td>Universal engineering reason why building power distribution is parallel</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* 5 Student Conceptual Interpretation Questions */}
+                      <div style={{ padding: '14px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px' }}>
+                        <h5 style={{ margin: '0 0 10px', color: '#f8fafc', fontSize: '13px' }}>
+                          🎓 Student Conceptual Interpretation &amp; Laboratory Review:
+                        </h5>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '11px' }}>
+                          <div>
+                            <b style={{ color: '#fef08a' }}>Q1. Why does equivalent resistance increase when adding resistors in series, but decrease when adding resistors in parallel?</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                              In series, each resistor adds obstacle length to the single charge flow path (Req = R1 + R2 + R3). In parallel, each resistor adds an additional alternative pathway (cross-sectional area) for charge to bypass, strictly decreasing total resistance: 1/Req = 1/R1 + 1/R2 + 1/R3 &lt; min(Rk).
+                            </p>
+                          </div>
+                          <div>
+                            <b style={{ color: '#fef08a' }}>Q2. Why does the largest resistor drop the most voltage in series, while the smallest resistor draws the most current in parallel?</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                              In series, current I is identical through all components; by V = I·R, voltage drop is directly proportional to resistance (R3 = 330Ω drops 3.05V vs R1 = 100Ω dropping 0.92V). In parallel, voltage V is identical across all branches; by I = V/R, current is inversely proportional to resistance, so the 100Ω branch carries 60.0 mA while the 330Ω branch carries only 18.2 mA.
+                            </p>
+                          </div>
+                          <div>
+                            <b style={{ color: '#fef08a' }}>Q3. How does total power dissipation compare between series and parallel connections across the same 6 V supply?</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                              Total power is P = V² / Req. Because Req is 11.4× smaller in parallel (56.9 Ω vs 650 Ω), the parallel arrangement consumes and dissipates 11.4× more power (0.633 W vs 0.055 W) from the exact same 6 V source.
+                            </p>
+                          </div>
+                          <div>
+                            <b style={{ color: '#fef08a' }}>Q4. If one component fails open-circuit in a series circuit versus in a parallel circuit, what happens to the remaining components?</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                              In series, an open failure creates an infinite-impedance break in the single loop, extinguishing current to all components. In parallel, an open branch leaves the independent voltage paths of other branches intact, allowing the remaining branches to operate continuously without interruption.
+                            </p>
+                          </div>
+                          <div>
+                            <b style={{ color: '#fef08a' }}>Q5. Explain how the slope of the voltage vs. current graph directly proves Ohm&apos;s Law (R = ΔV / ΔI).</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                              Ohm&apos;s Law defines linear proportionality between electric potential and current: V = R·I. When plotted with Current on the x-axis and Voltage on the y-axis, the gradient ΔV / ΔI is constant and directly equals the resistance (m ≈ 330.0 Ω with R² ≥ 0.999).
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Relativity 7 Conceptual Review Principles */}
+                  {stationId === 'relativity' && (
+                    <div style={{ marginTop: '16px' }}>
+                      <div style={{ padding: '16px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px' }}>
+                        <h5 style={{ margin: '0 0 12px', color: '#f8fafc', fontSize: '13px' }}>
+                          🎓 Student Conceptual Review (7 Fundamental Relativistic Principles):
+                        </h5>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '11px' }}>
+                          <div>
+                            <b style={{ color: '#fef08a' }}>Q1. Constancy of the Speed of Light: Why is the speed of light c identical in both Frame S (lab) and Frame S&apos; (moving sled), regardless of source velocity?</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                              Einstein&apos;s second postulate states that light always propagates in empty space with a definite velocity c independent of the state of motion of the emitting body. Unlike classical Galilean relativity where velocities simply add (u&apos; = u + v), spacetime geometry is hyperbolic (Minkowski spacetime), ensuring Maxwell&apos;s electrodynamic equations remain invariant across all inertial frames.
+                            </p>
+                          </div>
+                          <div>
+                            <b style={{ color: '#fef08a' }}>Q2. Light-Clock Trajectory and Time Dilation: Why does the diagonal zigzag path traced by the photon in the lab frame necessitate time dilation (Δt = γ Δτ)?</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                              In the clock&apos;s rest frame S&apos;, the photon travels vertically 2D across the mirror gap. In the laboratory frame S, because the clock is translating horizontally at speed v, the photon must travel along two hypotenuses: 2L = 2√(D² + (vΔt/2)²). Since the speed of light c is invariant, traveling a longer distance at the exact same constant speed c requires a longer elapsed time: cΔt = 2√(D² + (vΔt/2)²), which rearranges algebraically to Δt = (2D/c) / √(1 - v²/c²) = γ Δτ.
+                            </p>
+                          </div>
+                          <div>
+                            <b style={{ color: '#fef08a' }}>Q3. Proper Time Definition: What constitutes proper time Δτ, and why is it always the minimum elapsed time measurable between two events?</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                              Proper time Δτ is the time interval measured by a single clock that is present at both the beginning and end of the event (co-moving rest frame). In any other inertial frame in relative motion, two spatially separated clocks are required to record the start and finish, and the interval is dilated by γ ≥ 1.0 (Δt = γ Δτ). Thus, the proper time is the invariant minimum elapsed time.
+                            </p>
+                          </div>
+                          <div>
+                            <b style={{ color: '#fef08a' }}>Q4. Longitudinal Length Contraction: Why does length contraction occur exclusively along the direction of relative motion, leaving transverse dimensions invariant?</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                              The Lorentz transformation mixes space and time only along the parallel axis of relative motion (x&apos; = γ(x - vt), t&apos; = γ(t - vx/c²)), while perpendicular spatial dimensions remain strictly invariant (y&apos; = y, z&apos; = z). If transverse lengths changed, a moving circular ring passing through a stationary cylinder would either fit or collide depending on which frame is chosen, creating a physical paradox.
+                            </p>
+                          </div>
+                          <div>
+                            <b style={{ color: '#fef08a' }}>Q5. Relativity of Simultaneity: Why are two events that occur simultaneously at different spatial locations in Frame S not simultaneous in Frame S&apos;?</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                              From the Lorentz transformation Δt&apos; = γ(Δt - vΔx/c²), if two events are simultaneous in Frame S (Δt = 0) but separated by spatial distance Δx ≠ 0, their temporal interval in Frame S&apos; evaluates to Δt&apos; = -γ v Δx / c² ≠ 0. Simultaneity is relative and frame-dependent for spatially separated events; only events occurring at the exact same point in spacetime maintain invariant simultaneity.
+                            </p>
+                          </div>
+                          <div>
+                            <b style={{ color: '#fef08a' }}>Q6. Limiting Behavior as β → 1: Why is it physically impossible for any massive particle to reach or exceed the speed of light (c)?</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                              As relative velocity ratio β = v/c approaches 1.0, the term √(1 - β²) approaches zero, causing the Lorentz factor γ to diverge toward infinity (γ → ∞). Consequently, both relativistic momentum p = γ m₀ v and relativistic kinetic energy K = (γ - 1) m₀ c² diverge asymptotically to infinity, requiring infinite work and energy to accelerate a massive body to light speed c.
+                            </p>
+                          </div>
+                          <div>
+                            <b style={{ color: '#fef08a' }}>Q7. Modern Mass-Energy Formulation: Explain why E = γ m₀ c² and K = (γ - 1) m₀ c² describe energy growth without invoking the outdated concept of &quot;relativistic mass&quot;.</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                              Modern relativistic physics defines mass m₀ as an invariant Lorentz scalar (the invariant Minkowski norm of the four-momentum vector p^μ p_μ = m₀² c²). Calling γ m₀ &quot;relativistic mass&quot; causes conceptual confusion with gravitational mass and longitudinal/transverse inertia. It is much clearer and physically consistent to recognize that mass is invariant, while total relativistic energy E = γ m₀ c² and kinetic energy K = (γ - 1) m₀ c² grow nonlinearly with velocity.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SECTION C: CLAIM-EVIDENCE-REASONING (CER) CONCLUSION */}
+                  <div className="section-divider" style={{ margin: '22px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
+                    <h5 style={{ margin: 0, color: '#fef08a', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                      Section C: Claim–Evidence–Reasoning (CER) Scientific Conclusion
+                    </h5>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+                    <label>
+                      <b style={{ color: '#38bdf8', fontSize: '12px' }}>1. Scientific Claim (Direct statement answering the research question, min 15 chars):</b>
+                      <input
+                        type="text"
+                        style={{ width: '100%', padding: '8px 10px', marginTop: '4px', background: '#090d16', border: '1px solid rgba(56, 189, 248, 0.5)', borderRadius: '4px', color: '#f8fafc', fontSize: '12px' }}
+                        value={stationProgress.claim || ''}
+                        placeholder="State your scientific claim (e.g., Empirical measurements confirm Ohm's law with linear voltage-current proportionality)..."
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setProgress((prev) => ({
+                            ...prev,
+                            [stationId]: { ...prev[stationId], claim: val },
+                          }));
+                        }}
+                      />
+                    </label>
+                    <label>
+                      <b style={{ color: '#34d399', fontSize: '12px' }}>2. Experimental Evidence (Specific numerical data from all 5 trials, min 20 chars):</b>
+                      <textarea
+                        rows={2}
+                        value={stationProgress.evidence || ''}
+                        placeholder="Cite specific numerical data from your trials (e.g., Across voltages 2V to 10V, current scaled linearly from 6.06mA to 30.30mA, yielding R = 330Ω with R² = 0.999)..."
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setProgress((prev) => ({
+                            ...prev,
+                            [stationId]: { ...prev[stationId], evidence: val },
+                          }));
+                        }}
+                      />
+                    </label>
+                    <label>
+                      <b style={{ color: '#fef08a', fontSize: '12px' }}>3. Scientific Reasoning (Physical principles explaining why the evidence supports the claim, min 25 chars):</b>
+                      <textarea
+                        rows={2}
+                        value={stationProgress.reasoning || stationProgress.conclusion || ''}
+                        placeholder="Explain the underlying physical reasoning (e.g., By Ohm's law V = IR, charge carriers encounter constant collision resistance in the conductive lattice)..."
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setProgress((prev) => ({
+                            ...prev,
+                            [stationId]: { ...prev[stationId], reasoning: val, conclusion: val },
+                          }));
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {/* SECTION D: FORMATIVE ASSESSMENT QUESTIONS */}
+                  <div className="guided-questions-container" style={{ marginTop: '20px' }}>
+                    <b style={{ color: '#fef08a' }}>Section D: Formative Assessment Conceptual Questions:</b>
                     {ROOM3_GUIDE_QUESTIONS[stationId].map((q, qIdx) => {
                       const userChoice = stationProgress.guideAnswers?.[qIdx] ?? -1;
                       return (
@@ -5296,9 +5251,9 @@ export default function Room3Experience() {
                     })}
                   </div>
 
-                  {/* 5. Identified Sources of Uncertainty */}
-                  <div className="errors-checklist" style={{ marginTop: '16px' }}>
-                    <b>Identified Sources of Experimental Uncertainty:</b>
+                  {/* SECTION E: IDENTIFIED SOURCES OF EXPERIMENTAL UNCERTAINTY */}
+                  <div className="errors-checklist" style={{ marginTop: '18px' }}>
+                    <b style={{ color: '#d4af37' }}>Section E: Identified Sources of Experimental Uncertainty:</b>
                     {station.errors.map((err) => (
                       <label key={err} className="checkbox-row">
                         <input
@@ -5311,27 +5266,8 @@ export default function Room3Experience() {
                     ))}
                   </div>
 
-                  {/* 6. Scientific Observations & Deductions */}
-                  <div className="text-area-group" style={{ marginTop: '16px' }}>
-                    <label>
-                      <b>Scientific Observations & Deductions:</b>
-                      <textarea
-                        rows={3}
-                        value={stationProgress.analysis}
-                        placeholder="Detail your empirical findings regarding governing laws, slopes, and linear circuit behavior..."
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setProgress((prev) => ({
-                            ...prev,
-                            [stationId]: { ...prev[stationId], analysis: val },
-                          }));
-                        }}
-                      />
-                    </label>
-                  </div>
-
-                  {/* 7. Student Metadata & Certification Card */}
-                  <div className="certification-card" style={{ marginTop: '18px' }}>
+                  {/* SECTION F: STUDENT METADATA & CERTIFICATION CARD */}
+                  <div className="certification-card" style={{ marginTop: '20px' }}>
                     <div className="cert-header">
                       <span className="cert-seal">🎓</span>
                       <h5>Physics 300 Certified Experimental Record</h5>
@@ -5379,9 +5315,9 @@ export default function Room3Experience() {
                     </div>
                   </div>
 
-                  {calculationFeedback && (
-                    <div className={`feedback-alert ${calculationStatus}`} style={{ marginTop: '14px' }}>
-                      {calculationFeedback}
+                  {conclusionFeedback && (
+                    <div className="feedback-alert correct" style={{ marginTop: '14px' }}>
+                      {conclusionFeedback}
                     </div>
                   )}
 
@@ -5406,7 +5342,7 @@ export default function Room3Experience() {
                         fontWeight: 700,
                       }}
                       onClick={downloadReportPdf}
-                      title={!reportReady ? 'Complete all 5 3D trials, verify Step 8 computation, answer analysis questions, and fill student credentials to unlock report certification.' : 'Download Official Certified PDF Report'}
+                      title={!reportReady ? 'Complete all 5 3D trials, verify Step 8 computation, submit Step 9 CER conclusion, and fill student credentials to unlock report certification.' : 'Download Official Certified PDF Report'}
                     >
                       {reportReady ? '📄 Download Certified PDF Report' : '🔒 Certified Report Locked'}
                     </button>
@@ -5414,10 +5350,10 @@ export default function Room3Experience() {
                       type="button"
                       className="notebook-action"
                       style={{ background: '#059669', borderColor: '#10b981', fontWeight: 700 }}
-                      disabled={stationProgress.completed[7]}
-                      onClick={verifyCalculations}
+                      disabled={stationProgress.completed[8]}
+                      onClick={submitConclusion}
                     >
-                      {stationProgress.completed[7] ? '✓ Step 8 Complete (20/20 pts) · Certified' : 'Complete Step 8 & Certify Lab Notebook (+20 pts)'}
+                      {stationProgress.completed[8] ? '✓ Step 9 Complete (30/30 pts) · Certified' : 'Submit Scientific Conclusion &amp; Certify (+30 pts)'}
                     </button>
                   </div>
 
@@ -5431,7 +5367,7 @@ export default function Room3Experience() {
                     fontSize: '11px',
                   }}>
                     <b style={{ color: '#d4af37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Official Certification Prerequisites ({[allTrialsLogged, isComputationVerified, allGuideCorrect, isStudentInfoFilled].filter(Boolean).length} / 4 Met):
+                      Official Certification Prerequisites ({[allTrialsLogged, isComputationVerified, isConclusionSubmitted, isStudentInfoFilled].filter(Boolean).length} / 4 Met):
                     </b>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', marginTop: '8px' }}>
                       <span style={{ color: allTrialsLogged ? '#34d399' : '#f59e0b', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -5442,13 +5378,13 @@ export default function Room3Experience() {
                         <span>{isComputationVerified ? '✅' : '⏳'}</span>
                         <b>Step 8 Computation:</b> {isComputationVerified ? 'Verified' : 'Pending Verification'}
                       </span>
-                      <span style={{ color: allGuideCorrect ? '#34d399' : '#f59e0b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>{allGuideCorrect ? '✅' : '⏳'}</span>
-                        <b>Analysis Questions:</b> {allGuideCorrect ? 'All Correct' : 'Pending 100%'}
+                      <span style={{ color: isConclusionSubmitted ? '#34d399' : '#f59e0b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>{isConclusionSubmitted ? '✅' : '⏳'}</span>
+                        <b>Step 9 Conclusion:</b> {isConclusionSubmitted ? 'Submitted' : 'Pending Submission'}
                       </span>
                       <span style={{ color: isStudentInfoFilled ? '#34d399' : '#f59e0b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span>{isStudentInfoFilled ? '✅' : '⏳'}</span>
-                        <b>Student Credentials:</b> {isStudentInfoFilled ? 'Complete' : 'Name, ID & Sec Required'}
+                        <b>Student Credentials:</b> {isStudentInfoFilled ? 'Complete' : 'Name, ID &amp; Sec Required'}
                       </span>
                     </div>
                   </div>
@@ -5479,8 +5415,8 @@ export default function Room3Experience() {
                 <button
                   type="button"
                   className="primary-button"
-                  disabled={notebookStep >= 7 || (notebookStep >= stationProgress.currentStep && !stationProgress.completed[notebookStep])}
-                  onClick={() => setNotebookStep((s) => Math.min(7, s + 1))}
+                  disabled={notebookStep >= TOTAL_STEPS - 1 || (notebookStep >= stationProgress.currentStep && !stationProgress.completed[notebookStep])}
+                  onClick={() => setNotebookStep((s) => Math.min(TOTAL_STEPS - 1, s + 1))}
                 >
                   Next step →
                 </button>

@@ -1480,9 +1480,9 @@ export function createRoom3Scene(
     let sy = Math.max(1.2, r * Math.sin(elevation));
     let sz = r * Math.cos(elevation) * Math.sin(theta);
 
-    // Broad exclusion zone for Moon backdrop behind East Window (z in [-9.5, 0.5], y in [0.8, 8.5])
-    // Divert any star in this corridor to the open West sky
-    if (sx > 0 && sz >= -9.5 && sz <= 0.5 && sy >= 0.8 && sy <= 8.5) {
+    // Broad airtight exclusion cone for Moon backdrop behind East Window
+    // Moon is at (23.0, 3.0, -4.5). Divert any star in this entire East window vista to the open West sky
+    if (sx > 0 && sz <= 8.0 && sy <= 40.0) {
       sx = -Math.abs(sx);
     }
     const dist = Math.sqrt(sx * sx + sy * sy + sz * sz);
@@ -1490,7 +1490,7 @@ export function createRoom3Scene(
     const uY = sy / dist;
     const uZ = sz / dist;
     const dotMoon = uX * 0.973 + uY * 0.127 - uZ * 0.190;
-    if (dotMoon > 0.950) {
+    if (dotMoon > 0.85) {
       sx = -Math.abs(sx);
     }
 
@@ -1562,12 +1562,11 @@ export function createRoom3Scene(
   const diffractionTex = createDiffractionSpikeTexture();
 
   const landmarkDefs = [
-    // Outside East Windows (distant vistas cleanly clear of Moon at z = -4.5)
-    { name: 'Betelgeuse', x: 50.0, y: 8.0, z: 0.0, color: 0xfba571, scale: 2.6, speed: 2.4, phase: 1.2 },
-    { name: 'Aldebaran', x: 46.0, y: 6.2, z: 5.5, color: 0xfde047, scale: 2.4, speed: 2.8, phase: 5.3 },
-    { name: 'Capella', x: 52.0, y: 11.5, z: -1.5, color: 0xfef08a, scale: 2.3, speed: 2.2, phase: 2.7 },
-    { name: 'Procyon', x: 48.0, y: 7.2, z: 3.2, color: 0xa5f3fc, scale: 2.4, speed: 3.0, phase: 4.1 },
-    // Outside West Windows (Sirius relocated here - glorious sapphire beacon in open west sky)
+    // Outside West Windows & North Clerestory (Crystal clear vistas completely away from Moon at East Window)
+    { name: 'Betelgeuse', x: -50.0, y: 8.0, z: 8.0, color: 0xfba571, scale: 2.6, speed: 2.4, phase: 1.2 },
+    { name: 'Aldebaran', x: -46.0, y: 6.2, z: 12.5, color: 0xfde047, scale: 2.4, speed: 2.8, phase: 5.3 },
+    { name: 'Capella', x: -52.0, y: 11.5, z: -10.5, color: 0xfef08a, scale: 2.3, speed: 2.2, phase: 2.7 },
+    { name: 'Procyon', x: -48.0, y: 7.2, z: 9.2, color: 0xa5f3fc, scale: 2.4, speed: 3.0, phase: 4.1 },
     { name: 'Sirius', x: -48.0, y: 7.0, z: -4.5, color: 0x93c5fd, scale: 2.8, speed: 3.2, phase: 0.1 },
     { name: 'Rigel', x: -50.0, y: 8.2, z: -1.0, color: 0x67e8f9, scale: 2.6, speed: 3.7, phase: 2.4 },
     { name: 'Vega', x: -52.0, y: 10.0, z: 0.0, color: 0xa5f3fc, scale: 2.7, speed: 3.0, phase: 4.8 },
@@ -1625,7 +1624,7 @@ export function createRoom3Scene(
     new THREE.SphereGeometry(2.1, 64, 64),
     moonMaterial
   );
-  moonMesh.renderOrder = 20;
+  moonMesh.renderOrder = 0;
   moonGroup.add(moonMesh);
 
   const objLoader = new OBJLoader();
@@ -1636,7 +1635,7 @@ export function createRoom3Scene(
         if ((child as THREE.Mesh).isMesh) {
           const m = child as THREE.Mesh;
           m.material = moonMaterial;
-          m.renderOrder = 20;
+          m.renderOrder = 0;
           m.castShadow = false;
           m.receiveShadow = false;
         }
@@ -2600,6 +2599,16 @@ export function createRoom3Scene(
   );
   railGroup.add(rail);
 
+  registerInteractable(rail, {
+    id: 'optics-rail',
+    stationId: 'optics',
+    category: 'OPTICAL BENCH',
+    name: 'Graduated Metric Optical Bench Rail',
+    description: ROOM3_EQUIPMENT_DESCRIPTIONS['optics-rail'] || 'Precision metric rail holding laser diode, goniometer prism mount, and micrometric diffraction screen.',
+    action: 'Examine Optical Alignment',
+    readout: 'Alignment: Paraxial collinear · Scale: 0 to 200 cm',
+  });
+
   // Load High-Fidelity Optical Rail System GLB Model
   gltfLoader.load('/assets/room-3/optics/optical_rail_system.glb', (gltf) => {
     const model = gltf.scene;
@@ -2839,6 +2848,16 @@ export function createRoom3Scene(
     material(0x1e293b, { metalness: 0.9, roughness: 0.2 })
   );
   relativityGroup.add(track);
+
+  registerInteractable(track, {
+    id: 'relativity-accelerator',
+    stationId: 'relativity',
+    category: 'ACCELERATOR BEAMLINE',
+    name: 'Relativistic Synchrotron Maglev Beamline',
+    description: ROOM3_EQUIPMENT_DESCRIPTIONS['relativity-accelerator'] || 'Relativistic linear beam pipe demonstrating particle momentum p = γ m₀ v and Cherenkov emission.',
+    action: 'Examine Synchrotron Beamline',
+    readout: `Beamline: Synchrotron Quadrupole · Active β: ${(currentRelativity.beta).toFixed(3)}c`,
+  });
 
   // Load High-Fidelity Maglev Beamline GLB Model
   gltfLoader.load('/assets/room-3/relativity/maglev_beamline.glb', (gltf) => {
