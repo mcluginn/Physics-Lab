@@ -70,35 +70,57 @@ import { Room3GraphicsModal } from './Room3GraphicsModal';
 const STORAGE_KEY = 'physics_lab_room_3_progress';
 
 const INSPECTION_TARGETS: Record<Room3StationId, string[]> = {
-  circuits: ['circuits-power-switch', 'circuits-voltage-knob', 'circuits-oscilloscope', 'circuits-topology-selector'],
-  optics: ['optics-laser', 'optics-angle-dial', 'optics-screen'],
-  relativity: ['relativity-velocity-dial', 'relativity-light-clock', 'relativity-contracting-rod'],
+  circuits: ['circuits-power-switch', 'circuits-multimeter', 'circuits-oscilloscope', 'circuits-topology-selector'],
+  optics: ['optics-laser', 'optics-angle-dial', 'optics-screen', 'optics-rail'],
+  relativity: ['relativity-velocity-dial', 'relativity-light-clock', 'relativity-contracting-rod', 'relativity-accelerator'],
+};
+
+const INSPECTION_LABELS: Record<string, string> = {
+  'circuits-power-switch': 'DC Power Supply',
+  'circuits-multimeter': 'Fluke 87V Digital Multimeter',
+  'circuits-oscilloscope': 'Tektronix Oscilloscope',
+  'circuits-topology-selector': 'Breadboard Terminal Matrix',
+  'optics-laser': 'Tunable Laser Source',
+  'optics-angle-dial': 'Goniometer Precision Dial',
+  'optics-screen': 'Observation & Detector Screen',
+  'optics-rail': 'Precision Optical Rail Bench',
+  'relativity-velocity-dial': 'Relativistic Velocity Dial',
+  'relativity-light-clock': 'Atomic Transverse Light Clock',
+  'relativity-contracting-rod': 'Lorentz Contracting Meter-Rod',
+  'relativity-accelerator': 'Maglev Particle Accelerator',
 };
 
 const GUIDANCE_LABELS: Record<string, string> = {
   'circuits-placard': 'circuits reference board',
   'circuits-power-switch': 'power supply switch',
   'circuits-voltage-knob': 'voltage regulator dial',
+  'circuits-multimeter': 'Fluke digital multimeter',
   'circuits-oscilloscope': 'oscilloscope display',
   'circuits-topology-selector': 'RLC breadboard matrix',
+  'circuits-probe-r1': 'resistor R1 probe point',
+  'circuits-probe-r2': 'resistor R2 probe point',
+  'circuits-probe-r3': 'resistor R3 probe point',
+  'circuits-series-jumper': 'series ammeter jumper break',
   'circuits-clipboard': 'circuit trials clipboard',
   'optics-placard': 'optics reference board',
   'optics-laser': 'tunable laser source',
   'optics-angle-dial': 'goniometer prism dial',
   'optics-screen': 'interference observation screen',
+  'optics-rail': 'optical rail bench',
   'optics-clipboard': 'optics trials clipboard',
   'relativity-placard': 'relativity reference board',
   'relativity-velocity-dial': 'relativistic velocity dial',
   'relativity-contracting-rod': 'contracting meter-rod',
   'relativity-light-clock': 'atomic light-clock',
+  'relativity-accelerator': 'maglev particle accelerator',
   'relativity-clipboard': 'relativity trials clipboard',
   'campus-door': 'corridor exit doors',
 };
 
 const INSPECTION_TARGET: Record<Room3StationId, string> = {
-  circuits: 'circuits-oscilloscope',
+  circuits: 'circuits-power-switch',
   optics: 'optics-laser',
-  relativity: 'relativity-light-clock',
+  relativity: 'relativity-velocity-dial',
 };
 
 const RUN_TARGET: Record<Room3StationId, string> = {
@@ -659,6 +681,70 @@ export default function Room3Experience() {
     });
   };
 
+  const handleInspectApparatus = (targetId: string) => {
+    let canonicalId = targetId;
+    if (['circuits-power-switch', 'circuits-voltage-knob'].includes(targetId)) {
+      canonicalId = 'circuits-power-switch';
+    } else if (['circuits-multimeter', 'circuits-dmm-dial', 'circuits-dmm-jack'].includes(targetId)) {
+      canonicalId = 'circuits-multimeter';
+    } else if (['circuits-oscilloscope'].includes(targetId)) {
+      canonicalId = 'circuits-oscilloscope';
+    } else if (['circuits-topology-selector', 'circuits-probe-r1', 'circuits-probe-r2', 'circuits-probe-r3', 'circuits-series-jumper'].includes(targetId)) {
+      canonicalId = 'circuits-topology-selector';
+    } else if (['optics-laser'].includes(targetId)) {
+      canonicalId = 'optics-laser';
+    } else if (['optics-angle-dial'].includes(targetId)) {
+      canonicalId = 'optics-angle-dial';
+    } else if (['optics-screen'].includes(targetId)) {
+      canonicalId = 'optics-screen';
+    } else if (['optics-rail', 'optics-submode-toggle'].includes(targetId)) {
+      canonicalId = 'optics-rail';
+    } else if (['relativity-velocity-dial'].includes(targetId)) {
+      canonicalId = 'relativity-velocity-dial';
+    } else if (['relativity-light-clock'].includes(targetId)) {
+      canonicalId = 'relativity-light-clock';
+    } else if (['relativity-contracting-rod'].includes(targetId)) {
+      canonicalId = 'relativity-contracting-rod';
+    } else if (['relativity-accelerator'].includes(targetId)) {
+      canonicalId = 'relativity-accelerator';
+    }
+
+    const required = INSPECTION_TARGETS[stationId];
+    if (!required || !required.includes(canonicalId)) return;
+
+    setProgress((prev) => {
+      const st = { ...prev[stationId] };
+      if (!st.inspected.includes(canonicalId)) {
+        const nextInspected = [...st.inspected, canonicalId];
+        const allDone = required.every((id) => nextInspected.includes(id));
+        const updatedCompleted = [...st.completed];
+        let newCurrentStep = st.currentStep;
+
+        if (allDone && !st.completed[0]) {
+          updatedCompleted[0] = true;
+          newCurrentStep = Math.max(st.currentStep, 1);
+          playTone(880, 'sine', 0.25, 0.4);
+          setGuidedStepIndex(1);
+          setEquipmentMessage(`🎉 Step 1 Complete (+10 pts)! All 4 apparatus instruments inspected. Advancing to Step 2.`);
+        } else {
+          playTone(587.33, 'triangle', 0.12, 0.3);
+          setEquipmentMessage(`✓ ${INSPECTION_LABELS[canonicalId] || canonicalId} inspected (${nextInspected.length}/${required.length}).`);
+        }
+
+        return {
+          ...prev,
+          [stationId]: {
+            ...st,
+            inspected: nextInspected,
+            completed: updatedCompleted,
+            currentStep: newCurrentStep,
+          },
+        };
+      }
+      return prev;
+    });
+  };
+
   const handleEquipmentAction = (id: string) => {
     playTone(440, 'triangle', 0.08, 0.2);
     if (id === 'campus-door') {
@@ -667,26 +753,17 @@ export default function Room3Experience() {
       });
       return;
     }
-    // Inspect tracking for Step 0
-    setProgress((prev) => {
-      const st = { ...prev[stationId] };
-      if (!st.inspected.includes(id)) {
-        const inspected = [...st.inspected, id];
-        return {
-          ...prev,
-          [stationId]: { ...st, inspected },
-        };
-      }
-      return prev;
-    });
+
+    // Inspect tracking for Step 1
+    handleInspectApparatus(id);
 
     if (id.includes('placard') || id.includes('clipboard')) {
       setNotebookOpen(true);
     } else if (['circuits-multimeter', 'circuits-power-switch', 'circuits-topology-selector', 'circuits-oscilloscope'].includes(id)) {
       handleSetCloseup('closeup');
-    } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen'].includes(id)) {
+    } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen', 'optics-rail'].includes(id)) {
       handleSetCloseup('closeup');
-    } else if (['relativity-velocity-dial', 'relativity-contracting-rod', 'relativity-light-clock'].includes(id)) {
+    } else if (['relativity-velocity-dial', 'relativity-contracting-rod', 'relativity-light-clock', 'relativity-accelerator'].includes(id)) {
       handleSetCloseup('closeup');
     }
   };
@@ -1390,6 +1467,7 @@ export default function Room3Experience() {
             dmmReading={dmmReading}
             trials={stationProgress.trials}
             measurementWarning={measurementWarning}
+            onInspectApparatus={handleInspectApparatus}
             onUpdateCircuits={(patch) => {
               setCircuits((prev) => {
                 const next = { ...prev, ...patch };
@@ -1986,19 +2064,22 @@ export default function Room3Experience() {
             <div className="guided-stepper-row" role="tablist" aria-label="Experiment Steps">
               {currentCurriculum.steps.map((st, idx) => {
                 const isCur = idx === guidedStepIndex;
-                const isPassed = idx < guidedStepIndex;
+                const isDone = Boolean(stationProgress.completed[idx]);
+                const isLocked = idx > stationProgress.currentStep && !isDone;
                 return (
                   <button
                     key={st.id}
                     type="button"
-                    className={`guided-step-dot ${isCur ? 'active' : ''} ${isPassed ? 'completed' : ''}`}
+                    disabled={isLocked}
+                    className={`guided-step-dot ${isCur ? 'active' : ''} ${isDone ? 'completed' : ''} ${isLocked ? 'locked' : ''}`}
                     onClick={() => {
+                      if (isLocked) return;
                       setGuidedStepIndex(idx);
                       setShowGuidedHint(false);
                     }}
-                    title={st.title}
+                    title={isLocked ? `Step ${idx + 1} is locked until previous steps are completed.` : st.title}
                   >
-                    {isPassed ? '✓' : idx + 1}
+                    {isDone ? '✓' : isLocked ? '🔒' : idx + 1}
                   </button>
                 );
               })}
@@ -3031,33 +3112,39 @@ export default function Room3Experience() {
                   <p className="step-prompt">{station.steps[0].prompt}</p>
 
                   <div className="equipment-checklist">
-                    <b>Station Component Physical Inspection Status:</b>
+                    <b style={{ color: '#fef08a' }}>
+                      Station Component Physical Inspection Status ({stationProgress.inspected.filter((id) => INSPECTION_TARGETS[stationId].includes(id)).length} / {INSPECTION_TARGETS[stationId].length} Inspected):
+                    </b>
                     <ul style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px', padding: 0 }}>
                       {INSPECTION_TARGETS[stationId].map((tgt) => {
                         const isInspected = stationProgress.inspected.includes(tgt);
+                        const label = INSPECTION_LABELS[tgt] || tgt.replace(`${stationId}-`, '').replace(/-/g, ' ').toUpperCase();
                         return (
                           <li
                             key={tgt}
                             className={isInspected ? 'done' : ''}
                             style={{
-                              cursor: 'default',
-                              padding: '8px 12px',
-                              background: isInspected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(35, 12, 20, 0.8)',
-                              border: isInspected ? '1.5px solid #10b981' : '1px solid rgba(212, 175, 55, 0.35)',
+                              cursor: 'pointer',
+                              padding: '10px 12px',
+                              background: isInspected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(53, 18, 29, 0.9)',
+                              border: isInspected ? '1.5px solid #10b981' : '1px solid rgba(212, 175, 55, 0.45)',
                               borderRadius: '6px',
                               listStyle: 'none',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between',
                               gap: '8px',
+                              transition: 'all 0.2s ease',
                             }}
+                            onClick={() => handleInspectApparatus(tgt)}
+                            title={isInspected ? 'Component verified' : 'Click to inspect this apparatus component'}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span>{isInspected ? '✅' : '🔍'}</span>
-                              <span style={{ fontSize: '12px', fontWeight: 600 }}>{tgt.replace(`${stationId}-`, '').replace(/-/g, ' ').toUpperCase()}</span>
+                              <span style={{ fontSize: '14px' }}>{isInspected ? '✅' : '🔍'}</span>
+                              <span style={{ fontSize: '12px', fontWeight: 600, color: isInspected ? '#34d399' : '#e9dfc9' }}>{label}</span>
                             </div>
-                            <span style={{ fontSize: '10px', color: isInspected ? '#34d399' : '#94a3b8', fontWeight: 700 }}>
-                              {isInspected ? '✓ Inspected' : 'Pending 3D'}
+                            <span style={{ fontSize: '10px', color: isInspected ? '#34d399' : '#d4af37', fontWeight: 700 }}>
+                              {isInspected ? '✓ Inspected' : 'Click to Inspect'}
                             </span>
                           </li>
                         );
@@ -3961,181 +4048,207 @@ export default function Room3Experience() {
                     </h5>
                   </div>
 
-                  {/* 1. Per-Trial Formula Substitution Display */}
-                  <div className="computation-cards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '16px' }}>
-                    {stationProgress.trials.map((t, i) => {
-                      if (stationId === 'circuits') {
-                        const v = Number(t.measuredV ?? t.vs ?? 4.0);
-                        const iA = Number(t.measuredI_A ?? (typeof t.measuredI_mA !== 'undefined' ? Number(t.measuredI_mA) / 1000 : null) ?? t.current ?? 0.00615);
-                        const i_mA = Number(t.measuredI_mA ?? (iA * 1000));
-                        const r = Number(t.resistance ?? ((v * 1000) / i_mA));
-                        const currentInput = stationProgress.calculations?.[i] || r.toFixed(1);
-                        return (
-                          <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
-                            <span style={{ color: '#d4af37', fontWeight: 700 }}>TRIAL #{i + 1}</span>
-                            <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
-                              R_{i + 1} = V_{i + 1} / I_{i + 1}
-                            </div>
-                            <div style={{ color: '#94a3b8' }}>
-                              = {v.toFixed(2)}V / {i_mA.toFixed(2)}mA
-                            </div>
-                            <div style={{ fontWeight: 700, color: '#fef08a', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                              <span>=</span>
-                              <input
-                                type="text"
-                                value={currentInput}
-                                onChange={(e) => handleCalculationChange(i, e.target.value)}
-                                style={{ width: '56px', padding: '2px 4px', fontSize: '11px', background: '#090d16', color: '#fef08a', border: '1px solid #d4af37', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
-                              />
-                              <span>Ω</span>
-                            </div>
-                          </div>
-                        );
-                      } else if (stationId === 'optics') {
-                        const u = Number(t.u ?? t.paramA ?? 30);
-                        const v = Number(t.v ?? t.measured ?? 60);
-                        const f = Number(t.f_exp ?? ((u * v) / (u + v)));
-                        const currentInput = stationProgress.calculations?.[i] || f.toFixed(2);
-                        return (
-                          <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
-                            <span style={{ color: '#10b981', fontWeight: 700 }}>TRIAL #{i + 1}</span>
-                            <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
-                              f_{i + 1} = (u·v)/(u+v)
-                            </div>
-                            <div style={{ color: '#94a3b8' }}>
-                              = ({u}·{v.toFixed(1)})/({u}+{v.toFixed(1)})
-                            </div>
-                            <div style={{ fontWeight: 700, color: '#34d399', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                              <span>=</span>
-                              <input
-                                type="text"
-                                value={currentInput}
-                                onChange={(e) => handleCalculationChange(i, e.target.value)}
-                                style={{ width: '56px', padding: '2px 4px', fontSize: '11px', background: '#090d16', color: '#34d399', border: '1px solid #10b981', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
-                              />
-                              <span>cm</span>
-                            </div>
-                          </div>
-                        );
-                      } else {
-                        const beta = Number(t.beta ?? 0.1);
-                        const gamma = Number(t.measuredGamma ?? t.gamma ?? (1 / Math.sqrt(1 - beta * beta)));
-                        const currentInput = stationProgress.calculations?.[i] || gamma.toFixed(4);
-                        return (
-                          <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
-                            <span style={{ color: '#fef08a', fontWeight: 700 }}>TRIAL #{i + 1}</span>
-                            <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
-                              γ_{i + 1} = 1/√(1-β²)
-                            </div>
-                            <div style={{ color: '#94a3b8' }}>
-                              = 1/√(1-{beta}²)
-                            </div>
-                            <div style={{ fontWeight: 700, color: '#fef08a', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                              <span>=</span>
-                              <input
-                                type="text"
-                                value={currentInput}
-                                onChange={(e) => handleCalculationChange(i, e.target.value)}
-                                style={{ width: '60px', padding: '2px 4px', fontSize: '11px', background: '#090d16', color: '#fef08a', border: '1px solid #d4af37', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      }
-                    })}
-                  </div>
-
-                  {/* 2. Statistical Analysis & Error Quantification */}
-                  {stationId === 'circuits' && (
-                    <div className="stats-breakdown-card" style={{ padding: '14px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px', marginBottom: '16px' }}>
-                      <h5 style={{ margin: '0 0 10px', color: '#f8fafc' }}>Statistical Quantification & Error Metrics:</h5>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                        <div>
-                          <b>1. Average Experimental Resistance (Rmean):</b>
-                          <div style={{ fontFamily: 'monospace', color: '#fef08a', margin: '4px 0' }}>
-                            Rmean = (R1 + R2 + R3 + R4 + R5) / 5 = {circuitMetrics.mean.toFixed(2)} Ω
-                          </div>
-                          <small style={{ color: '#94a3b8' }}>
-                            Substituted: ({circuitMetrics.resistances.map((r) => r.toFixed(1)).join(' + ')}) / 5
-                          </small>
-                        </div>
-                        <div>
-                          <b>2. Sample Standard Deviation (s):</b>
-                          <div style={{ fontFamily: 'monospace', color: '#fef08a', margin: '4px 0' }}>
-                            s = √[ Σ(Ri - Rmean)² / (5 - 1) ] = {circuitMetrics.stdDev.toFixed(3)} Ω
-                          </div>
-                          <small style={{ color: '#94a3b8' }}>
-                            Standard Error of the Mean: SEM = s / √5 = {circuitMetrics.sem.toFixed(3)} Ω
-                          </small>
-                        </div>
-                        <div>
-                          <b>3. Percentage Error vs. Theoretical Equivalent Resistance (650.0 Ω):</b>
-                          <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
-                            Percentage Error = |Rmean - Req| / Req × 100% = {circuitMetrics.percentError.toFixed(2)}%
-                          </div>
-                          <small style={{ color: '#94a3b8' }}>
-                            |{circuitMetrics.mean.toFixed(2)} - 650.0| / 650.0 × 100% (Within strict ±2% academic threshold)
-                          </small>
-                        </div>
-                        <div>
-                          <b>4. Theoretical Equivalent Resistance (Req):</b>
-                          <div style={{ fontFamily: 'monospace', color: '#a855f7', margin: '4px 0' }}>
-                            Req = R1 + R2 + R3 = 100 Ω + 220 Ω + 330 Ω = 650.0 Ω
-                          </div>
-                          <small style={{ color: '#94a3b8' }}>
-                            Series Kirchhoff addition verified with zero branch leakage
-                          </small>
-                        </div>
+                  {stationProgress.trials.length < TOTAL_TRIALS ? (
+                    <div style={{
+                      padding: '16px 20px',
+                      background: 'rgba(127, 29, 29, 0.45)',
+                      border: '1.5px solid #ef4444',
+                      borderRadius: '8px',
+                      color: '#fecaca',
+                      marginBottom: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px',
+                    }}>
+                      <span style={{ fontSize: '28px' }}>⚠️</span>
+                      <div>
+                        <b style={{ color: '#f87171', fontSize: '14px' }}>
+                          Incomplete Dataset: {stationProgress.trials.length} / 5 Trials Recorded
+                        </b>
+                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#fca5a5', lineHeight: 1.4 }}>
+                          All 5 experimental measurement trials must be performed and recorded in Step 7 before mathematical computations, mean values, sample standard deviation, and percentage error quantification can be unlocked.
+                        </p>
                       </div>
                     </div>
-                  )}
+                  ) : (
+                    <>
+                      {/* 1. Per-Trial Formula Substitution Display */}
+                      <div className="computation-cards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '16px' }}>
+                        {stationProgress.trials.map((t, i) => {
+                          if (stationId === 'circuits') {
+                            const v = Number(t.measuredV ?? t.vs ?? 4.0);
+                            const iA = Number(t.measuredI_A ?? (typeof t.measuredI_mA !== 'undefined' ? Number(t.measuredI_mA) / 1000 : null) ?? t.current ?? 0.00615);
+                            const i_mA = Number(t.measuredI_mA ?? (iA * 1000));
+                            const r = Number(t.resistance ?? ((v * 1000) / i_mA));
+                            const currentInput = stationProgress.calculations?.[i] || r.toFixed(1);
+                            return (
+                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
+                                <span style={{ color: '#d4af37', fontWeight: 700 }}>TRIAL #{i + 1}</span>
+                                <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
+                                  R_{i + 1} = V_{i + 1} / I_{i + 1}
+                                </div>
+                                <div style={{ color: '#94a3b8' }}>
+                                  = {v.toFixed(2)}V / {i_mA.toFixed(2)}mA
+                                </div>
+                                <div style={{ fontWeight: 700, color: '#fef08a', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  <span>=</span>
+                                  <input
+                                    type="text"
+                                    value={currentInput}
+                                    onChange={(e) => handleCalculationChange(i, e.target.value)}
+                                    style={{ width: '56px', padding: '2px 4px', fontSize: '11px', background: '#090d16', color: '#fef08a', border: '1px solid #d4af37', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
+                                  />
+                                  <span>Ω</span>
+                                </div>
+                              </div>
+                            );
+                          } else if (stationId === 'optics') {
+                            const u = Number(t.u ?? t.paramA ?? 30);
+                            const v = Number(t.v ?? t.measured ?? 60);
+                            const f = Number(t.f_exp ?? ((u * v) / (u + v)));
+                            const currentInput = stationProgress.calculations?.[i] || f.toFixed(2);
+                            return (
+                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
+                                <span style={{ color: '#10b981', fontWeight: 700 }}>TRIAL #{i + 1}</span>
+                                <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
+                                  f_{i + 1} = (u·v)/(u+v)
+                                </div>
+                                <div style={{ color: '#94a3b8' }}>
+                                  = ({u}·{v.toFixed(1)})/({u}+{v.toFixed(1)})
+                                </div>
+                                <div style={{ fontWeight: 700, color: '#34d399', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  <span>=</span>
+                                  <input
+                                    type="text"
+                                    value={currentInput}
+                                    onChange={(e) => handleCalculationChange(i, e.target.value)}
+                                    style={{ width: '56px', padding: '2px 4px', fontSize: '11px', background: '#090d16', color: '#34d399', border: '1px solid #10b981', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
+                                  />
+                                  <span>cm</span>
+                                </div>
+                              </div>
+                            );
+                          } else {
+                            const beta = Number(t.beta ?? 0.1);
+                            const gamma = Number(t.measuredGamma ?? t.gamma ?? (1 / Math.sqrt(1 - beta * beta)));
+                            const currentInput = stationProgress.calculations?.[i] || gamma.toFixed(4);
+                            return (
+                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
+                                <span style={{ color: '#fef08a', fontWeight: 700 }}>TRIAL #{i + 1}</span>
+                                <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
+                                  γ_{i + 1} = 1/√(1-β²)
+                                </div>
+                                <div style={{ color: '#94a3b8' }}>
+                                  = 1/√(1-{beta}²)
+                                </div>
+                                <div style={{ fontWeight: 700, color: '#fef08a', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  <span>=</span>
+                                  <input
+                                    type="text"
+                                    value={currentInput}
+                                    onChange={(e) => handleCalculationChange(i, e.target.value)}
+                                    style={{ width: '60px', padding: '2px 4px', fontSize: '11px', background: '#090d16', color: '#fef08a', border: '1px solid #d4af37', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          }
+                        })}
+                      </div>
 
-                  {stationId === 'optics' && (
-                    <div className="stats-breakdown-card" style={{ padding: '14px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px', marginBottom: '16px' }}>
-                      <h5 style={{ margin: '0 0 10px', color: '#f8fafc' }}>Optics Statistical Quantification:</h5>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                        <div>
-                          <b>Average Experimental Focal Length (fmean):</b>
-                          <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
-                            fmean = Σ fi / 5 = {opticsMetrics.mean.toFixed(2)} cm
+                      {/* 2. Statistical Analysis & Error Quantification */}
+                      {stationId === 'circuits' && circuitMetrics.mean !== null && (
+                        <div className="stats-breakdown-card" style={{ padding: '14px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px', marginBottom: '16px' }}>
+                          <h5 style={{ margin: '0 0 10px', color: '#f8fafc' }}>Statistical Quantification & Error Metrics:</h5>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                            <div>
+                              <b>1. Average Experimental Resistance (Rmean):</b>
+                              <div style={{ fontFamily: 'monospace', color: '#fef08a', margin: '4px 0' }}>
+                                Rmean = (R1 + R2 + R3 + R4 + R5) / 5 = {circuitMetrics.mean.toFixed(2)} Ω
+                              </div>
+                              <small style={{ color: '#94a3b8' }}>
+                                Substituted: ({circuitMetrics.resistances.map((r) => r.toFixed(1)).join(' + ')}) / 5
+                              </small>
+                            </div>
+                            <div>
+                              <b>2. Sample Standard Deviation (s):</b>
+                              <div style={{ fontFamily: 'monospace', color: '#fef08a', margin: '4px 0' }}>
+                                s = √[ Σ(Ri - Rmean)² / (5 - 1) ] = {circuitMetrics.stdDev !== null ? circuitMetrics.stdDev.toFixed(3) : '—'} Ω
+                              </div>
+                              <small style={{ color: '#94a3b8' }}>
+                                Standard Error of the Mean: SEM = s / √5 = {circuitMetrics.sem !== null ? circuitMetrics.sem.toFixed(3) : '—'} Ω
+                              </small>
+                            </div>
+                            <div>
+                              <b>3. Percentage Error vs. Theoretical Equivalent Resistance (650.0 Ω):</b>
+                              <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
+                                Percentage Error = |Rmean - Req| / Req × 100% = {circuitMetrics.percentError !== null ? circuitMetrics.percentError.toFixed(2) : '—'}%
+                              </div>
+                              <small style={{ color: '#94a3b8' }}>
+                                |{circuitMetrics.mean.toFixed(2)} - 650.0| / 650.0 × 100% (Within strict ±2% academic threshold)
+                              </small>
+                            </div>
+                            <div>
+                              <b>4. Theoretical Equivalent Resistance (Req):</b>
+                              <div style={{ fontFamily: 'monospace', color: '#a855f7', margin: '4px 0' }}>
+                                Req = R1 + R2 + R3 = 100 Ω + 220 Ω + 330 Ω = 650.0 Ω
+                              </div>
+                              <small style={{ color: '#94a3b8' }}>
+                                Series Kirchhoff addition verified with zero branch leakage
+                              </small>
+                            </div>
                           </div>
                         </div>
-                        <div>
-                          <b>Percentage Error vs. Nominal Focal Length (20.0 cm):</b>
-                          <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
-                            Percentage Error = |fmean - 20.0| / 20.0 × 100% = {opticsMetrics.percentError.toFixed(2)}%
+                      )}
+
+                      {stationId === 'optics' && opticsMetrics.mean !== null && (
+                        <div className="stats-breakdown-card" style={{ padding: '14px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px', marginBottom: '16px' }}>
+                          <h5 style={{ margin: '0 0 10px', color: '#f8fafc' }}>Optics Statistical Quantification:</h5>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                            <div>
+                              <b>Average Experimental Focal Length (fmean):</b>
+                              <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
+                                fmean = Σ fi / 5 = {opticsMetrics.mean.toFixed(2)} cm
+                              </div>
+                            </div>
+                            <div>
+                              <b>Percentage Error vs. Nominal Focal Length (20.0 cm):</b>
+                              <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
+                                Percentage Error = |fmean - 20.0| / 20.0 × 100% = {opticsMetrics.percentError !== null ? opticsMetrics.percentError.toFixed(2) : '—'}%
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  )}
+                      )}
 
-                  {/* 3. Least-Squares Linear Regression Plot & Substituted Formula */}
-                  <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
-                    <h5 style={{ margin: 0, color: '#fef08a', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                      Section C: Least-Squares Linear Regression Analysis (Slope = Req)
-                    </h5>
-                  </div>
-
-                  <Room3Graph stationId={stationId} trials={stationProgress.trials} accentColor={station.accent} />
-
-                  {regression && stationId === 'circuits' && (
-                    <div className="regression-substitution-card" style={{ padding: '12px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px', marginTop: '12px' }}>
-                      <b>Step-by-Step Least-Squares Substitution (V vs. I):</b>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', margin: '8px 0', fontSize: '11px', fontFamily: 'monospace' }}>
-                        <div>Σ I = {regression.sumX.toFixed(5)} A</div>
-                        <div>Σ V = {regression.sumY.toFixed(2)} V</div>
-                        <div>Σ (I·V) = {regression.sumXY.toFixed(4)} W</div>
-                        <div>Σ (I²) = {regression.sumX2.toFixed(6)} A²</div>
+                      {/* 3. Least-Squares Linear Regression Plot & Substituted Formula */}
+                      <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
+                        <h5 style={{ margin: 0, color: '#fef08a', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                          Section C: Least-Squares Linear Regression Analysis (Slope = Req)
+                        </h5>
                       </div>
-                      <div style={{ fontFamily: 'monospace', color: '#fef08a', fontSize: '13px' }}>
-                        Slope m = [ N·Σ(I·V) - (ΣI)(ΣV) ] / [ N·Σ(I²) - (ΣI)² ]<br />
-                        m = [ 5·({regression.sumXY.toFixed(4)}) - ({regression.sumX.toFixed(4)})·({regression.sumY.toFixed(2)}) ] / [ 5·({regression.sumX2.toFixed(6)}) - ({regression.sumX.toFixed(4)})² ] = <b>{regression.slope.toFixed(2)} Ω</b>
-                      </div>
-                      <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#94a3b8' }}>
-                        Physical Interpretation: The slope <b>m = {regression.slope.toFixed(2)} Ω</b> directly represents the equivalent resistance Req. With coefficient of determination <b>R² = {regression.rSquared.toFixed(5)}</b>, the empirical data conclusively verifies Ohm&apos;s Law (V = I·R).
-                      </p>
-                    </div>
+
+                      <Room3Graph stationId={stationId} trials={stationProgress.trials} accentColor={station.accent} />
+
+                      {regression && stationId === 'circuits' && (
+                        <div className="regression-substitution-card" style={{ padding: '12px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px', marginTop: '12px' }}>
+                          <b>Step-by-Step Least-Squares Substitution (V vs. I):</b>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', margin: '8px 0', fontSize: '11px', fontFamily: 'monospace' }}>
+                            <div>Σ I = {regression.sumX.toFixed(5)} A</div>
+                            <div>Σ V = {regression.sumY.toFixed(2)} V</div>
+                            <div>Σ (I·V) = {regression.sumXY.toFixed(4)} W</div>
+                            <div>Σ (I²) = {regression.sumX2.toFixed(6)} A²</div>
+                          </div>
+                          <div style={{ fontFamily: 'monospace', color: '#fef08a', fontSize: '13px' }}>
+                            Slope m = [ N·Σ(I·V) - (ΣI)(ΣV) ] / [ N·Σ(I²) - (ΣI)² ]<br />
+                            m = [ 5·({regression.sumXY.toFixed(4)}) - ({regression.sumX.toFixed(4)})·({regression.sumY.toFixed(2)}) ] / [ 5·({regression.sumX2.toFixed(6)}) - ({regression.sumX.toFixed(4)})² ] = <b>{regression.slope.toFixed(2)} Ω</b>
+                          </div>
+                          <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#94a3b8' }}>
+                            Physical Interpretation: The slope <b>m = {regression.slope.toFixed(2)} Ω</b> directly represents the equivalent resistance Req. With coefficient of determination <b>R² = {regression.rSquared.toFixed(5)}</b>, the empirical data conclusively verifies Ohm&apos;s Law (V = I·R).
+                          </p>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {/* 4. Formative Assessment Questions */}

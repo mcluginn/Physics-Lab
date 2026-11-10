@@ -83,12 +83,12 @@ const CIRCUITS_CURRICULUM: StationCurriculum = {
       title: 'Step 1: Identify Electrical Workbench Equipment',
       action: 'Look at the electrical workbench. Locate and inspect the DC Power Supply, Digital Multimeter, and Resistor Circuit Board.',
       why: 'Before energizing any circuit, a physicist must verify that all instrumentation is present, ungrounded faults are absent, and controls are accessible.',
-      expectedResult: 'All 3 station instruments become verified on your checklist.',
+      expectedResult: 'All 4 station instruments become verified on your checklist.',
       hint: 'Click the inspection cards below, or walk up and interact with the apparatus in the 3D room.',
       targetApparatusId: 'circuits-multimeter',
       relevantTool: 'breadboard',
       validate: (state) => {
-        const required = ['circuits-power-switch', 'circuits-multimeter', 'circuits-topology-selector'];
+        const required = ['circuits-power-switch', 'circuits-multimeter', 'circuits-oscilloscope', 'circuits-topology-selector'];
         const missing = required.filter((id) => !state.inspectedEquipment.includes(id));
         if (missing.length === 0) {
           return {
@@ -338,7 +338,7 @@ const OPTICS_CURRICULUM: StationCurriculum = {
       targetApparatusId: 'optics-laser',
       relevantTool: 'laser',
       validate: (state) => {
-        const required = ['optics-laser', 'optics-angle-dial', 'optics-screen'];
+        const required = ['optics-laser', 'optics-angle-dial', 'optics-screen', 'optics-rail'];
         const missing = required.filter((id) => !state.inspectedEquipment.includes(id));
         if (missing.length === 0) {
           return { isPassed: true, feedback: '✓ Optical bench components located and verified.' };
@@ -487,7 +487,7 @@ const RELATIVITY_CURRICULUM: StationCurriculum = {
       targetApparatusId: 'relativity-velocity-dial',
       relevantTool: 'accelerator',
       validate: (state) => {
-        const required = ['relativity-velocity-dial', 'relativity-light-clock', 'relativity-contracting-rod'];
+        const required = ['relativity-velocity-dial', 'relativity-light-clock', 'relativity-contracting-rod', 'relativity-accelerator'];
         const missing = required.filter((id) => !state.inspectedEquipment.includes(id));
         if (missing.length === 0) return { isPassed: true, feedback: '✓ Observation deck equipment located and verified.' };
         return { isPassed: false, feedback: `Inspect remaining apparatus: ${missing.map((m) => m.replace('relativity-', '').toUpperCase()).join(', ')}.` };

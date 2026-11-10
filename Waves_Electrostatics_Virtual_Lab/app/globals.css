@@ -6546,6 +6546,15 @@ select:focus, option:focus, option:checked {
   color: #34d399 !important;
 }
 
+.room3-shell .guided-step-dot.locked,
+.room3-shell .guided-step-dot:disabled {
+  opacity: 0.55;
+  cursor: not-allowed !important;
+  background: rgba(25, 8, 14, 0.6) !important;
+  border-color: rgba(148, 163, 184, 0.2) !important;
+  color: #64748b !important;
+}
+
 .room3-shell .guided-instruction-card {
   background: rgba(40, 14, 22, 0.94) !important;
   border: 1.5px solid rgba(212, 175, 55, 0.45) !important;

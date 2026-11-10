@@ -59,6 +59,8 @@ export class Multimeter3D {
   private seriesJumperMesh: THREE.Group | null = null;
   private seriesJumperPlugMesh: THREE.Mesh | null = null;
   public boardBaseMesh: THREE.Mesh | null = null;
+  public boardGroup: THREE.Group | null = null;
+  public meterGroup: THREE.Group | null = null;
 
   // Terminal Positions (World coordinates on workbench)
   public terminalPositions: Record<TerminalId, THREE.Vector3>;
@@ -152,6 +154,7 @@ export class Multimeter3D {
   private buildSolderlessBreadboard() {
     const boardGroup = new THREE.Group();
     boardGroup.name = 'Solderless_Breadboard_Unit';
+    this.boardGroup = boardGroup;
     // Perfectly centered on workbench in front of instruments
     boardGroup.position.set(this.benchX - 0.06, 0.94 + 0.011, 0.10);
 
@@ -623,6 +626,7 @@ export class Multimeter3D {
   private buildMultimeterBody() {
     const meterGroup = new THREE.Group();
     meterGroup.name = 'DMM_Body_Group';
+    this.meterGroup = meterGroup;
     // Sits neatly beside the breadboard on the right: (benchX + 0.30, 0.94 + 0.012, 0.10)
     meterGroup.position.set(this.benchX + 0.30, 0.94 + 0.012, 0.10);
     meterGroup.rotation.y = -Math.PI / 10; // 18 deg inward towards student

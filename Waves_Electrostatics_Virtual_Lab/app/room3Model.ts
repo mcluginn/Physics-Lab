@@ -845,17 +845,28 @@ export function calculateTrialStats(values: number[]) {
 }
 
 export function computeCircuitOhmMetrics(trials: TrialRecord[]) {
-  const valid = trials.filter((t) => {
+  const valid = (trials || []).filter((t) => {
     const iA = Number(t.measuredI_A ?? (typeof t.measuredI_mA !== 'undefined' ? Number(t.measuredI_mA) / 1000 : null) ?? t.current ?? 0);
     return iA > 0;
   });
+  if (valid.length === 0) {
+    return {
+      resistances: [],
+      mean: null as number | null,
+      stdDev: null as number | null,
+      sem: null as number | null,
+      theoreticalReq: 650.0,
+      percentError: null as number | null,
+      hasData: false,
+    };
+  }
   const resistances = valid.map((t) => {
     if (typeof t.resistance === 'number' && Number(t.resistance) > 10.0) return Number(t.resistance);
     const v = Number(t.measuredV ?? t.vs ?? 0);
     const iA = Number(t.measuredI_A ?? (typeof t.measuredI_mA !== 'undefined' ? Number(t.measuredI_mA) / 1000 : null) ?? t.current ?? 0.001);
-    return iA > 0 ? v / iA : 650.0;
+    return iA > 0 ? (v * 1000) / (iA * 1000) : 650.0;
   });
-  const stats = calculateTrialStats(resistances.length > 0 ? resistances : [650.0]);
+  const stats = calculateTrialStats(resistances);
   const theoreticalReq = 650.0;
   const percentError = stats.mean > 0 ? Math.abs((stats.mean - theoreticalReq) / theoreticalReq) * 100 : 0;
   return {
@@ -865,18 +876,30 @@ export function computeCircuitOhmMetrics(trials: TrialRecord[]) {
     sem: stats.sem,
     theoreticalReq,
     percentError,
+    hasData: true,
   };
 }
 
 export function computeOpticsLensMetrics(trials: TrialRecord[]) {
-  const valid = trials.filter((t) => Number(t.u ?? t.paramA ?? 0) > 0 && Number(t.v ?? t.measured ?? 0) > 0);
+  const valid = (trials || []).filter((t) => Number(t.u ?? t.paramA ?? 0) > 0 && Number(t.v ?? t.measured ?? 0) > 0);
+  if (valid.length === 0) {
+    return {
+      focalLengths: [],
+      mean: null as number | null,
+      stdDev: null as number | null,
+      sem: null as number | null,
+      nominalF: 20.0,
+      percentError: null as number | null,
+      hasData: false,
+    };
+  }
   const focalLengths = valid.map((t) => {
     if (typeof t.f_exp === 'number' && Number(t.f_exp) > 5.0) return Number(t.f_exp);
     const u = Number(t.u ?? t.paramA ?? 40);
     const v = Number(t.v ?? t.measured ?? 40);
     return (u * v) / (u + v);
   });
-  const stats = calculateTrialStats(focalLengths.length > 0 ? focalLengths : [20.0]);
+  const stats = calculateTrialStats(focalLengths);
   const nominalF = 20.0;
   const percentError = stats.mean > 0 ? Math.abs((stats.mean - nominalF) / nominalF) * 100 : 0;
   return {
@@ -886,23 +909,34 @@ export function computeOpticsLensMetrics(trials: TrialRecord[]) {
     sem: stats.sem,
     nominalF,
     percentError,
+    hasData: true,
   };
 }
 
 export function computeRelativityMetrics(trials: TrialRecord[]) {
-  const valid = trials.filter((t) => typeof t.beta !== 'undefined');
+  const valid = (trials || []).filter((t) => typeof t.beta !== 'undefined');
+  if (valid.length === 0) {
+    return {
+      gammas: [],
+      mean: null as number | null,
+      stdDev: null as number | null,
+      sem: null as number | null,
+      hasData: false,
+    };
+  }
   const gammas = valid.map((t) => {
     if (typeof t.measuredGamma === 'number' && Number(t.measuredGamma) >= 1.0) return Number(t.measuredGamma);
     if (typeof t.gamma === 'number' && Number(t.gamma) >= 1.0) return Number(t.gamma);
     const b = Number(t.beta ?? 0);
     return 1 / Math.sqrt(Math.max(1e-6, 1 - b * b));
   });
-  const stats = calculateTrialStats(gammas.length > 0 ? gammas : [1.0]);
+  const stats = calculateTrialStats(gammas);
   return {
     gammas,
     mean: stats.mean,
     stdDev: stats.stdDev,
     sem: stats.sem,
+    hasData: true,
   };
 }
 

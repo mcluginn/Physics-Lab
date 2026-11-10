@@ -1367,9 +1367,14 @@ export function createRoom3Scene(
       scene.add(pier);
 
       if (p.hasPilaster) {
-        // Architectural Mahogany Pilaster Pier (elevated cleanly above pier to prevent z-fighting)
+        // Architectural Mahogany Pilaster Pier (satin matte finish, zero specular blowout or stippling)
+        const pilasterMat = new THREE.MeshStandardMaterial({
+          color: 0x3b1d14,
+          roughness: 0.82,
+          metalness: 0.02,
+        });
         const pilasterX = isEast ? x - 0.18 : x + 0.18;
-        const pilaster = new THREE.Mesh(new THREE.BoxGeometry(0.04, 2.50, 1.80), mahoganyDeskMaterial);
+        const pilaster = new THREE.Mesh(new THREE.BoxGeometry(0.04, 2.50, 1.80), pilasterMat);
         pilaster.position.set(pilasterX, 2.40, p.centerZ);
         pilaster.receiveShadow = false;
         scene.add(pilaster);
@@ -1381,9 +1386,9 @@ export function createRoom3Scene(
           scene.add(edge);
         });
 
-        // Wall Sconce on Pilaster
+        // Wall Sconce on Pilaster - soft ambient warm accent
         const sconceGroup = new THREE.Group();
-        sconceGroup.position.set(isEast ? x - 0.25 : x + 0.25, 2.40, p.centerZ);
+        sconceGroup.position.set(isEast ? x - 0.28 : x + 0.28, 2.40, p.centerZ);
 
         const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 0.14), brassTrimMaterial);
         sconceGroup.add(bracket);
@@ -1393,15 +1398,16 @@ export function createRoom3Scene(
           new THREE.MeshStandardMaterial({
             color: 0xffecd1,
             emissive: 0xffb356,
-            emissiveIntensity: 1.8,
-            roughness: 0.3,
+            emissiveIntensity: 1.1,
+            roughness: 0.5,
           })
         );
         shade.position.set(0, 0.10, 0);
         sconceGroup.add(shade);
 
-        const sLight = new THREE.PointLight(0xffb766, 1.2, 5.5, 1.8);
-        sLight.position.set(0, 0.12, 0);
+        // Soft accent point light positioned 12cm away from the wall to prevent specular artifacts
+        const sLight = new THREE.PointLight(0xffb766, 0.40, 3.8, 2.0);
+        sLight.position.set(isEast ? -0.12 : 0.12, 0.12, 0);
         sconceGroup.add(sLight);
         sconceLights.push(sLight);
 
@@ -1465,7 +1471,7 @@ export function createRoom3Scene(
     return new THREE.CanvasTexture(canvas);
   };
 
-  const starCount = 1400;
+  const starCount = 2800;
   const starGeo = new THREE.BufferGeometry();
   const starPos = new Float32Array(starCount * 3);
   const starColors = new Float32Array(starCount * 3);
@@ -1481,17 +1487,25 @@ export function createRoom3Scene(
   ];
 
   for (let i = 0; i < starCount; i++) {
-    let sx = (Math.random() - 0.5) * 80;
-    let sy = Math.random() * 32 - 2;
-    let sz = (Math.random() - 0.5) * 80;
-    // Push away if within room boundaries
-    if (Math.abs(sx) < 13 && Math.abs(sz) < 10 && sy < 8) {
-      if (Math.random() > 0.5) {
+    let sx: number;
+    let sy: number;
+    let sz: number;
+
+    // Allocate 60% of stars directly in the window sightlines (East & West)
+    if (i < 1680) {
+      const isEast = i % 2 === 0;
+      sx = isEast ? (13.5 + Math.random() * 18) : (-13.5 - Math.random() * 18);
+      sy = 1.1 + Math.random() * 3.8; // directly within window height range 1.18m - 3.65m
+      sz = (Math.random() - 0.5) * 16;
+    } else {
+      sx = (Math.random() - 0.5) * 90;
+      sy = Math.random() * 24 - 1;
+      sz = (Math.random() - 0.5) * 90;
+      if (Math.abs(sx) < 13 && Math.abs(sz) < 10 && sy < 6) {
         sx += (sx >= 0 ? 1 : -1) * (14 + Math.random() * 15);
-      } else {
-        sz += (sz >= 0 ? 1 : -1) * (11 + Math.random() * 15);
       }
     }
+
     starPos[i * 3 + 0] = sx;
     starPos[i * 3 + 1] = sy;
     starPos[i * 3 + 2] = sz;
@@ -1506,7 +1520,7 @@ export function createRoom3Scene(
 
   const starGlowTex = createStarGlowTexture();
   const starMaterial = new THREE.PointsMaterial({
-    size: 0.75,
+    size: 0.85,
     map: starGlowTex,
     vertexColors: true,
     transparent: true,
@@ -1559,17 +1573,20 @@ export function createRoom3Scene(
   const diffractionTex = createDiffractionSpikeTexture();
 
   const landmarkDefs = [
-    // Outside East Windows (visible looking toward X = +10.8m)
-    { name: 'Sirius', x: 22.0, y: 7.2, z: -4.0, color: 0x93c5fd, scale: 2.3, speed: 3.2, phase: 0.1 },
-    { name: 'Betelgeuse', x: 24.0, y: 8.8, z: 3.5, color: 0xfba571, scale: 2.6, speed: 2.4, phase: 1.2 },
-    { name: 'Aldebaran', x: 21.0, y: 5.4, z: 6.8, color: 0xfde047, scale: 2.0, speed: 2.8, phase: 5.3 },
-    // Outside West Windows (visible looking toward X = -10.8m)
-    { name: 'Rigel', x: -22.0, y: 6.5, z: -3.5, color: 0x67e8f9, scale: 2.2, speed: 3.7, phase: 2.4 },
-    { name: 'Vega', x: -23.5, y: 8.2, z: 4.0, color: 0xa5f3fc, scale: 2.4, speed: 3.0, phase: 4.8 },
-    { name: 'Arcturus', x: -21.0, y: 5.8, z: -6.0, color: 0xfb923c, scale: 2.1, speed: 2.6, phase: 1.8 },
-    // North & South Exterior Vista
-    { name: 'Polaris', x: 0.0, y: 11.0, z: -25.0, color: 0xffffff, scale: 2.4, speed: 2.1, phase: 3.5 },
-    { name: 'Canopus', x: -5.0, y: 9.5, z: 24.0, color: 0xfef08a, scale: 2.1, speed: 3.1, phase: 4.2 },
+    // Outside East Windows (centered right in the window openings at Y = 2.2 - 3.4m)
+    { name: 'Sirius', x: 21.0, y: 2.6, z: -4.5, color: 0x93c5fd, scale: 2.6, speed: 3.2, phase: 0.1 },
+    { name: 'Betelgeuse', x: 22.0, y: 2.9, z: 0.0, color: 0xfba571, scale: 2.8, speed: 2.4, phase: 1.2 },
+    { name: 'Aldebaran', x: 21.5, y: 2.4, z: 4.5, color: 0xfde047, scale: 2.4, speed: 2.8, phase: 5.3 },
+    { name: 'Capella', x: 23.0, y: 3.4, z: -2.0, color: 0xfef08a, scale: 2.2, speed: 2.2, phase: 2.7 },
+    { name: 'Procyon', x: 23.0, y: 3.2, z: 2.2, color: 0xa5f3fc, scale: 2.3, speed: 3.0, phase: 4.1 },
+    // Outside West Windows (centered right in the window openings at Y = 2.2 - 3.4m)
+    { name: 'Rigel', x: -21.0, y: 2.6, z: -4.5, color: 0x67e8f9, scale: 2.6, speed: 3.7, phase: 2.4 },
+    { name: 'Vega', x: -22.0, y: 2.9, z: 0.0, color: 0xa5f3fc, scale: 2.8, speed: 3.0, phase: 4.8 },
+    { name: 'Arcturus', x: -21.5, y: 2.4, z: 4.5, color: 0xfb923c, scale: 2.4, speed: 2.6, phase: 1.8 },
+    { name: 'Spica', x: -23.0, y: 3.3, z: -2.0, color: 0x93c5fd, scale: 2.2, speed: 3.3, phase: 3.1 },
+    { name: 'Altair', x: -23.0, y: 3.1, z: 2.0, color: 0xffffff, scale: 2.3, speed: 2.9, phase: 0.8 },
+    // North Clerestory Vista
+    { name: 'Polaris', x: 0.0, y: 5.5, z: -22.0, color: 0xffffff, scale: 2.6, speed: 2.1, phase: 3.5 },
   ];
 
   landmarkDefs.forEach((def) => {
@@ -1611,7 +1628,7 @@ export function createRoom3Scene(
   });
 
   const moonGroup = new THREE.Group();
-  moonGroup.position.set(24.0, 9.5, -6.5);
+  moonGroup.position.set(23.0, 3.0, -4.5);
   moonGroup.rotation.y = -Math.PI / 3;
   scene.add(moonGroup);
 
@@ -1669,13 +1686,13 @@ export function createRoom3Scene(
     fog: false,
   });
   const moonCorona = new THREE.Sprite(moonCoronaMat);
-  moonCorona.position.set(24.0, 9.5, -6.6);
-  moonCorona.scale.set(9.2, 9.2, 1.0);
+  moonCorona.position.set(23.0, 3.0, -4.6);
+  moonCorona.scale.set(7.5, 7.5, 1.0);
   scene.add(moonCorona);
 
   // Dedicated Moonlight streaming through the windows into the lab
-  const moonPointLight = new THREE.PointLight(0xdbeafe, 3.2, 50, 1.1);
-  moonPointLight.position.set(23.0, 9.5, -6.0);
+  const moonPointLight = new THREE.PointLight(0xdbeafe, 2.4, 35, 1.2);
+  moonPointLight.position.set(22.0, 3.2, -4.0);
   scene.add(moonPointLight);
 
   // Structural Columns in Corners with Mahogany & Brass Moldings
@@ -1845,21 +1862,21 @@ export function createRoom3Scene(
     whiteboardGroup.add(rosette);
   });
 
-  // Porcelain Whiteboard Surface (with polygonOffset & depthWrite: true to guarantee zero z-fighting)
+  // Porcelain Whiteboard Surface (with solid spatial clearance & depthWrite: true to guarantee zero z-fighting)
   const whiteboardMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(6.40, 2.14),
     new THREE.MeshStandardMaterial({
       map: whiteboardTexture,
-      roughness: 0.18,
-      metalness: 0.02,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
+      roughness: 0.40,
+      metalness: 0.01,
+      depthTest: true,
       depthWrite: true,
     })
   );
-  whiteboardMesh.position.set(0, 0, -0.025);
+  whiteboardMesh.position.set(0, 0, -0.038);
   whiteboardMesh.rotation.y = Math.PI;
+  whiteboardMesh.castShadow = false;
+  whiteboardMesh.receiveShadow = false;
   whiteboardGroup.add(whiteboardMesh);
 
   // Marker Tray at the bottom edge
@@ -2558,7 +2575,7 @@ export function createRoom3Scene(
   });
   scene.add(multimeter3d.root);
 
-  registerInteractable(multimeter3d.root, {
+  registerInteractable(multimeter3d.meterGroup || multimeter3d.root, {
     id: 'circuits-multimeter',
     stationId: 'circuits',
     category: 'METROLOGY',
@@ -2568,7 +2585,7 @@ export function createRoom3Scene(
     readout: 'DMM: DC VOLTAGE · AUTO-RANGE',
   });
 
-  registerInteractable(multimeter3d.root, {
+  registerInteractable(multimeter3d.boardGroup || multimeter3d.root, {
     id: 'circuits-topology-selector',
     stationId: 'circuits',
     category: 'CIRCUIT TRAINER',
@@ -2851,13 +2868,13 @@ export function createRoom3Scene(
     track.visible = true;
     relativityGroup.add(model);
     registerInteractable(model, {
-      id: 'relativity-velocity-dial',
+      id: 'relativity-accelerator',
       stationId: 'relativity',
       category: 'ACCELERATOR BEAMLINE',
-      name: 'Relativistic Maglev Particle Sled Track',
-      description: ROOM3_EQUIPMENT_DESCRIPTIONS['relativity-velocity-dial'],
-      action: 'Vary Relativistic Speed β (v/c)',
-      readout: `Track: Synchrotron Quadrupole · Active β: ${(currentRelativity.beta).toFixed(3)}c`,
+      name: 'Relativistic Synchrotron Maglev Beamline',
+      description: ROOM3_EQUIPMENT_DESCRIPTIONS['relativity-accelerator'] || 'Relativistic linear beam pipe demonstrating particle momentum p = γ m₀ v and Cherenkov emission.',
+      action: 'Examine Synchrotron Beamline',
+      readout: `Beamline: Synchrotron Quadrupole · Active β: ${(currentRelativity.beta).toFixed(3)}c`,
     });
   }, undefined, (err) => console.warn('Maglev Beamline GLB load note:', err));
 
@@ -3034,16 +3051,35 @@ export function createRoom3Scene(
         out.set(STATION_X.circuits, 3.40, ROOM2_CONFIG.room.backZ + 0.25);
         return true;
       case 'circuits-power-switch':
-        out.set(circuitsBenchX - 0.58, 1.10, -0.32);
+        out.set(circuitsBenchX - 0.58, 1.15, -0.38);
         return true;
       case 'circuits-voltage-knob':
-        out.set(circuitsBenchX - 0.73, 1.10, -0.32);
+        out.set(circuitsBenchX - 0.72, 1.15, -0.38);
+        return true;
+      case 'circuits-multimeter':
+      case 'circuits-dmm-dial':
+        out.set(circuitsBenchX + 0.30, 1.12, 0.10);
+        return true;
+      case 'circuits-dmm-jack':
+        out.set(circuitsBenchX + 0.33, 1.05, 0.18);
         return true;
       case 'circuits-oscilloscope':
-        out.set(circuitsBenchX - 0.05, 1.18, -0.52);
+        out.set(circuitsBenchX - 0.05, 1.22, -0.48);
         return true;
       case 'circuits-topology-selector':
-        out.set(circuitsBenchX - 0.10, 1.05, 0.10);
+        out.set(circuitsBenchX - 0.06, 1.10, 0.10);
+        return true;
+      case 'circuits-probe-r1':
+        out.set(circuitsBenchX - 0.06 - 0.0684, 1.08, 0.10 - 0.0273);
+        return true;
+      case 'circuits-probe-r2':
+        out.set(circuitsBenchX - 0.06 + 0.0180, 1.08, 0.10 - 0.0189);
+        return true;
+      case 'circuits-probe-r3':
+        out.set(circuitsBenchX - 0.06 + 0.0900, 1.08, 0.10 - 0.0273);
+        return true;
+      case 'circuits-series-jumper':
+        out.set(circuitsBenchX - 0.06 - 0.1332, 1.08, 0.10 - 0.0439);
         return true;
       case 'circuits-clipboard':
         out.set(circuitsBenchX + 1.1, 1.15, 0.35);
@@ -3059,6 +3095,10 @@ export function createRoom3Scene(
       case 'optics-angle-dial':
       case 'optics-submode-toggle':
         out.set(opticsBenchX, 1.25, 0.0);
+        return true;
+      case 'optics-rail':
+      case 'optics-lens-carrier':
+        out.set(opticsBenchX + 0.35, 1.20, 0.0);
         return true;
       case 'optics-screen':
         out.set(opticsBenchX + 1.0, 1.25, 0.0);
@@ -3079,6 +3119,9 @@ export function createRoom3Scene(
         return true;
       case 'relativity-light-clock':
         out.set(relativityBenchX - 0.6, 1.35, -0.35);
+        return true;
+      case 'relativity-accelerator':
+        out.set(relativityBenchX + 0.6, 1.25, 0.0);
         return true;
       case 'relativity-clipboard':
         out.set(relativityBenchX + 1.1, 1.15, 0.35);

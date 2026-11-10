@@ -43,6 +43,7 @@ export interface Room3CircuitWorkspaceProps {
   onRecordMeasurement?: (name: string, value: number, unit: string) => void;
   trials?: TrialRecord[];
   measurementWarning?: string | null;
+  onInspectApparatus?: (id: string) => void;
 }
 
 export function Room3CircuitWorkspace({
@@ -69,6 +70,7 @@ export function Room3CircuitWorkspace({
   onRecordMeasurement,
   trials,
   measurementWarning,
+  onInspectApparatus,
 }: Room3CircuitWorkspaceProps) {
   const [viewMode, setViewMode] = useState<'breadboard' | 'schematic'>('breadboard');
   const [selectedTerminal, setSelectedTerminal] = useState<TerminalId | null>(null);
@@ -447,11 +449,20 @@ export function Room3CircuitWorkspace({
                   stroke={circuits.powerOn ? '#22c55e' : '#64748b'}
                   strokeWidth="2"
                   style={{ cursor: 'pointer' }}
-                  onClick={() => onUpdateCircuits({ powerOn: !circuits.powerOn })}
+                  onClick={() => {
+                    onInspectApparatus?.('circuits-power-switch');
+                    onUpdateCircuits({ powerOn: !circuits.powerOn });
+                  }}
                 />
                 <text x="178" y="65" fill="#ffffff" fontSize="12" fontFamily="sans-serif" fontWeight="bold" textAnchor="middle" style={{ pointerEvents: 'none' }}>
                   {circuits.powerOn ? 'ON' : 'OFF'}
                 </text>
+                {!circuits.powerOn && (
+                  <g transform="translate(178, 22)">
+                    <circle cx="0" cy="0" r="14" fill="rgba(34, 197, 94, 0.2)" stroke="#22c55e" strokeWidth="2" />
+                    <text x="0" y="-4" fill="#4ade80" fontSize="9" fontWeight="bold" textAnchor="middle">▼ Turn ON</text>
+                  </g>
+                )}
 
                 {/* Output Terminals (+ / -) */}
                 {/* Red Positive Terminal */}
@@ -745,12 +756,21 @@ export function Room3CircuitWorkspace({
                     height="24"
                     rx="4"
                     fill={dmmMode === 'v_dc' ? '#d4af37' : '#35121d'}
-                    stroke="#334155"
-                    strokeWidth="1"
+                    stroke={dmmMode === 'v_dc' ? '#fef08a' : '#334155'}
+                    strokeWidth={dmmMode === 'v_dc' ? 2 : 1}
                     style={{ cursor: 'pointer' }}
-                    onClick={() => onSetDmmMode('v_dc')}
+                    onClick={() => {
+                      onInspectApparatus?.('circuits-multimeter');
+                      onSetDmmMode('v_dc');
+                    }}
                   />
-                  <text x="23" y="16" fill="#fff" fontSize="10" fontFamily="monospace" fontWeight="bold" textAnchor="middle">V⎓</text>
+                  <text x="23" y="16" fill={dmmMode === 'v_dc' ? '#1a0b10' : '#fff'} fontSize="10" fontFamily="monospace" fontWeight="bold" textAnchor="middle">V⎓</text>
+                  {guidedStep?.id === 'c-step-4' && dmmMode !== 'v_dc' && (
+                    <g transform="translate(23, -10)">
+                      <polygon points="0,0 -4,-6 4,-6" fill="#38bdf8" />
+                      <text x="0" y="-8" fill="#38bdf8" fontSize="8" fontWeight="bold" textAnchor="middle">▼ Set V⎓</text>
+                    </g>
+                  )}
 
                   <rect
                     x="52"
@@ -759,12 +779,21 @@ export function Room3CircuitWorkspace({
                     height="24"
                     rx="4"
                     fill={dmmMode === 'a_dc' ? '#d4af37' : '#35121d'}
-                    stroke="#334155"
-                    strokeWidth="1"
+                    stroke={dmmMode === 'a_dc' ? '#fef08a' : '#334155'}
+                    strokeWidth={dmmMode === 'a_dc' ? 2 : 1}
                     style={{ cursor: 'pointer' }}
-                    onClick={() => onSetDmmMode('a_dc')}
+                    onClick={() => {
+                      onInspectApparatus?.('circuits-multimeter');
+                      onSetDmmMode('a_dc');
+                    }}
                   />
-                  <text x="75" y="16" fill="#fff" fontSize="10" fontFamily="monospace" fontWeight="bold" textAnchor="middle">A⎓</text>
+                  <text x="75" y="16" fill={dmmMode === 'a_dc' ? '#1a0b10' : '#fff'} fontSize="10" fontFamily="monospace" fontWeight="bold" textAnchor="middle">A⎓</text>
+                  {guidedStep?.id === 'c-step-6' && dmmMode !== 'a_dc' && (
+                    <g transform="translate(75, -10)">
+                      <polygon points="0,0 -4,-6 4,-6" fill="#38bdf8" />
+                      <text x="0" y="-8" fill="#38bdf8" fontSize="8" fontWeight="bold" textAnchor="middle">▼ Set A⎓</text>
+                    </g>
+                  )}
 
                   <rect
                     x="104"
@@ -776,9 +805,12 @@ export function Room3CircuitWorkspace({
                     stroke="#334155"
                     strokeWidth="1"
                     style={{ cursor: 'pointer' }}
-                    onClick={() => onSetDmmMode('ohm')}
+                    onClick={() => {
+                      onInspectApparatus?.('circuits-multimeter');
+                      onSetDmmMode('ohm');
+                    }}
                   />
-                  <text x="127" y="16" fill="#fff" fontSize="10" fontFamily="monospace" fontWeight="bold" textAnchor="middle">Ω</text>
+                  <text x="127" y="16" fill={dmmMode === 'ohm' ? '#1a0b10' : '#fff'} fontSize="10" fontFamily="monospace" fontWeight="bold" textAnchor="middle">Ω</text>
 
                   <rect
                     x="156"
@@ -790,9 +822,12 @@ export function Room3CircuitWorkspace({
                     stroke="#334155"
                     strokeWidth="1"
                     style={{ cursor: 'pointer' }}
-                    onClick={() => onSetDmmMode('cont')}
+                    onClick={() => {
+                      onInspectApparatus?.('circuits-multimeter');
+                      onSetDmmMode('cont');
+                    }}
                   />
-                  <text x="179" y="16" fill="#fff" fontSize="10" fontFamily="monospace" fontWeight="bold" textAnchor="middle">🔊</text>
+                  <text x="179" y="16" fill={dmmMode === 'cont' ? '#1a0b10' : '#fff'} fontSize="10" fontFamily="monospace" fontWeight="bold" textAnchor="middle">🔊</text>
                 </g>
 
                 {/* Multimeter Jack Sockets (COM, V·Ω, mA/10A) */}
@@ -806,9 +841,17 @@ export function Room3CircuitWorkspace({
                     stroke={dmmJack === 'v_ohm' ? '#38bdf8' : '#7f1d1d'}
                     strokeWidth={dmmJack === 'v_ohm' ? 3 : 1.5}
                     style={{ cursor: 'pointer' }}
-                    onClick={() => onSetDmmJack('v_ohm')}
+                    onClick={() => {
+                      onInspectApparatus?.('circuits-multimeter');
+                      onSetDmmJack('v_ohm');
+                    }}
                   />
                   <text x="25" y="28" fill="#94a3b8" fontSize="8" fontFamily="monospace" textAnchor="middle">V·Ω</text>
+                  {guidedStep?.id === 'c-step-4' && dmmJack !== 'v_ohm' && (
+                    <g transform="translate(25, -2)">
+                      <text x="0" y="-2" fill="#38bdf8" fontSize="8" fontWeight="bold" textAnchor="middle">▼ V·Ω Lead</text>
+                    </g>
+                  )}
 
                   {/* COM Jack */}
                   <circle cx="85" cy="14" r="8" fill="#18181b" stroke="#52525b" strokeWidth="2" />
@@ -823,9 +866,17 @@ export function Room3CircuitWorkspace({
                     stroke={dmmJack === 'ma_10a' ? '#38bdf8' : '#7f1d1d'}
                     strokeWidth={dmmJack === 'ma_10a' ? 3 : 1.5}
                     style={{ cursor: 'pointer' }}
-                    onClick={() => onSetDmmJack('ma_10a')}
+                    onClick={() => {
+                      onInspectApparatus?.('circuits-multimeter');
+                      onSetDmmJack('ma_10a');
+                    }}
                   />
                   <text x="145" y="28" fill="#94a3b8" fontSize="8" fontFamily="monospace" textAnchor="middle">mA·10A</text>
+                  {guidedStep?.id === 'c-step-6' && dmmJack !== 'ma_10a' && (
+                    <g transform="translate(145, -2)">
+                      <text x="0" y="-2" fill="#38bdf8" fontSize="8" fontWeight="bold" textAnchor="middle">▼ mA Lead</text>
+                    </g>
+                  )}
                 </g>
               </g>
 
