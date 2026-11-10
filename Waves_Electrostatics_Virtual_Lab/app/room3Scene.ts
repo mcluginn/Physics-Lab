@@ -6,7 +6,13 @@ import {
   type OpticsSettings,
   type RelativitySettings,
   type Room3StationId,
+  type OscilloscopeSettings,
+  type OscilloscopeChannelSource,
   INITIAL_RELATIVITY,
+  INITIAL_OSCILLOSCOPE,
+  CH1_VOLTS_DIV_OPTIONS,
+  CH2_VOLTS_DIV_OPTIONS,
+  TIME_DIV_OPTIONS,
   calculateCircuit,
   calculateOptics,
   calculateRelativity,
@@ -40,6 +46,7 @@ export type Room3SceneApi = {
   setMove: (direction: 'forward' | 'backward' | 'left' | 'right', active: boolean) => void;
   setMoveVector: (right: number, forward: number) => void;
   setCircuits: (settings: CircuitSettings) => void;
+  setOscilloscope?: (settings: OscilloscopeSettings) => void;
   setOptics: (settings: OpticsSettings) => void;
   setRelativity: (settings: RelativitySettings) => void;
   setStation: (station: Room3StationId) => void;
@@ -54,7 +61,7 @@ export type Room3SceneApi = {
   toggleSeriesJumper: () => void;
   resetDmmFuse: () => void;
   getDmmReading: () => MultimeterReading;
-  setCloseupFocus?: (focus: 'station' | 'board' | 'multimeter' | 'psu') => void;
+  setCloseupFocus?: (focus: 'station' | 'board' | 'multimeter' | 'psu' | 'oscilloscope') => void;
   setCameraYawPitch?: (targetYaw: number, targetPitch?: number) => void;
   setGraphicsSettings: (settings: GraphicsSettings) => void;
   getGraphicsSettings: () => GraphicsSettings;
@@ -75,6 +82,8 @@ export type Room3SceneCallbacks = {
   onAssetProgress?: (loaded: number, total: number) => void;
   onAssetsReady?: () => void;
   onEquipmentInteract?: (id: string) => void;
+  onCircuitsChange?: (patch: Partial<CircuitSettings>) => void;
+  onOscilloscopeChange?: (patch: Partial<OscilloscopeSettings>) => void;
   onFootstep?: () => void;
   onInteractionChange?: (interaction: EquipmentInteraction | null) => void;
   onPointerLockChange?: (locked: boolean) => void;
@@ -91,10 +100,16 @@ export const ROOM3_EQUIPMENT_DESCRIPTIONS: Record<string, string> = {
   // Station 01: Circuits
   'circuits-power-switch': 'Heavy-duty illuminated rocker switch that energizes the DC power supply and AC function generator.',
   'circuits-mode-toggle': 'Switches the circuit excitation regime between DC Steady-State and AC Sinusoidal (RLC).',
-  'circuits-voltage-knob': 'Precision ten-turn potentiometer dial adjusting source voltage Vs from 1.0 V to 240.0 V.',
+  'circuits-voltage-knob': 'Precision ten-turn potentiometer dial adjusting source voltage Vs from 1.0 V to 30.0 V.',
   'circuits-freq-knob': 'AC frequency synthesizer dial tuning driving frequency f from 10 Hz to 1000 Hz.',
   'circuits-topology-selector': 'Electronic patchboard selector switching between Series, Parallel, and Series-Parallel combinations.',
   'circuits-oscilloscope': 'Tektronix Dual-Channel Digital Storage Oscilloscope rendering live real-time V(t) and I(t) waveforms and phase angle.',
+  'circuits-osc-time-knob': 'Horizontal sweep timebase dial adjusting display time per division (0.5 ms to 20 ms/div).',
+  'circuits-osc-ch1-knob': 'Vertical sensitivity dial for Channel 1 adjusting volts per division (1.0 V to 20 V/div).',
+  'circuits-osc-ch2-knob': 'Vertical sensitivity dial for Channel 2 adjusting scale per division (5.0 mA to 100 mA/div).',
+  'circuits-osc-trigger-knob': 'Trigger run/stop push-knob freezing or acquiring live real-time circuit waveforms.',
+  'circuits-osc-ch1-input': 'BNC coaxial input terminal for Channel 1. Click to cycle test node (Vs, R1, R2, R3).',
+  'circuits-osc-ch2-input': 'BNC coaxial input terminal for Channel 2. Click to cycle test node (Current, R1, R2, R3).',
   'circuits-multimeter': 'Fluke High-Accuracy Digital Multimeter measuring loop voltages, branch currents, and circuit continuity.',
   'circuits-clipboard': 'Official laboratory documentation clipboard for DC & AC circuit experiments. Press [E] to log trial data.',
   'circuits-placard': 'Architectural wall placard illustrating Ohm\'s Law, Kirchhoff\'s Laws, AC phasor diagrams, and impedance equations.',
@@ -2266,6 +2281,63 @@ export function createRoom3Scene(
   gndPostMesh.position.set(0.03, 0.04, 0.175);
   psuGroup.add(gndPostMesh);
 
+  let psuVoltKnobMesh: THREE.Object3D | null = voltKnob;
+  let psuSwitchMesh: THREE.Object3D | null = powerSwitchMesh;
+
+  const updatePsuKnobRotation = (vs: number) => {
+    if (!psuVoltKnobMesh) return;
+    const clampedVs = Math.max(0, Math.min(30, vs));
+    // map 0V - 30V to angle -135 deg to +135 deg
+    const angle = -Math.PI * 0.75 + (clampedVs / 30) * Math.PI * 1.5;
+    psuVoltKnobMesh.rotation.z = angle;
+    if (psuVoltKnobMesh === voltKnob) {
+      voltKnob.rotation.y = angle;
+    }
+  };
+
+  const updatePsuTexture = (vs: number, freq: number, isAc: boolean, powerOn = currentCircuits.powerOn !== false) => {
+    psuCtx.fillStyle = '#050811';
+    psuCtx.fillRect(0, 0, 512, 256);
+
+    // Instrument Frame Header
+    psuCtx.font = 'bold 22px monospace';
+    psuCtx.fillStyle = '#38bdf8';
+    psuCtx.fillText(isAc ? 'AGILENT 33220A AC/DC SOURCE' : 'KEYSIGHT E3631A DC POWER SUPPLY', 20, 36);
+
+    psuCtx.font = 'bold 16px monospace';
+    psuCtx.fillStyle = powerOn ? '#10b981' : '#f59e0b';
+    psuCtx.fillText(
+      powerOn
+        ? (isAc ? '● CH1: SINE WAVE · 50Ω LOAD' : '● CH1: CV (CONSTANT VOLTAGE) · OUTPUT ACTIVE')
+        : '○ OUTPUT STANDBY · POWER SWITCH OFF',
+      20,
+      66
+    );
+
+    // Large High-Contrast Digital Readout
+    psuCtx.font = 'bold 64px monospace';
+    psuCtx.fillStyle = powerOn ? '#10b981' : '#475569';
+    psuCtx.fillText(powerOn ? `${vs.toFixed(2)} V` : '0.00 V', 20, 146);
+
+    // Secondary Telemetry Row
+    psuCtx.font = 'bold 26px monospace';
+    psuCtx.fillStyle = powerOn ? '#38bdf8' : '#334155';
+    const circI = powerOn ? calculateCircuit(currentCircuits).current : 0;
+    psuCtx.fillText(
+      powerOn
+        ? (isAc ? `FREQ: ${freq.toFixed(1)} Hz` : `I_OUT: ${(circI * 1000).toFixed(1)} mA`)
+        : 'I_OUT: 0.0 mA (OFF)',
+      20,
+      200
+    );
+
+    psuCtx.font = 'bold 17px monospace';
+    psuCtx.fillStyle = '#64748b';
+    psuCtx.fillText(isAc ? 'OFFSET: 0.00 V · 50Ω' : 'CC LIMIT: 3.000 A · TRIP: 3.20 A', 20, 236);
+
+    psuTexture.needsUpdate = true;
+  };
+
   // Load High-Fidelity DC Power Supply GLB Model (replaces procedural housing, display & knobs)
   gltfLoader.load('/assets/room-3/electrical/dc_power_supply.glb', (gltf) => {
     const model = gltf.scene;
@@ -2278,6 +2350,29 @@ export function createRoom3Scene(
         child.receiveShadow = true;
         if (child.name === 'DC_PSU_Digital_Display') {
           (child as THREE.Mesh).material = new THREE.MeshBasicMaterial({ map: psuTexture });
+        } else if (child.name === 'Knob_Voltage_Adjust') {
+          psuVoltKnobMesh = child;
+          child.userData.hoverTooltip = `Voltage Regulator Knob: ${currentCircuits.vs.toFixed(1)} V (Click to step / Scroll to tune)`;
+          registerInteractable(child, {
+            id: 'circuits-voltage-knob',
+            stationId: 'circuits',
+            category: 'POTENTIOMETER',
+            name: 'DC Power Supply Voltage Knob',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-voltage-knob'],
+            action: 'Turn Voltage Knob (+2V / Scroll)',
+            readout: `Vs = ${currentCircuits.vs.toFixed(1)} V`,
+          });
+        } else if (child.name === 'Agilent_DC_Power_Supply') {
+          psuSwitchMesh = child;
+          registerInteractable(child, {
+            id: 'circuits-power-switch',
+            stationId: 'circuits',
+            category: 'POWER & EXCITATION',
+            name: 'DC Regulated Power Supply',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-power-switch'],
+            action: 'Toggle Main Power Switch',
+            readout: `Output: ${currentCircuits.vs.toFixed(1)} V · Power: ${currentCircuits.powerOn !== false ? 'ON' : 'OFF'}`,
+          });
         }
       }
     });
@@ -2287,48 +2382,10 @@ export function createRoom3Scene(
     powerSwitchMesh.visible = false;
     voltKnob.visible = false;
     psuGroup.add(model);
-    registerInteractable(model, {
-      id: 'circuits-power-switch',
-      stationId: 'circuits',
-      category: 'POWER & EXCITATION',
-      name: 'DC Regulated Power Supply',
-      description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-power-switch'],
-      action: 'Toggle Main Power Switch',
-      readout: `Output: ${currentCircuits.vs.toFixed(1)} V · Current Limit: 3.00 A`,
-    });
+    updatePsuKnobRotation(currentCircuits.vs);
   }, undefined, (err) => console.warn('DC PSU GLB load note:', err));
 
-  const updatePsuTexture = (vs: number, freq: number, isAc: boolean) => {
-    psuCtx.fillStyle = '#050811';
-    psuCtx.fillRect(0, 0, 512, 256);
-
-    // Instrument Frame Header
-    psuCtx.font = 'bold 24px monospace';
-    psuCtx.fillStyle = '#38bdf8';
-    psuCtx.fillText(isAc ? 'AGILENT 33220A AC/DC SOURCE' : 'KEYSIGHT E3631A DC POWER SUPPLY', 20, 38);
-
-    psuCtx.font = 'bold 16px monospace';
-    psuCtx.fillStyle = '#10b981';
-    psuCtx.fillText(isAc ? 'CH1: SINE WAVE · 50Ω LOAD' : 'CH1: CV (CONSTANT VOLTAGE) · OUTPUT ON', 20, 68);
-
-    // Large High-Contrast Digital Readout
-    psuCtx.font = 'bold 64px monospace';
-    psuCtx.fillStyle = '#ef4444';
-    psuCtx.fillText(`${vs.toFixed(2)} V`, 20, 150);
-
-    // Secondary Telemetry Row
-    psuCtx.font = 'bold 26px monospace';
-    psuCtx.fillStyle = '#38bdf8';
-    const circI = calculateCircuit(currentCircuits).current;
-    psuCtx.fillText(isAc ? `FREQ: ${freq.toFixed(1)} Hz` : `I_OUT: ${(circI * 1000).toFixed(1)} mA`, 20, 205);
-
-    psuCtx.font = 'bold 18px monospace';
-    psuCtx.fillStyle = '#94a3b8';
-    psuCtx.fillText(isAc ? 'OFFSET: 0.00 V · 50Ω' : 'CC LIMIT: 3.000 A · TRIP: 3.20 A', 20, 238);
-
-    psuTexture.needsUpdate = true;
-  };
-  updatePsuTexture(currentCircuits.vs, currentCircuits.freq, currentCircuits.mode === 'ac');
+  updatePsuTexture(currentCircuits.vs, currentCircuits.freq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
 
   scene.add(psuGroup);
 
@@ -2353,6 +2410,12 @@ export function createRoom3Scene(
   });
 
   // 2. Tektronix Dual-Channel Digital Storage Oscilloscope (Pushed back to rear instrument bank)
+  let currentOscilloscope: OscilloscopeSettings = { ...INITIAL_OSCILLOSCOPE };
+  let oscTimeKnobMesh: THREE.Object3D | null = null;
+  let oscCh1KnobMesh: THREE.Object3D | null = null;
+  let oscCh2KnobMesh: THREE.Object3D | null = null;
+  let oscTriggerKnobMesh: THREE.Object3D | null = null;
+
   const oscGroup = new THREE.Group();
   oscGroup.position.set(circuitsBenchX - 0.05, 0.94, -0.52);
 
@@ -2375,66 +2438,228 @@ export function createRoom3Scene(
   oscScreen.position.set(-0.08, 0.12, 0.152);
   oscGroup.add(oscScreen);
 
+  const updateOscKnobRotations = () => {
+    if (oscTimeKnobMesh) {
+      const idx = TIME_DIV_OPTIONS.indexOf(currentOscilloscope.timePerDivMs);
+      const angle = -Math.PI * 0.75 + (Math.max(0, idx) / (TIME_DIV_OPTIONS.length - 1)) * Math.PI * 1.5;
+      oscTimeKnobMesh.rotation.z = angle;
+    }
+    if (oscCh1KnobMesh) {
+      const idx = CH1_VOLTS_DIV_OPTIONS.indexOf(currentOscilloscope.ch1VoltsPerDiv);
+      const angle = -Math.PI * 0.75 + (Math.max(0, idx) / (CH1_VOLTS_DIV_OPTIONS.length - 1)) * Math.PI * 1.5;
+      oscCh1KnobMesh.rotation.z = angle;
+    }
+    if (oscCh2KnobMesh) {
+      const idx = CH2_VOLTS_DIV_OPTIONS.indexOf(currentOscilloscope.ch2VoltsPerDiv);
+      const angle = -Math.PI * 0.75 + (Math.max(0, idx) / (CH2_VOLTS_DIV_OPTIONS.length - 1)) * Math.PI * 1.5;
+      oscCh2KnobMesh.rotation.z = angle;
+    }
+    if (oscTriggerKnobMesh) {
+      oscTriggerKnobMesh.rotation.z = currentOscilloscope.runState === 'run' ? 0 : Math.PI * 0.5;
+    }
+  };
+
   let oscPhase = 0;
   const updateOscilloscope = (delta: number) => {
-    oscPhase += delta * (currentCircuits.mode === 'ac' ? currentCircuits.freq / 10 : 0);
-    const circResult = calculateCircuit(currentCircuits);
+    if (!currentOscilloscope.powerOn) {
+      oscCtx.fillStyle = '#040711';
+      oscCtx.fillRect(0, 0, 512, 384);
+      oscCtx.font = 'bold 20px monospace';
+      oscCtx.fillStyle = '#1e293b';
+      oscCtx.textAlign = 'center';
+      oscCtx.fillText('TEKTRONIX TDS 2024B', 256, 170);
+      oscCtx.font = '14px monospace';
+      oscCtx.fillStyle = '#334155';
+      oscCtx.fillText('[ POWER OFF · CLICK TO TURN ON ]', 256, 210);
+      oscCtx.textAlign = 'left';
+      oscTexture.needsUpdate = true;
+      return;
+    }
 
-    oscCtx.fillStyle = '#050b14';
+    if (currentOscilloscope.runState === 'run') {
+      const sweepRate = currentCircuits.mode === 'ac' ? currentCircuits.freq * 0.05 : 20.0;
+      oscPhase += delta * sweepRate;
+    }
+
+    const circResult = calculateCircuit(currentCircuits);
+    const isCircuitPowered = currentCircuits.powerOn !== false;
+    const isLoopClosed = multimeter3d.circuitState.seriesJumperConnected || (multimeter3d.dmmState.redProbeTerminal === 'SERIES_JACK_A' && multimeter3d.dmmState.blackProbeTerminal === 'SERIES_JACK_B') || (multimeter3d.dmmState.redProbeTerminal === 'SERIES_JACK_B' && multimeter3d.dmmState.blackProbeTerminal === 'SERIES_JACK_A');
+
+    // Deep CRT screen background
+    oscCtx.fillStyle = '#020617';
     oscCtx.fillRect(0, 0, 512, 384);
 
-    // Green CRT Graticule
-    oscCtx.strokeStyle = 'rgba(16, 185, 129, 0.15)';
+    // 8x10 Graticule Grid
+    oscCtx.strokeStyle = 'rgba(16, 185, 129, 0.16)';
     oscCtx.lineWidth = 1;
-    for (let x = 0; x <= 512; x += 64) {
+    for (let x = 0; x <= 512; x += 51.2) {
       oscCtx.beginPath();
-      oscCtx.moveTo(x, 0);
-      oscCtx.lineTo(x, 384);
+      oscCtx.moveTo(x, 24);
+      oscCtx.lineTo(x, 350);
       oscCtx.stroke();
     }
-    for (let y = 0; y <= 384; y += 48) {
+    for (let y = 24; y <= 350; y += 40.75) {
       oscCtx.beginPath();
       oscCtx.moveTo(0, y);
       oscCtx.lineTo(512, y);
       oscCtx.stroke();
     }
 
-    // Channel 1: Voltage V(t) trace in Yellow
-    oscCtx.strokeStyle = '#eab308';
-    oscCtx.lineWidth = 3;
+    // Center Crosshairs with tick subdivisions
+    oscCtx.strokeStyle = 'rgba(16, 185, 129, 0.35)';
+    oscCtx.lineWidth = 1.2;
+    // Horizontal center axis
     oscCtx.beginPath();
-    const vAmp = Math.min(150, (currentCircuits.vs / 240) * 140 + 20);
-    for (let px = 0; px < 512; px++) {
-      const t = (px / 512) * Math.PI * 4 + oscPhase;
-      const py = currentCircuits.mode === 'ac' ? 192 - Math.sin(t) * vAmp : 192 - (currentCircuits.vs / 240) * 140;
-      if (px === 0) oscCtx.moveTo(px, py);
-      else oscCtx.lineTo(px, py);
-    }
+    oscCtx.moveTo(0, 187);
+    oscCtx.lineTo(512, 187);
+    oscCtx.stroke();
+    // Vertical center axis
+    oscCtx.beginPath();
+    oscCtx.moveTo(256, 24);
+    oscCtx.lineTo(256, 350);
     oscCtx.stroke();
 
-    // Channel 2: Current I(t) trace in Cyan with phase shift
-    oscCtx.strokeStyle = '#38bdf8';
-    oscCtx.lineWidth = 2.5;
-    oscCtx.beginPath();
-    const iAmp = Math.min(150, (circResult.current / 2.0) * 120 + 15);
+    // Tick marks on center axes
+    oscCtx.strokeStyle = 'rgba(16, 185, 129, 0.4)';
+    for (let x = 0; x <= 512; x += 10.24) {
+      oscCtx.beginPath();
+      oscCtx.moveTo(x, 184);
+      oscCtx.lineTo(x, 190);
+      oscCtx.stroke();
+    }
+    for (let y = 24; y <= 350; y += 8.15) {
+      oscCtx.beginPath();
+      oscCtx.moveTo(253, y);
+      oscCtx.lineTo(259, y);
+      oscCtx.stroke();
+    }
+
+    // Determine signal values
+    let ch1Peak = 0;
+    if (isCircuitPowered) {
+      if (currentOscilloscope.ch1Source === 'vs') ch1Peak = currentCircuits.vs;
+      else if (currentOscilloscope.ch1Source === 'r1') ch1Peak = circResult.v1;
+      else if (currentOscilloscope.ch1Source === 'r2') ch1Peak = circResult.v2;
+      else if (currentOscilloscope.ch1Source === 'r3') ch1Peak = circResult.v3;
+    }
+
+    let ch2Signal = 0;
+    if (isCircuitPowered && isLoopClosed) {
+      if (currentOscilloscope.ch2Source === 'current') ch2Signal = circResult.current * 1000; // in mA
+      else if (currentOscilloscope.ch2Source === 'r1') ch2Signal = circResult.v1;
+      else if (currentOscilloscope.ch2Source === 'r2') ch2Signal = circResult.v2;
+      else if (currentOscilloscope.ch2Source === 'r3') ch2Signal = circResult.v3;
+    }
+
+    const isAc = currentCircuits.mode === 'ac';
+    const totalTimeSpanMs = currentOscilloscope.timePerDivMs * 10;
+    const freq = isAc ? currentCircuits.freq : 60;
+    const cyclesInWindow = (totalTimeSpanMs / 1000) * freq;
     const phaseRad = circResult.phaseAngleRad;
-    for (let px = 0; px < 512; px++) {
-      const t = (px / 512) * Math.PI * 4 + oscPhase - phaseRad;
-      const py = currentCircuits.mode === 'ac' ? 192 - Math.sin(t) * iAmp : 192 - (circResult.current / 2.0) * 100;
-      if (px === 0) oscCtx.moveTo(px, py);
-      else oscCtx.lineTo(px, py);
-    }
-    oscCtx.stroke();
 
-    // Text Overlay
-    oscCtx.font = 'bold 20px monospace';
-    oscCtx.fillStyle = '#eab308';
-    oscCtx.fillText(`CH1: ${currentCircuits.vs.toFixed(1)} V (10V/div)`, 20, 32);
+    // Channel 1: Yellow Trace (#facc15)
+    if (currentOscilloscope.ch1Enabled) {
+      const vPerDiv = currentOscilloscope.ch1VoltsPerDiv;
+      const pxPerVolt = 40.75 / vPerDiv;
+      oscCtx.strokeStyle = '#facc15';
+      oscCtx.lineWidth = 2.5;
+      oscCtx.shadowColor = '#facc15';
+      oscCtx.shadowBlur = 4;
+      oscCtx.beginPath();
+
+      for (let px = 0; px < 512; px++) {
+        const tFrac = px / 512;
+        let vInst = 0;
+        if (currentOscilloscope.coupling === 'gnd') {
+          vInst = 0;
+        } else if (isAc) {
+          const theta = tFrac * Math.PI * 2 * cyclesInWindow + oscPhase;
+          vInst = ch1Peak * Math.sin(theta);
+        } else {
+          // DC with fine ripple
+          const ripple = 0.04 * Math.sin(tFrac * Math.PI * 16 + oscPhase);
+          vInst = currentOscilloscope.coupling === 'ac' ? ripple : ch1Peak + ripple;
+        }
+        const py = Math.max(26, Math.min(348, 187 - vInst * pxPerVolt));
+        if (px === 0) oscCtx.moveTo(px, py);
+        else oscCtx.lineTo(px, py);
+      }
+      oscCtx.stroke();
+      oscCtx.shadowBlur = 0;
+
+      // CH1 Ground Reference Marker
+      oscCtx.fillStyle = '#facc15';
+      oscCtx.font = 'bold 11px sans-serif';
+      oscCtx.fillText('1▶', 2, 191);
+    }
+
+    // Channel 2: Cyan Trace (#38bdf8)
+    if (currentOscilloscope.ch2Enabled) {
+      const scalePerDiv = currentOscilloscope.ch2VoltsPerDiv;
+      const pxPerUnit = 40.75 / scalePerDiv;
+      oscCtx.strokeStyle = '#38bdf8';
+      oscCtx.lineWidth = 2.2;
+      oscCtx.shadowColor = '#38bdf8';
+      oscCtx.shadowBlur = 4;
+      oscCtx.beginPath();
+
+      for (let px = 0; px < 512; px++) {
+        const tFrac = px / 512;
+        let sigInst = 0;
+        if (currentOscilloscope.coupling === 'gnd') {
+          sigInst = 0;
+        } else if (isAc) {
+          const theta = tFrac * Math.PI * 2 * cyclesInWindow + oscPhase - phaseRad;
+          sigInst = ch2Signal * Math.sin(theta);
+        } else {
+          const ripple = (ch2Signal > 0 ? 0.05 * ch2Signal : 0.01) * Math.sin(tFrac * Math.PI * 16 + oscPhase);
+          sigInst = currentOscilloscope.coupling === 'ac' ? ripple : ch2Signal + ripple;
+        }
+        const py = Math.max(26, Math.min(348, 187 - sigInst * pxPerUnit));
+        if (px === 0) oscCtx.moveTo(px, py);
+        else oscCtx.lineTo(px, py);
+      }
+      oscCtx.stroke();
+      oscCtx.shadowBlur = 0;
+
+      // CH2 Ground Reference Marker
+      oscCtx.fillStyle = '#38bdf8';
+      oscCtx.font = 'bold 11px sans-serif';
+      oscCtx.fillText('2▶', 2, 191);
+    }
+
+    // Top Header Bar
+    oscCtx.fillStyle = '#0f172a';
+    oscCtx.fillRect(0, 0, 512, 24);
+    oscCtx.font = 'bold 12px monospace';
+    oscCtx.fillStyle = '#f8fafc';
+    oscCtx.fillText('TEKTRONIX TDS 2024B', 10, 16);
+
+    const isRunning = currentOscilloscope.runState === 'run';
+    oscCtx.fillStyle = isRunning ? '#10b981' : '#ef4444';
+    oscCtx.fillText(isRunning ? '[ TRIG\'D ]' : '[ STOP ]', 180, 16);
+
+    oscCtx.fillStyle = '#94a3b8';
+    oscCtx.fillText(`CH1: ${currentOscilloscope.ch1Source.toUpperCase()} · CH2: ${currentOscilloscope.ch2Source.toUpperCase()}`, 270, 16);
+    oscCtx.fillText(`M: ${currentOscilloscope.timePerDivMs}ms`, 440, 16);
+
+    // Bottom Telemetry Bar
+    oscCtx.fillStyle = '#0f172a';
+    oscCtx.fillRect(0, 352, 512, 32);
+    oscCtx.font = 'bold 12px monospace';
+    oscCtx.fillStyle = '#facc15';
+    oscCtx.fillText(`CH1 ${currentOscilloscope.ch1VoltsPerDiv}V~`, 10, 372);
     oscCtx.fillStyle = '#38bdf8';
-    oscCtx.fillText(`CH2: ${(circResult.current * 1000).toFixed(1)} mA (20mA/div)`, 20, 60);
-    oscCtx.fillStyle = '#10b981';
-    oscCtx.fillText(`Δφ = ${circResult.phaseAngleDeg.toFixed(1)}°`, 20, 360);
-    oscCtx.fillText(`cos φ = ${circResult.powerFactor.toFixed(3)} · M: 2.0ms`, 230, 360);
+    oscCtx.fillText(`CH2 ${currentOscilloscope.ch2VoltsPerDiv}${currentOscilloscope.ch2Source === 'current' ? 'mA' : 'V'}~`, 110, 372);
+
+    oscCtx.fillStyle = '#34d399';
+    const vRms = isAc ? ch1Peak / Math.SQRT2 : ch1Peak;
+    const vPpk = isAc ? ch1Peak * 2 : (currentOscilloscope.coupling === 'ac' ? 0.08 : ch1Peak);
+    oscCtx.fillText(`Vrms:${vRms.toFixed(1)}V`, 220, 372);
+    oscCtx.fillText(`Vpp:${vPpk.toFixed(1)}V`, 320, 372);
+
+    oscCtx.fillStyle = '#fef08a';
+    oscCtx.fillText(isAc ? `f:${currentCircuits.freq.toFixed(0)}Hz` : 'DC Mode', 420, 372);
 
     oscTexture.needsUpdate = true;
   };
@@ -2452,6 +2677,86 @@ export function createRoom3Scene(
         child.receiveShadow = true;
         if (child.name === 'Oscilloscope_Screen_Display') {
           (child as THREE.Mesh).material = new THREE.MeshBasicMaterial({ map: oscTexture });
+        } else if (child.name === 'Knob_TimeDiv') {
+          oscTimeKnobMesh = child;
+          child.userData.hoverTooltip = `Oscilloscope Timebase: ${currentOscilloscope.timePerDivMs} ms/div (Click to step / Scroll)`;
+          registerInteractable(child, {
+            id: 'circuits-osc-time-knob',
+            stationId: 'circuits',
+            category: 'OSCILLOSCOPE',
+            name: 'Timebase Horizontal SEC/DIV Knob',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-osc-time-knob'],
+            action: 'Step Timebase (ms/div)',
+            readout: `${currentOscilloscope.timePerDivMs} ms/div`,
+          });
+        } else if (child.name === 'Knob_VoltsDiv_Ch1') {
+          oscCh1KnobMesh = child;
+          child.userData.hoverTooltip = `CH1 Scale: ${currentOscilloscope.ch1VoltsPerDiv} V/div (Click to step / Scroll)`;
+          registerInteractable(child, {
+            id: 'circuits-osc-ch1-knob',
+            stationId: 'circuits',
+            category: 'OSCILLOSCOPE',
+            name: 'Channel 1 VOLTS/DIV Knob',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-osc-ch1-knob'],
+            action: 'Step CH1 Volts/div',
+            readout: `${currentOscilloscope.ch1VoltsPerDiv} V/div`,
+          });
+        } else if (child.name === 'Knob_VoltsDiv_Ch2') {
+          oscCh2KnobMesh = child;
+          child.userData.hoverTooltip = `CH2 Scale: ${currentOscilloscope.ch2VoltsPerDiv} mA/div (Click to step / Scroll)`;
+          registerInteractable(child, {
+            id: 'circuits-osc-ch2-knob',
+            stationId: 'circuits',
+            category: 'OSCILLOSCOPE',
+            name: 'Channel 2 Scale Knob',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-osc-ch2-knob'],
+            action: 'Step CH2 Scale',
+            readout: `${currentOscilloscope.ch2VoltsPerDiv} mA/div`,
+          });
+        } else if (child.name === 'Knob_Trigger') {
+          oscTriggerKnobMesh = child;
+          child.userData.hoverTooltip = `Trigger / Run-Stop: ${currentOscilloscope.runState.toUpperCase()}`;
+          registerInteractable(child, {
+            id: 'circuits-osc-trigger-knob',
+            stationId: 'circuits',
+            category: 'OSCILLOSCOPE',
+            name: 'Run / Stop Trigger Toggle',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-osc-trigger-knob'],
+            action: 'Toggle Run / Stop',
+            readout: `State: ${currentOscilloscope.runState.toUpperCase()}`,
+          });
+        } else if (child.name === 'BNC_Input_CH1') {
+          child.userData.hoverTooltip = `CH1 Input: Connected to ${currentOscilloscope.ch1Source.toUpperCase()}`;
+          registerInteractable(child, {
+            id: 'circuits-osc-ch1-input',
+            stationId: 'circuits',
+            category: 'OSCILLOSCOPE',
+            name: 'BNC Input Jack CH1 (Voltage)',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-osc-ch1-input'],
+            action: 'Cycle Probe Node (Vs -> R1 -> R2 -> R3)',
+            readout: `Probe on: ${currentOscilloscope.ch1Source.toUpperCase()}`,
+          });
+        } else if (child.name === 'BNC_Input_CH2') {
+          child.userData.hoverTooltip = `CH2 Input: Connected to ${currentOscilloscope.ch2Source.toUpperCase()}`;
+          registerInteractable(child, {
+            id: 'circuits-osc-ch2-input',
+            stationId: 'circuits',
+            category: 'OSCILLOSCOPE',
+            name: 'BNC Input Jack CH2 (Current/Node)',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-osc-ch2-input'],
+            action: 'Cycle Probe Node (Current -> R1 -> R2 -> R3)',
+            readout: `Probe on: ${currentOscilloscope.ch2Source.toUpperCase()}`,
+          });
+        } else if (child.name === 'Tektronix_Oscilloscope') {
+          registerInteractable(child, {
+            id: 'circuits-oscilloscope',
+            stationId: 'circuits',
+            category: 'INSTRUMENTATION',
+            name: 'Tektronix Dual-Channel Digital Storage Oscilloscope',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-oscilloscope'],
+            action: 'Focus & Inspect Oscilloscope Display',
+            readout: `CH1: ${currentOscilloscope.ch1VoltsPerDiv}V/div · M: ${currentOscilloscope.timePerDivMs}ms · Mode: ${currentCircuits.mode.toUpperCase()}`,
+          });
         }
       }
     });
@@ -2459,15 +2764,7 @@ export function createRoom3Scene(
     oscHousing.visible = false;
     oscScreen.visible = false;
     oscGroup.add(model);
-    registerInteractable(model, {
-      id: 'circuits-oscilloscope',
-      stationId: 'circuits',
-      category: 'INSTRUMENTATION',
-      name: 'Tektronix Dual-Channel Digital Storage Oscilloscope',
-      description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-oscilloscope'],
-      action: 'Observe Waveform Phase Shift',
-      readout: `Waveform Trace: V(t) vs I(t) · Phase Shift φ = ${calculateCircuit(currentCircuits).phaseAngleDeg.toFixed(1)}°`,
-    });
+    updateOscKnobRotations();
   }, undefined, (err) => console.warn('Oscilloscope GLB load note:', err));
 
   scene.add(oscGroup);
@@ -3418,9 +3715,13 @@ export function createRoom3Scene(
       pos: new THREE.Vector3(STATION_X.circuits - 0.65, 1.18, -0.10),
       lookAt: new THREE.Vector3(STATION_X.circuits - 0.65, 1.02, -0.42),
     },
+    oscilloscope: {
+      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.20, -0.15),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.05, 1.05, -0.52),
+    },
   };
 
-  const setCloseupFocus = (focus: 'station' | 'board' | 'multimeter' | 'psu') => {
+  const setCloseupFocus = (focus: 'station' | 'board' | 'multimeter' | 'psu' | 'oscilloscope') => {
     if (cameraMode !== 'closeup') return;
     const t = CIRCUITS_CLOSEUP_SUBVIEWS[focus] || CIRCUITS_CLOSEUP_SUBVIEWS.station;
     targetCloseupCamPos.copy(t.pos);
@@ -3491,9 +3792,108 @@ export function createRoom3Scene(
   const mouseScreenPos = new THREE.Vector2();
   let mouseActive = false;
 
+  const VOLT_CYCLE_STEPS = [2, 4, 6, 8, 10, 12, 16, 20, 24];
+
   const triggerEquipmentAction = (interactionId: string) => {
     callbacks.onEquipmentInteract?.(interactionId);
-    if (['circuits-multimeter', 'circuits-power-switch', 'circuits-topology-selector', 'circuits-oscilloscope'].includes(interactionId)) {
+
+    if (interactionId === 'circuits-voltage-knob') {
+      const curVs = currentCircuits.vs;
+      const nextIdx = VOLT_CYCLE_STEPS.findIndex((v) => v > curVs + 0.1);
+      const nextVs = nextIdx !== -1 ? VOLT_CYCLE_STEPS[nextIdx] : VOLT_CYCLE_STEPS[0];
+      currentCircuits.vs = nextVs;
+      updatePsuKnobRotation(nextVs);
+      updatePsuTexture(nextVs, currentCircuits.freq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
+      multimeter3d.updateCircuitParameters({ sourceVoltage: nextVs });
+      callbacks.onCircuitsChange?.({ vs: nextVs });
+      playTone(480 + (nextVs / 24) * 200, 'sine', 0.05, 0.15);
+      return;
+    }
+
+    if (interactionId === 'circuits-power-switch') {
+      const nextPower = currentCircuits.powerOn === false ? true : false;
+      currentCircuits.powerOn = nextPower;
+      updatePsuTexture(currentCircuits.vs, currentCircuits.freq, currentCircuits.mode === 'ac', nextPower);
+      multimeter3d.updateCircuitParameters({ powerOn: nextPower });
+      callbacks.onCircuitsChange?.({ powerOn: nextPower });
+      playTone(nextPower ? 880 : 330, 'square', 0.06, 0.2);
+      if (cameraMode !== 'closeup') {
+        setCameraMode('closeup', 'circuits');
+      }
+      return;
+    }
+
+    if (interactionId === 'circuits-oscilloscope') {
+      setCameraMode('closeup', 'circuits');
+      setCloseupFocus('oscilloscope');
+      return;
+    }
+
+    if (interactionId === 'circuits-osc-time-knob') {
+      const curIdx = TIME_DIV_OPTIONS.indexOf(currentOscilloscope.timePerDivMs);
+      const nextIdx = (curIdx + 1) % TIME_DIV_OPTIONS.length;
+      const nextTime = TIME_DIV_OPTIONS[nextIdx];
+      currentOscilloscope.timePerDivMs = nextTime;
+      updateOscKnobRotations();
+      callbacks.onOscilloscopeChange?.({ timePerDivMs: nextTime });
+      playTone(520, 'triangle', 0.04, 0.12);
+      return;
+    }
+
+    if (interactionId === 'circuits-osc-ch1-knob') {
+      const curIdx = CH1_VOLTS_DIV_OPTIONS.indexOf(currentOscilloscope.ch1VoltsPerDiv);
+      const nextIdx = (curIdx + 1) % CH1_VOLTS_DIV_OPTIONS.length;
+      const nextVal = CH1_VOLTS_DIV_OPTIONS[nextIdx];
+      currentOscilloscope.ch1VoltsPerDiv = nextVal;
+      updateOscKnobRotations();
+      callbacks.onOscilloscopeChange?.({ ch1VoltsPerDiv: nextVal });
+      playTone(580, 'triangle', 0.04, 0.12);
+      return;
+    }
+
+    if (interactionId === 'circuits-osc-ch2-knob') {
+      const curIdx = CH2_VOLTS_DIV_OPTIONS.indexOf(currentOscilloscope.ch2VoltsPerDiv);
+      const nextIdx = (curIdx + 1) % CH2_VOLTS_DIV_OPTIONS.length;
+      const nextVal = CH2_VOLTS_DIV_OPTIONS[nextIdx];
+      currentOscilloscope.ch2VoltsPerDiv = nextVal;
+      updateOscKnobRotations();
+      callbacks.onOscilloscopeChange?.({ ch2VoltsPerDiv: nextVal });
+      playTone(640, 'triangle', 0.04, 0.12);
+      return;
+    }
+
+    if (interactionId === 'circuits-osc-trigger-knob') {
+      const nextRunState = currentOscilloscope.runState === 'run' ? 'stop' : 'run';
+      currentOscilloscope.runState = nextRunState;
+      updateOscKnobRotations();
+      callbacks.onOscilloscopeChange?.({ runState: nextRunState });
+      playTone(nextRunState === 'run' ? 700 : 440, 'square', 0.05, 0.15);
+      return;
+    }
+
+    const CH1_SOURCES: OscilloscopeChannelSource[] = ['vs', 'r1', 'r2', 'r3'];
+    if (interactionId === 'circuits-osc-ch1-input') {
+      const curIdx = CH1_SOURCES.indexOf(currentOscilloscope.ch1Source);
+      const nextIdx = (curIdx + 1) % CH1_SOURCES.length;
+      const nextSource = CH1_SOURCES[nextIdx];
+      currentOscilloscope.ch1Source = nextSource;
+      callbacks.onOscilloscopeChange?.({ ch1Source: nextSource });
+      playTone(660, 'sine', 0.05, 0.12);
+      return;
+    }
+
+    const CH2_SOURCES: ('current' | 'r1' | 'r2' | 'r3')[] = ['current', 'r1', 'r2', 'r3'];
+    if (interactionId === 'circuits-osc-ch2-input') {
+      const curIdx = CH2_SOURCES.indexOf(currentOscilloscope.ch2Source);
+      const nextIdx = (curIdx + 1) % CH2_SOURCES.length;
+      const nextSource = CH2_SOURCES[nextIdx];
+      currentOscilloscope.ch2Source = nextSource;
+      callbacks.onOscilloscopeChange?.({ ch2Source: nextSource });
+      playTone(720, 'sine', 0.05, 0.12);
+      return;
+    }
+
+    if (['circuits-multimeter', 'circuits-topology-selector'].includes(interactionId)) {
       setCameraMode('closeup', 'circuits');
     } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen'].includes(interactionId)) {
       setCameraMode('closeup', 'optics');
@@ -3783,8 +4183,94 @@ export function createRoom3Scene(
     }
   };
 
+  const onCanvasWheel = (e: WheelEvent) => {
+    if (cameraMode !== 'closeup' || activeStation !== 'circuits') return;
+    if (!renderer.domElement) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    const hoverPointer = new THREE.Vector2(mouseX, mouseY);
+    raycaster.setFromCamera(hoverPointer, camera);
+    const hits = raycaster.intersectObjects(interactableObjects, true);
+
+    for (const hit of hits) {
+      let currentObj: THREE.Object3D | null = hit.object;
+      let inter: EquipmentInteraction | undefined = undefined;
+      while (currentObj && !inter) {
+        inter = objectToInteractionMap.get(currentObj) || currentObj.userData.equipmentInteraction;
+        currentObj = currentObj.parent;
+      }
+      if (!inter) continue;
+
+      if (inter.id === 'circuits-voltage-knob') {
+        e.preventDefault();
+        const step = e.deltaY < 0 ? 0.5 : -0.5;
+        const newVs = Math.max(0, Math.min(30, Math.round((currentCircuits.vs + step) * 10) / 10));
+        if (newVs !== currentCircuits.vs) {
+          currentCircuits.vs = newVs;
+          updatePsuKnobRotation(newVs);
+          updatePsuTexture(newVs, currentCircuits.freq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
+          multimeter3d.updateCircuitParameters({ sourceVoltage: newVs });
+          callbacks.onCircuitsChange?.({ vs: newVs });
+          playTone(480 + (newVs / 30) * 240, 'sine', 0.03, 0.08);
+        }
+        return;
+      }
+
+      if (inter.id === 'circuits-osc-time-knob') {
+        e.preventDefault();
+        const curIdx = TIME_DIV_OPTIONS.indexOf(currentOscilloscope.timePerDivMs);
+        const nextIdx = e.deltaY < 0
+          ? Math.min(TIME_DIV_OPTIONS.length - 1, curIdx + 1)
+          : Math.max(0, curIdx - 1);
+        const nextTime = TIME_DIV_OPTIONS[nextIdx];
+        if (nextTime !== currentOscilloscope.timePerDivMs) {
+          currentOscilloscope.timePerDivMs = nextTime;
+          updateOscKnobRotations();
+          callbacks.onOscilloscopeChange?.({ timePerDivMs: nextTime });
+          playTone(520, 'triangle', 0.03, 0.08);
+        }
+        return;
+      }
+
+      if (inter.id === 'circuits-osc-ch1-knob') {
+        e.preventDefault();
+        const curIdx = CH1_VOLTS_DIV_OPTIONS.indexOf(currentOscilloscope.ch1VoltsPerDiv);
+        const nextIdx = e.deltaY < 0
+          ? Math.min(CH1_VOLTS_DIV_OPTIONS.length - 1, curIdx + 1)
+          : Math.max(0, curIdx - 1);
+        const nextVal = CH1_VOLTS_DIV_OPTIONS[nextIdx];
+        if (nextVal !== currentOscilloscope.ch1VoltsPerDiv) {
+          currentOscilloscope.ch1VoltsPerDiv = nextVal;
+          updateOscKnobRotations();
+          callbacks.onOscilloscopeChange?.({ ch1VoltsPerDiv: nextVal });
+          playTone(580, 'triangle', 0.03, 0.08);
+        }
+        return;
+      }
+
+      if (inter.id === 'circuits-osc-ch2-knob') {
+        e.preventDefault();
+        const curIdx = CH2_VOLTS_DIV_OPTIONS.indexOf(currentOscilloscope.ch2VoltsPerDiv);
+        const nextIdx = e.deltaY < 0
+          ? Math.min(CH2_VOLTS_DIV_OPTIONS.length - 1, curIdx + 1)
+          : Math.max(0, curIdx - 1);
+        const nextVal = CH2_VOLTS_DIV_OPTIONS[nextIdx];
+        if (nextVal !== currentOscilloscope.ch2VoltsPerDiv) {
+          currentOscilloscope.ch2VoltsPerDiv = nextVal;
+          updateOscKnobRotations();
+          callbacks.onOscilloscopeChange?.({ ch2VoltsPerDiv: nextVal });
+          playTone(640, 'triangle', 0.03, 0.08);
+        }
+        return;
+      }
+    }
+  };
+
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
   renderer.domElement.addEventListener('click', onCanvasClick);
+  renderer.domElement.addEventListener('wheel', onCanvasWheel, { passive: false });
   renderer.domElement.addEventListener('contextmenu', onContextMenu);
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
@@ -4075,6 +4561,7 @@ export function createRoom3Scene(
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('click', onCanvasClick);
+      renderer.domElement.removeEventListener('wheel', onCanvasWheel);
       renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
@@ -4145,7 +4632,8 @@ export function createRoom3Scene(
     },
     setCircuits: (settings) => {
       currentCircuits = { ...settings };
-      updatePsuTexture(currentCircuits.vs, currentCircuits.freq, currentCircuits.mode === 'ac');
+      updatePsuKnobRotation(currentCircuits.vs);
+      updatePsuTexture(currentCircuits.vs, currentCircuits.freq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
       multimeter3d.updateCircuitParameters({
         mode: currentCircuits.mode,
         topology: currentCircuits.topology,
@@ -4159,6 +4647,10 @@ export function createRoom3Scene(
         inductanceMh: currentCircuits.inductance,
         capacitanceUf: currentCircuits.capacitance,
       });
+    },
+    setOscilloscope: (settings) => {
+      currentOscilloscope = { ...settings };
+      updateOscKnobRotations();
     },
     setOptics: (settings) => {
       currentOptics = { ...settings };

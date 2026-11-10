@@ -18,6 +18,44 @@ export type CircuitSettings = {
   powerOn?: boolean;
 };
 
+export type OscilloscopeChannelSource = 'vs' | 'r1' | 'r2' | 'r3';
+export type OscilloscopeCoupling = 'dc' | 'ac' | 'gnd';
+export type OscilloscopeTriggerMode = 'auto' | 'norm' | 'single';
+
+export interface OscilloscopeSettings {
+  powerOn: boolean;
+  ch1Enabled: boolean;
+  ch2Enabled: boolean;
+  ch1Source: OscilloscopeChannelSource;
+  ch2Source: 'current' | 'r1' | 'r2' | 'r3';
+  ch1VoltsPerDiv: number; // 1.0, 2.0, 5.0, 10.0, 20.0 V/div
+  ch2VoltsPerDiv: number; // 5.0, 10.0, 20.0, 50.0, 100.0 mA/div
+  timePerDivMs: number;   // 0.5, 1.0, 2.0, 5.0, 10.0, 20.0 ms/div
+  coupling: OscilloscopeCoupling;
+  triggerMode: OscilloscopeTriggerMode;
+  triggerLevel: number;
+  runState: 'run' | 'stop';
+}
+
+export const INITIAL_OSCILLOSCOPE: OscilloscopeSettings = {
+  powerOn: true,
+  ch1Enabled: true,
+  ch2Enabled: true,
+  ch1Source: 'vs',
+  ch2Source: 'current',
+  ch1VoltsPerDiv: 5.0,
+  ch2VoltsPerDiv: 10.0,
+  timePerDivMs: 2.0,
+  coupling: 'dc',
+  triggerMode: 'auto',
+  triggerLevel: 0.0,
+  runState: 'run',
+};
+
+export const CH1_VOLTS_DIV_OPTIONS = [1.0, 2.0, 5.0, 10.0, 20.0];
+export const CH2_VOLTS_DIV_OPTIONS = [5.0, 10.0, 20.0, 50.0, 100.0];
+export const TIME_DIV_OPTIONS = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0];
+
 export type OpticsSettings = {
   subMode: 'refraction' | 'imaging' | 'diffraction';
   wavelength: number; // nm (400 - 700 nm)

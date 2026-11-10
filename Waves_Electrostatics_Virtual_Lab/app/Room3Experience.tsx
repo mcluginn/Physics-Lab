@@ -38,6 +38,11 @@ import {
   type Room3Progress,
   type Room3StationId,
   type TrialRecord,
+  type OscilloscopeSettings,
+  INITIAL_OSCILLOSCOPE,
+  CH1_VOLTS_DIV_OPTIONS,
+  CH2_VOLTS_DIV_OPTIONS,
+  TIME_DIV_OPTIONS,
 } from './room3Model';
 import {
   evaluateStepPrerequisites,
@@ -251,6 +256,7 @@ export default function Room3Experience() {
     return 'circuits';
   });
   const [circuits, setCircuits] = useState<CircuitSettings>(INITIAL_CIRCUITS);
+  const [oscilloscope, setOscilloscope] = useState<OscilloscopeSettings>(INITIAL_OSCILLOSCOPE);
   const [optics, setOptics] = useState<OpticsSettings>(INITIAL_OPTICS);
   const [relativity, setRelativity] = useState<RelativitySettings>(INITIAL_RELATIVITY);
 
@@ -329,7 +335,7 @@ export default function Room3Experience() {
   const [blackTerminal, setBlackTerminalState] = useState<TerminalId | null>('SRC_NEG');
   const [jumperClosed, setJumperClosed] = useState(true);
   const [closeupHoverText, setCloseupHoverText] = useState<string | null>(null);
-  const [closeupFocus, setCloseupFocus] = useState<'station' | 'board' | 'multimeter' | 'psu'>('station');
+  const [closeupFocus, setCloseupFocus] = useState<'station' | 'board' | 'multimeter' | 'psu' | 'oscilloscope'>('station');
 
   // 3D Graphics & Visual Performance Settings
   const [graphicsSettings, setGraphicsSettingsState] = useState<GraphicsSettings>(() => {
@@ -344,7 +350,7 @@ export default function Room3Experience() {
     sceneApi.current?.setGraphicsSettings(newSettings);
   };
 
-  const handleSetCloseupFocus = (focus: 'station' | 'board' | 'multimeter' | 'psu') => {
+  const handleSetCloseupFocus = (focus: 'station' | 'board' | 'multimeter' | 'psu' | 'oscilloscope') => {
     setCloseupFocus(focus);
     sceneApi.current?.setCloseupFocus?.(focus);
   };
@@ -765,6 +771,12 @@ export default function Room3Experience() {
         onAssetProgress: (loaded, total) => setAssetProgress({ loaded, total: Math.max(1, total) }),
         onAssetsReady: () => setAssetsReady(true),
         onEquipmentInteract: (id) => equipmentActionRef.current(id),
+        onCircuitsChange: (patch) => {
+          setCircuits((prev) => ({ ...prev, ...patch }));
+        },
+        onOscilloscopeChange: (patch) => {
+          setOscilloscope((prev) => ({ ...prev, ...patch }));
+        },
         onInteractionChange: (inter) => setInteraction(inter),
         onFootstep: () => playTone(80, 'sine', 0.05, 0.1),
         onCameraModeChange: (mode) => setCameraMode(mode),
@@ -823,6 +835,7 @@ export default function Room3Experience() {
   // Propagate physical changes to 3D scene
   useEffect(() => { sceneApi.current?.setStation(stationId); }, [stationId]);
   useEffect(() => { sceneApi.current?.setCircuits(circuits); }, [circuits]);
+  useEffect(() => { sceneApi.current?.setOscilloscope?.(oscilloscope); }, [oscilloscope]);
   useEffect(() => { sceneApi.current?.setOptics(optics); }, [optics]);
   useEffect(() => { sceneApi.current?.setRelativity(relativity); }, [relativity]);
 
@@ -960,9 +973,31 @@ export default function Room3Experience() {
     // Inspect tracking for Step 1
     handleInspectApparatus(id);
 
+    if (id === 'circuits-voltage-knob') {
+      const VOLT_CYCLE_STEPS = [2, 4, 6, 8, 10, 12, 16, 20, 24];
+      const curVs = circuits.vs;
+      const nextIdx = VOLT_CYCLE_STEPS.findIndex((v) => v > curVs + 0.1);
+      const nextVs = nextIdx !== -1 ? VOLT_CYCLE_STEPS[nextIdx] : VOLT_CYCLE_STEPS[0];
+      setCircuits((prev) => ({ ...prev, vs: nextVs }));
+      playTone(480 + (nextVs / 24) * 200, 'sine', 0.05, 0.15);
+      return;
+    }
+
+    if (id === 'circuits-oscilloscope') {
+      handleSetCloseup('closeup');
+      handleSetCloseupFocus('oscilloscope');
+      return;
+    }
+
+    if (id.startsWith('circuits-osc-')) {
+      handleSetCloseup('closeup');
+      handleSetCloseupFocus('oscilloscope');
+      return;
+    }
+
     if (id.includes('placard') || id.includes('clipboard')) {
       setNotebookOpen(true);
-    } else if (['circuits-multimeter', 'circuits-power-switch', 'circuits-topology-selector', 'circuits-oscilloscope'].includes(id)) {
+    } else if (['circuits-multimeter', 'circuits-power-switch', 'circuits-topology-selector'].includes(id)) {
       handleSetCloseup('closeup');
     } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen', 'optics-rail'].includes(id)) {
       handleSetCloseup('closeup');
@@ -1597,6 +1632,13 @@ export default function Room3Experience() {
                   onClick={() => handleSetCloseupFocus('psu')}
                 >
                   ⚡ Power Supply
+                </button>
+                <button
+                  type="button"
+                  className={`cam-focus-btn ${closeupFocus === 'oscilloscope' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('oscilloscope')}
+                >
+                  📺 Oscilloscope
                 </button>
                 <button
                   type="button"
@@ -2615,6 +2657,115 @@ export default function Room3Experience() {
               </button>
             </div>
 
+            {/* DC Power Supply Voltage Knob & Control Suite */}
+            <div className="dmm-workbench-card" style={{ marginBottom: '8px' }}>
+              <div className="dmm-header-title">
+                <b>DC REGULATED POWER SUPPLY</b>
+                <span style={{ fontSize: '11px', color: circuits.powerOn ? '#34d399' : '#ef4444' }}>
+                  {circuits.powerOn ? '● OUTPUT ON' : '○ STANDBY'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '6px 0 8px' }}>
+                <div>
+                  <span style={{ fontSize: '10px', color: '#94a3b8' }}>SOURCE POTENTIAL:</span>
+                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#fef08a' }}>
+                    {circuits.vs.toFixed(1)} <span style={{ fontSize: '13px' }}>V DC</span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    style={{ padding: '4px 8px', fontSize: '11px', fontWeight: 700 }}
+                    onClick={() => {
+                      const nextVs = Math.max(0, Math.round((circuits.vs - 1.0) * 10) / 10);
+                      setCircuits((c) => ({ ...c, vs: nextVs }));
+                      playTone(450, 'sine', 0.04, 0.1);
+                    }}
+                    title="Decrease voltage by 1.0V"
+                  >
+                    -1V
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }}
+                    onClick={() => {
+                      const nextVs = Math.max(0, Math.round((circuits.vs - 0.1) * 10) / 10);
+                      setCircuits((c) => ({ ...c, vs: nextVs }));
+                      playTone(470, 'sine', 0.04, 0.1);
+                    }}
+                    title="Decrease voltage by 0.1V"
+                  >
+                    -0.1V
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }}
+                    onClick={() => {
+                      const nextVs = Math.min(30, Math.round((circuits.vs + 0.1) * 10) / 10);
+                      setCircuits((c) => ({ ...c, vs: nextVs }));
+                      playTone(510, 'sine', 0.04, 0.1);
+                    }}
+                    title="Increase voltage by 0.1V"
+                  >
+                    +0.1V
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    style={{ padding: '4px 8px', fontSize: '11px', fontWeight: 700 }}
+                    onClick={() => {
+                      const nextVs = Math.min(30, Math.round((circuits.vs + 1.0) * 10) / 10);
+                      setCircuits((c) => ({ ...c, vs: nextVs }));
+                      playTone(530, 'sine', 0.04, 0.1);
+                    }}
+                    title="Increase voltage by 1.0V"
+                  >
+                    +1V
+                  </button>
+                </div>
+              </div>
+
+              {/* Rotary Voltage Knob Target Steps */}
+              <div>
+                <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>
+                  <b>ROTARY VOLTAGE DIAL STEPS:</b>
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '3px' }}>
+                  {[2, 4, 6, 8, 10, 12, 16, 20, 24, 30].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className={`dmm-btn ${Math.abs(circuits.vs - v) < 0.1 ? 'active' : ''}`}
+                      style={{ padding: '4px 2px', fontSize: '10px' }}
+                      onClick={() => {
+                        setCircuits((c) => ({ ...c, vs: v, powerOn: true }));
+                        playTone(480 + (v / 30) * 200, 'sine', 0.05, 0.12);
+                      }}
+                    >
+                      {v}V
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginTop: '6px', display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="cam-focus-btn"
+                  style={{ flex: 1, padding: '5px', fontSize: '10px', background: 'rgba(212, 175, 55, 0.15)', borderColor: '#d4af37', color: '#fef08a' }}
+                  onClick={() => {
+                    handleSetCloseup('closeup');
+                    handleSetCloseupFocus('psu');
+                  }}
+                >
+                  ⚡ Focus 3D Power Supply
+                </button>
+              </div>
+            </div>
+
             {/* Fluke 87V Digital Multimeter Workbench Suite */}
             <div className="dmm-workbench-card">
               <div className="dmm-header-title">
@@ -2924,6 +3075,215 @@ export default function Room3Experience() {
                 >
                   ↺ Reset Fuse
                 </button>
+              </div>
+            </div>
+
+            {/* Tektronix TDS2024 Dual-Channel Digital Storage Oscilloscope */}
+            <div className="dmm-workbench-card" style={{ marginTop: '8px' }}>
+              <div className="dmm-header-title">
+                <b>TEKTRONIX TDS2024 DIGITAL STORAGE OSCILLOSCOPE</b>
+                <span style={{ fontSize: '11px', color: oscilloscope.powerOn ? '#38bdf8' : '#ef4444' }}>
+                  {oscilloscope.powerOn ? (oscilloscope.runState === 'run' ? '● RUNNING' : '⏸ STOPPED') : '○ OFF'}
+                </span>
+              </div>
+
+              {/* Master Power, Run/Stop, and 3D Focus bar */}
+              <div style={{ display: 'flex', gap: '6px', margin: '6px 0 8px' }}>
+                <button
+                  type="button"
+                  className={`dmm-btn ${oscilloscope.powerOn ? 'active' : ''}`}
+                  style={{ flex: 1, padding: '6px', color: oscilloscope.powerOn ? '#34d399' : '#ef4444' }}
+                  onClick={() => {
+                    const next = !oscilloscope.powerOn;
+                    setOscilloscope((o) => ({ ...o, powerOn: next }));
+                    playTone(next ? 880 : 330, 'square', 0.05, 0.15);
+                  }}
+                >
+                  {oscilloscope.powerOn ? '⚡ Scope: ON' : '⏻ Scope: OFF'}
+                </button>
+                <button
+                  type="button"
+                  className={`dmm-btn ${oscilloscope.runState === 'run' ? 'active' : ''}`}
+                  style={{ flex: 1, padding: '6px', color: oscilloscope.runState === 'run' ? '#38bdf8' : '#f59e0b' }}
+                  onClick={() => {
+                    const next = oscilloscope.runState === 'run' ? 'stop' : 'run';
+                    setOscilloscope((o) => ({ ...o, runState: next }));
+                    playTone(next === 'run' ? 700 : 440, 'sine', 0.05, 0.15);
+                  }}
+                  disabled={!oscilloscope.powerOn}
+                >
+                  {oscilloscope.runState === 'run' ? '▶ RUN' : '⏸ STOP'}
+                </button>
+                <button
+                  type="button"
+                  className="cam-focus-btn"
+                  style={{ flex: 1.2, padding: '6px', fontSize: '10px', background: 'rgba(56, 189, 248, 0.15)', borderColor: '#38bdf8', color: '#7dd3fc' }}
+                  onClick={() => {
+                    handleSetCloseup('closeup');
+                    handleSetCloseupFocus('oscilloscope');
+                  }}
+                >
+                  📺 Focus 3D Scope
+                </button>
+              </div>
+
+              {/* Live Signal Telemetry (RMS / Vpp / Freq / Phase) */}
+              <div style={{ padding: '6px 8px', background: 'rgba(2, 6, 23, 0.9)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', marginBottom: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', fontSize: '10px' }}>
+                  <div style={{ color: '#facc15' }}>
+                    <b>CH1 (V):</b> {circuits.powerOn ? (
+                      circuits.mode === 'ac'
+                        ? `Vpp = ${(circuits.vs * 2).toFixed(1)}V · Vrms = ${(circuits.vs * 0.707).toFixed(1)}V`
+                        : `V = ${circuits.vs.toFixed(1)}V DC`
+                    ) : '0.00 V'}
+                  </div>
+                  <div style={{ color: '#38bdf8' }}>
+                    <b>CH2 (I):</b> {circuits.powerOn && (jumperClosed || (redTerminal?.startsWith('SERIES') && blackTerminal?.startsWith('SERIES'))) ? (
+                      circuits.mode === 'ac'
+                        ? `Ipp = ${(circuitResult.current * 2000).toFixed(1)}mA · Irms = ${(circuitResult.current * 707).toFixed(1)}mA`
+                        : `I = ${(circuitResult.current * 1000).toFixed(1)}mA DC`
+                    ) : '0.00 mA'}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#94a3b8', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '3px' }}>
+                  <span>Freq: <b>{circuits.mode === 'ac' ? `${circuits.freq.toFixed(0)} Hz` : 'DC (0 Hz)'}</b></span>
+                  <span>Phase Δφ: <b>{(circuitResult.phaseAngleRad * 180 / Math.PI).toFixed(1)}°</b></span>
+                  <span>cos φ: <b>{circuitResult.powerFactor.toFixed(3)}</b></span>
+                </div>
+              </div>
+
+              {/* Channel 1 Controls (Yellow Trace) */}
+              <div style={{ marginBottom: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                  <label style={{ fontSize: '10px', color: '#facc15', fontWeight: 700 }}>
+                    CH1 VOLTAGE PROBE & SCALE:
+                  </label>
+                  <span style={{ fontSize: '10px', color: '#e2e8f0', fontWeight: 700 }}>
+                    {oscilloscope.ch1VoltsPerDiv} V/div
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: '3px', marginBottom: '4px' }}>
+                  {(['vs', 'r1', 'r2', 'r3'] as const).map((src) => (
+                    <button
+                      key={src}
+                      type="button"
+                      className={`dmm-btn ${oscilloscope.ch1Source === src ? 'active' : ''}`}
+                      style={{ flex: 1, padding: '3px 0', fontSize: '9px', color: oscilloscope.ch1Source === src ? '#facc15' : '#cbd5e1' }}
+                      onClick={() => {
+                        setOscilloscope((o) => ({ ...o, ch1Source: src }));
+                        playTone(550, 'sine', 0.04, 0.1);
+                      }}
+                    >
+                      {src === 'vs' ? 'Vs (Gen)' : `V(${src.toUpperCase()})`}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '3px' }}>
+                  {CH1_VOLTS_DIV_OPTIONS.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className={`dmm-btn ${oscilloscope.ch1VoltsPerDiv === v ? 'active' : ''}`}
+                      style={{ padding: '3px 0', fontSize: '9px' }}
+                      onClick={() => {
+                        setOscilloscope((o) => ({ ...o, ch1VoltsPerDiv: v }));
+                        playTone(580, 'triangle', 0.04, 0.1);
+                      }}
+                    >
+                      {v}V
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Channel 2 Controls (Cyan Trace) */}
+              <div style={{ marginBottom: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                  <label style={{ fontSize: '10px', color: '#38bdf8', fontWeight: 700 }}>
+                    CH2 CURRENT / NODE & SCALE:
+                  </label>
+                  <span style={{ fontSize: '10px', color: '#e2e8f0', fontWeight: 700 }}>
+                    {oscilloscope.ch2VoltsPerDiv} mA/div
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: '3px', marginBottom: '4px' }}>
+                  {(['current', 'r1', 'r2', 'r3'] as const).map((src) => (
+                    <button
+                      key={src}
+                      type="button"
+                      className={`dmm-btn ${oscilloscope.ch2Source === src ? 'active' : ''}`}
+                      style={{ flex: 1, padding: '3px 0', fontSize: '9px', color: oscilloscope.ch2Source === src ? '#38bdf8' : '#cbd5e1' }}
+                      onClick={() => {
+                        setOscilloscope((o) => ({ ...o, ch2Source: src }));
+                        playTone(600, 'sine', 0.04, 0.1);
+                      }}
+                    >
+                      {src === 'current' ? 'I(t) Loop' : `V(${src.toUpperCase()})`}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '3px' }}>
+                  {CH2_VOLTS_DIV_OPTIONS.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className={`dmm-btn ${oscilloscope.ch2VoltsPerDiv === v ? 'active' : ''}`}
+                      style={{ padding: '3px 0', fontSize: '9px' }}
+                      onClick={() => {
+                        setOscilloscope((o) => ({ ...o, ch2VoltsPerDiv: v }));
+                        playTone(640, 'triangle', 0.04, 0.1);
+                      }}
+                    >
+                      {v}mA
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Horizontal SEC/DIV Timebase */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                  <label style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
+                    HORIZONTAL TIMEBASE (SEC/DIV):
+                  </label>
+                  <span style={{ fontSize: '10px', color: '#e2e8f0', fontWeight: 700 }}>
+                    {oscilloscope.timePerDivMs} ms/div
+                  </span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '3px' }}>
+                  {TIME_DIV_OPTIONS.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`dmm-btn ${oscilloscope.timePerDivMs === t ? 'active' : ''}`}
+                      style={{ padding: '3px 0', fontSize: '9px' }}
+                      onClick={() => {
+                        setOscilloscope((o) => ({ ...o, timePerDivMs: t }));
+                        playTone(520, 'triangle', 0.04, 0.1);
+                      }}
+                    >
+                      {t}ms
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Input Coupling Toggle */}
+              <div style={{ marginTop: '6px', display: 'flex', gap: '3px' }}>
+                {(['dc', 'ac', 'gnd'] as const).map((coup) => (
+                  <button
+                    key={coup}
+                    type="button"
+                    className={`dmm-btn ${oscilloscope.coupling === coup ? 'active' : ''}`}
+                    style={{ flex: 1, padding: '4px 0', fontSize: '9px', fontWeight: 700 }}
+                    onClick={() => {
+                      setOscilloscope((o) => ({ ...o, coupling: coup }));
+                      playTone(500, 'sine', 0.03, 0.1);
+                    }}
+                  >
+                    Coupling: {coup.toUpperCase()}
+                  </button>
+                ))}
               </div>
             </div>
           </>
