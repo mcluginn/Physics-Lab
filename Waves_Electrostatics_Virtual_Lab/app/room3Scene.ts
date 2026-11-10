@@ -1475,23 +1475,26 @@ export function createRoom3Scene(
   ];
 
   for (let i = 0; i < starCount; i++) {
-    let sx: number;
-    let sy: number;
-    let sz: number;
+    // Distribute stars on a distant celestial sphere dome (R = 75m to 130m)
+    // Elevation above lab horizon (0.02 to 0.44 * PI)
+    const theta = Math.random() * Math.PI * 2;
+    const elevation = Math.random() * (Math.PI * 0.43) + 0.02;
+    const r = 75 + Math.random() * 55;
 
-    // Allocate 60% of stars directly in the window sightlines (East & West)
-    if (i < 1680) {
-      const isEast = i % 2 === 0;
-      sx = isEast ? (13.5 + Math.random() * 18) : (-13.5 - Math.random() * 18);
-      sy = 1.1 + Math.random() * 3.8; // directly within window height range 1.18m - 3.65m
-      sz = (Math.random() - 0.5) * 16;
-    } else {
-      sx = (Math.random() - 0.5) * 90;
-      sy = Math.random() * 24 - 1;
-      sz = (Math.random() - 0.5) * 90;
-      if (Math.abs(sx) < 13 && Math.abs(sz) < 10 && sy < 6) {
-        sx += (sx >= 0 ? 1 : -1) * (14 + Math.random() * 15);
-      }
+    let sx = r * Math.cos(elevation) * Math.cos(theta);
+    let sy = Math.max(1.2, r * Math.sin(elevation));
+    let sz = r * Math.cos(elevation) * Math.sin(theta);
+
+    // Exclusion cone for Moon at (23.0, 3.0, -4.5):
+    // Prevent any background star from shining within the Moon's angular disc
+    const dist = Math.sqrt(sx * sx + sy * sy + sz * sz);
+    const uX = sx / dist;
+    const uY = sy / dist;
+    const uZ = sz / dist;
+    const dotMoon = uX * 0.973 + uY * 0.127 - uZ * 0.190;
+    if (dotMoon > 0.972) {
+      // Divert star away from Moon's line of sight to open West sky
+      sx = -Math.abs(sx);
     }
 
     starPos[i * 3 + 0] = sx;
@@ -1508,12 +1511,13 @@ export function createRoom3Scene(
 
   const starGlowTex = createStarGlowTexture();
   const starMaterial = new THREE.PointsMaterial({
-    size: 0.85,
+    size: 0.65,
     map: starGlowTex,
     vertexColors: true,
     transparent: true,
-    opacity: 0.95,
+    opacity: 0.92,
     blending: THREE.AdditiveBlending,
+    depthTest: true,
     depthWrite: false,
     fog: false,
   });
@@ -1561,20 +1565,20 @@ export function createRoom3Scene(
   const diffractionTex = createDiffractionSpikeTexture();
 
   const landmarkDefs = [
-    // Outside East Windows (centered right in the window openings at Y = 2.2 - 3.4m)
-    { name: 'Sirius', x: 21.0, y: 2.6, z: -4.5, color: 0x93c5fd, scale: 2.6, speed: 3.2, phase: 0.1 },
-    { name: 'Betelgeuse', x: 22.0, y: 2.9, z: 0.0, color: 0xfba571, scale: 2.8, speed: 2.4, phase: 1.2 },
-    { name: 'Aldebaran', x: 21.5, y: 2.4, z: 4.5, color: 0xfde047, scale: 2.4, speed: 2.8, phase: 5.3 },
-    { name: 'Capella', x: 23.0, y: 3.4, z: -2.0, color: 0xfef08a, scale: 2.2, speed: 2.2, phase: 2.7 },
-    { name: 'Procyon', x: 23.0, y: 3.2, z: 2.2, color: 0xa5f3fc, scale: 2.3, speed: 3.0, phase: 4.1 },
-    // Outside West Windows (centered right in the window openings at Y = 2.2 - 3.4m)
-    { name: 'Rigel', x: -21.0, y: 2.6, z: -4.5, color: 0x67e8f9, scale: 2.6, speed: 3.7, phase: 2.4 },
-    { name: 'Vega', x: -22.0, y: 2.9, z: 0.0, color: 0xa5f3fc, scale: 2.8, speed: 3.0, phase: 4.8 },
-    { name: 'Arcturus', x: -21.5, y: 2.4, z: 4.5, color: 0xfb923c, scale: 2.4, speed: 2.6, phase: 1.8 },
-    { name: 'Spica', x: -23.0, y: 3.3, z: -2.0, color: 0x93c5fd, scale: 2.2, speed: 3.3, phase: 3.1 },
-    { name: 'Altair', x: -23.0, y: 3.1, z: 2.0, color: 0xffffff, scale: 2.3, speed: 2.9, phase: 0.8 },
+    // Outside East Windows (distant vistas cleanly clear of Moon at z = -4.5)
+    { name: 'Betelgeuse', x: 50.0, y: 8.0, z: 0.0, color: 0xfba571, scale: 2.6, speed: 2.4, phase: 1.2 },
+    { name: 'Aldebaran', x: 46.0, y: 6.2, z: 5.5, color: 0xfde047, scale: 2.4, speed: 2.8, phase: 5.3 },
+    { name: 'Capella', x: 52.0, y: 11.5, z: -1.5, color: 0xfef08a, scale: 2.3, speed: 2.2, phase: 2.7 },
+    { name: 'Procyon', x: 48.0, y: 7.2, z: 3.2, color: 0xa5f3fc, scale: 2.4, speed: 3.0, phase: 4.1 },
+    // Outside West Windows (Sirius relocated here - glorious sapphire beacon in open west sky)
+    { name: 'Sirius', x: -48.0, y: 7.0, z: -4.5, color: 0x93c5fd, scale: 2.8, speed: 3.2, phase: 0.1 },
+    { name: 'Rigel', x: -50.0, y: 8.2, z: -1.0, color: 0x67e8f9, scale: 2.6, speed: 3.7, phase: 2.4 },
+    { name: 'Vega', x: -52.0, y: 10.0, z: 0.0, color: 0xa5f3fc, scale: 2.7, speed: 3.0, phase: 4.8 },
+    { name: 'Arcturus', x: -46.0, y: 6.5, z: 5.0, color: 0xfb923c, scale: 2.4, speed: 2.6, phase: 1.8 },
+    { name: 'Spica', x: -54.0, y: 11.5, z: -2.8, color: 0x93c5fd, scale: 2.3, speed: 3.3, phase: 3.1 },
+    { name: 'Altair', x: -48.0, y: 7.6, z: 2.5, color: 0xffffff, scale: 2.4, speed: 2.9, phase: 0.8 },
     // North Clerestory Vista
-    { name: 'Polaris', x: 0.0, y: 5.5, z: -22.0, color: 0xffffff, scale: 2.6, speed: 2.1, phase: 3.5 },
+    { name: 'Polaris', x: 0.0, y: 16.0, z: -55.0, color: 0xffffff, scale: 2.8, speed: 2.1, phase: 3.5 },
   ];
 
   landmarkDefs.forEach((def) => {

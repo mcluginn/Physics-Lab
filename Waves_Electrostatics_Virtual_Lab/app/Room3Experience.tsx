@@ -2441,43 +2441,199 @@ export default function Room3Experience() {
                 <div style={{ marginTop: '10px', background: 'rgba(56,189,248,0.1)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(56,189,248,0.4)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <b style={{ color: '#38bdf8', fontSize: '12px' }}>📊 5-Trial Data Collection ({stationProgress.trials.length}/5 Logged)</b>
-                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>Target Voltages</span>
+                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                      {stationId === 'circuits' ? 'Target Voltages' : stationId === 'optics' ? 'Target Object Distances (u)' : 'Target Velocity (β)'}
+                    </span>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginBottom: '8px' }}>
-                    {[4, 8, 12, 16, 20].map((v) => {
-                      const isDone = stationProgress.trials.some((tr) => Math.abs(Number(tr.vs ?? tr.paramA ?? 0) - v) < 1.0);
-                      const isCur = Math.abs(circuits.vs - v) < 1.0;
-                      return (
-                        <button
-                          key={v}
-                          type="button"
-                          className="dmm-btn"
-                          style={{
-                            padding: '6px 2px',
-                            fontSize: '11px',
-                            fontWeight: 'bold',
-                            background: isDone ? 'rgba(16,185,129,0.25)' : isCur ? '#0284c7' : 'rgba(255,255,255,0.06)',
-                            borderColor: isDone ? '#10b981' : isCur ? '#38bdf8' : 'rgba(255,255,255,0.15)',
-                            color: isDone ? '#34d399' : '#fff',
-                          }}
-                          onClick={() => {
-                            setCircuits((prev) => ({ ...prev, vs: v }));
-                            playTone(400 + v * 20, 'sine', 0.06, 0.15);
-                          }}
-                        >
-                          {isDone ? '✓ ' : ''}{v}V
-                        </button>
-                      );
-                    })}
+
+                  {/* Station 01: Circuits */}
+                  {stationId === 'circuits' && (
+                    <>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginBottom: '8px' }}>
+                        {[4, 8, 12, 16, 20].map((v) => {
+                          const isDone = stationProgress.trials.some((tr) => Math.abs(Number(tr.vs ?? tr.paramA ?? 0) - v) < 1.0);
+                          const isCur = Math.abs(circuits.vs - v) < 1.0;
+                          return (
+                            <button
+                              key={v}
+                              type="button"
+                              className="dmm-btn"
+                              style={{
+                                padding: '6px 2px',
+                                fontSize: '11px',
+                                fontWeight: 'bold',
+                                background: isDone ? 'rgba(16,185,129,0.25)' : isCur ? '#0284c7' : 'rgba(255,255,255,0.06)',
+                                borderColor: isDone ? '#10b981' : isCur ? '#38bdf8' : 'rgba(255,255,255,0.15)',
+                                color: isDone ? '#34d399' : '#fff',
+                              }}
+                              onClick={() => {
+                                setCircuits((prev) => ({ ...prev, vs: v, powerOn: true }));
+                                playTone(400 + v * 20, 'sine', 0.06, 0.15);
+                              }}
+                            >
+                              {isDone ? '✓ ' : ''}{v}V
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: 'bold' }}
+                        onClick={() => recordCurrentTrial()}
+                      >
+                        + Record Voltage & Current Trial to Lab Log ({stationProgress.trials.length}/5)
+                      </button>
+                    </>
+                  )}
+
+                  {/* Station 02: Optics (Verification of Thin Lens Equation) */}
+                  {stationId === 'optics' && (
+                    <>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginBottom: '8px' }}>
+                        {[30, 35, 40, 50, 60].map((u) => {
+                          const isDone = stationProgress.trials.some((tr) => Math.abs(Number(tr.u ?? tr.paramA ?? 0) - u) < 1.5);
+                          const isCur = Math.abs(optics.objectDistance - u) < 1.5;
+                          return (
+                            <button
+                              key={u}
+                              type="button"
+                              className="dmm-btn"
+                              style={{
+                                padding: '6px 2px',
+                                fontSize: '11px',
+                                fontWeight: 'bold',
+                                background: isDone ? 'rgba(16,185,129,0.25)' : isCur ? '#0284c7' : 'rgba(255,255,255,0.06)',
+                                borderColor: isDone ? '#10b981' : isCur ? '#38bdf8' : 'rgba(255,255,255,0.15)',
+                                color: isDone ? '#34d399' : '#fff',
+                              }}
+                              onClick={() => {
+                                const next = { ...optics, objectDistance: u, subMode: 'imaging' as const, focalLength: 20.0, powerOn: true };
+                                setOptics(next);
+                                sceneApi.current?.setOptics(next);
+                                playTone(450 + u * 5, 'sine', 0.06, 0.15);
+                              }}
+                            >
+                              {isDone ? '✓ ' : ''}{u}cm
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#cbd5e1', marginBottom: '6px' }}>
+                        <span>Current u: <b>{optics.objectDistance.toFixed(1)} cm</b></span>
+                        <span>Focal v: <b>{((optics.objectDistance * 20) / Math.max(0.1, optics.objectDistance - 20)).toFixed(1)} cm</b></span>
+                      </div>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: 'bold' }}
+                        onClick={() => recordCurrentTrial()}
+                      >
+                        + Record Optical Imaging Trial (u & v) to Lab Log ({stationProgress.trials.length}/5)
+                      </button>
+                    </>
+                  )}
+
+                  {/* Station 03: Special Relativity */}
+                  {stationId === 'relativity' && (
+                    <>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginBottom: '8px' }}>
+                        {[0.10, 0.20, 0.30, 0.40, 0.50].map((b) => {
+                          const isDone = stationProgress.trials.some((tr) => Math.abs(Number(tr.beta ?? tr.paramA ?? 0) - b) < 0.03);
+                          const isCur = Math.abs(relativity.beta - b) < 0.03;
+                          return (
+                            <button
+                              key={b}
+                              type="button"
+                              className="dmm-btn"
+                              style={{
+                                padding: '6px 2px',
+                                fontSize: '11px',
+                                fontWeight: 'bold',
+                                background: isDone ? 'rgba(16,185,129,0.25)' : isCur ? '#0284c7' : 'rgba(255,255,255,0.06)',
+                                borderColor: isDone ? '#10b981' : isCur ? '#38bdf8' : 'rgba(255,255,255,0.15)',
+                                color: isDone ? '#34d399' : '#fff',
+                              }}
+                              onClick={() => {
+                                const next = { ...relativity, beta: b, powerOn: true, massPreset: 'alpha' as const };
+                                setRelativity(next);
+                                sceneApi.current?.setRelativity(next);
+                                playTone(500 + b * 200, 'sine', 0.06, 0.15);
+                              }}
+                            >
+                              {isDone ? '✓ ' : ''}{b.toFixed(2)}c
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#cbd5e1', marginBottom: '6px' }}>
+                        <span>Current β: <b>{relativity.beta.toFixed(2)}c</b></span>
+                        <span>Lorentz γ: <b>{(1 / Math.sqrt(Math.max(0.001, 1 - relativity.beta * relativity.beta))).toFixed(3)}</b></span>
+                      </div>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: 'bold' }}
+                        onClick={() => recordCurrentTrial()}
+                      >
+                        + Record Relativistic Trial (β & γ) to Lab Log ({stationProgress.trials.length}/5)
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Step 8: Computation & Scientific Analysis Direct Card */}
+              {activeStepIdx === 7 && (
+                <div style={{ marginTop: '10px', background: 'rgba(16,185,129,0.1)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.4)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <b style={{ color: '#34d399', fontSize: '12px' }}>🧮 Step 8: Computation & Scientific Analysis</b>
+                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                      {stationProgress.trials.length} / 5 Trials
+                    </span>
                   </div>
-                  <button
-                    type="button"
-                    className="primary-button"
-                    style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: 'bold' }}
-                    onClick={() => recordCurrentTrial()}
-                  >
-                    + Record Current Measurement to Lab Log ({stationProgress.trials.length}/5)
-                  </button>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#cbd5e1', lineHeight: '1.4' }}>
+                    {stationId === 'circuits'
+                      ? 'Compute experimental resistance R = V / I for each trial. Theoretical series resistance Req = 650.0 Ω.'
+                      : stationId === 'optics'
+                      ? 'Compute experimental focal length f = (u · v)/(u + v) using the thin-lens equation. Theoretical focal length f = 20.0 cm.'
+                      : 'Compute Lorentz dilation factor γ = 1 / √(1 - β²) across all relativistic frames.'}
+                  </p>
+
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      style={{ flex: 1, padding: '7px 8px', fontSize: '11px', fontWeight: 'bold' }}
+                      onClick={verifyCalculations}
+                      disabled={stationProgress.completed[7]}
+                    >
+                      {stationProgress.completed[7] ? '✓ Step 8 Complete (+20 pts)' : '✓ Verify Step 8 Calculations (+20 pts)'}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      style={{ padding: '7px 10px', fontSize: '11px', fontWeight: 'bold' }}
+                      onClick={() => {
+                        setNotebookOpen(true);
+                        setNotebookStep(7);
+                        playTone(550, 'sine', 0.1, 0.2);
+                      }}
+                    >
+                      📖 Notebook
+                    </button>
+                  </div>
+
+                  {calculationStatus === 'correct' && (
+                    <div style={{ color: '#34d399', fontSize: '11px', marginTop: '8px', fontWeight: 600 }}>
+                      ✓ {calculationFeedback || 'All calculations verified and match physical theory within ±2% tolerance.'}
+                    </div>
+                  )}
+                  {calculationStatus === 'incorrect' && (
+                    <div style={{ color: '#f87171', fontSize: '11px', marginTop: '8px' }}>
+                      ⚠️ {calculationFeedback}
+                    </div>
+                  )}
                 </div>
               )}
 
