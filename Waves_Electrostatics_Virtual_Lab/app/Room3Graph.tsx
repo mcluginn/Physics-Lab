@@ -32,7 +32,11 @@ export type RegressionResult = {
   n: number;
 };
 
-export function computeRoom3Regression(stationId: Room3StationId, trials: TrialRecord[]): RegressionResult | null {
+export function computeRoom3Regression(
+  stationId: Room3StationId,
+  trials: TrialRecord[],
+  relativityGraphMode: 'gamma' | 'time' | 'length' = 'gamma'
+): RegressionResult | null {
   if (!trials || trials.length < 2) return null;
 
   const points: GraphPoint[] = [];
@@ -127,24 +131,64 @@ export function computeRoom3Regression(stationId: Room3StationId, trials: TrialR
       });
     }
   } else {
-    // Relativity: gamma vs dilatedTime
-    xAxisLabel = 'Lorentz Factor γ (dimensionless)';
-    yAxisLabel = 'Dilated Time Δt (s)';
-    title = 'Relativistic Time Dilation: Δt vs. γ (Slope = Δt₀ = 10.0 s)';
+    // Relativity: Support Graph 1 (γ vs β), Graph 2 (Δt/Δτ vs β), Graph 3 (L/L₀ vs β)
+    if (relativityGraphMode === 'time') {
+      xAxisLabel = 'Velocity Ratio β = v/c';
+      yAxisLabel = 'Time-Dilation Ratio Δt / Δτ';
+      title = 'Graph 2: Time-Dilation Ratio vs. Velocity Ratio (Δt/Δτ vs. β)';
 
-    trials.forEach((trial, index) => {
-      const trialNum = Number(trial.trial ?? index + 1);
-      const gamma = Number(trial.measuredGamma ?? trial.gamma ?? 1.25);
-      const dilated = Number(trial.dilatedTime ?? 12.5);
-      points.push({
-        trial: trialNum,
-        x: gamma,
-        y: dilated,
-        xLabel: `γ = ${gamma.toFixed(3)}`,
-        yLabel: `${dilated.toFixed(2)} s`,
-        raw: trial,
+      trials.forEach((trial, index) => {
+        const trialNum = Number(trial.trial ?? index + 1);
+        const beta = Number(trial.beta ?? 0.1);
+        const gamma = Number(trial.measuredGamma ?? trial.gamma ?? (1 / Math.sqrt(Math.max(1e-6, 1 - beta * beta))));
+        const ratio = gamma; // Δt / Δτ = γ
+        points.push({
+          trial: trialNum,
+          x: beta,
+          y: ratio,
+          xLabel: `β = ${beta.toFixed(2)}c`,
+          yLabel: `Δt/Δτ = ${ratio.toFixed(4)}`,
+          raw: trial,
+        });
       });
-    });
+    } else if (relativityGraphMode === 'length') {
+      xAxisLabel = 'Velocity Ratio β = v/c';
+      yAxisLabel = 'Length-Contraction Ratio L / L₀';
+      title = 'Graph 3: Length-Contraction Ratio vs. Velocity Ratio (L/L₀ vs. β)';
+
+      trials.forEach((trial, index) => {
+        const trialNum = Number(trial.trial ?? index + 1);
+        const beta = Number(trial.beta ?? 0.1);
+        const gamma = Number(trial.measuredGamma ?? trial.gamma ?? (1 / Math.sqrt(Math.max(1e-6, 1 - beta * beta))));
+        const ratio = 1 / gamma; // L / L0 = 1/γ
+        points.push({
+          trial: trialNum,
+          x: beta,
+          y: ratio,
+          xLabel: `β = ${beta.toFixed(2)}c`,
+          yLabel: `L/L₀ = ${ratio.toFixed(4)} (-${((1 - ratio) * 100).toFixed(1)}%)`,
+          raw: trial,
+        });
+      });
+    } else {
+      xAxisLabel = 'Velocity Ratio β = v/c';
+      yAxisLabel = 'Lorentz Factor γ = 1/√(1 - β²)';
+      title = 'Graph 1: Lorentz Factor vs. Velocity Ratio (γ vs. β)';
+
+      trials.forEach((trial, index) => {
+        const trialNum = Number(trial.trial ?? index + 1);
+        const beta = Number(trial.beta ?? 0.1);
+        const gamma = Number(trial.measuredGamma ?? trial.gamma ?? (1 / Math.sqrt(Math.max(1e-6, 1 - beta * beta))));
+        points.push({
+          trial: trialNum,
+          x: beta,
+          y: gamma,
+          xLabel: `β = ${beta.toFixed(2)}c`,
+          yLabel: `γ = ${gamma.toFixed(4)}`,
+          raw: trial,
+        });
+      });
+    }
   }
 
   const n = points.length;
@@ -200,7 +244,13 @@ export function computeRoom3Regression(stationId: Room3StationId, trials: TrialR
       physicalInterpretation = `Slope m = ${slope.toFixed(4)} ⇒ Measured Refractive Index Ratio n₁/n₂ = ${slope.toFixed(4)} (Snell's Law: sin θ₂ = (n₁/n₂) sin θ₁)`;
     }
   } else {
-    physicalInterpretation = `Slope m = ${slope.toFixed(3)} s ⇒ Experimental Proper Time Interval Δt₀ = ${slope.toFixed(3)} s (Einstein Invariance: Δt = γ·Δt₀)`;
+    if (relativityGraphMode === 'time') {
+      physicalInterpretation = `As relative velocity approaches the speed of light (β → 1.0), the light pulse diagonal hypotenuse expands asymptotically, causing laboratory time dilation ratio Δt/Δτ → ∞.`;
+    } else if (relativityGraphMode === 'length') {
+      physicalInterpretation = `Because of the relativity of simultaneity in endpoint measurements, longitudinal length contracts toward zero as β → 1.0 according to L = L₀√(1 - β²).`;
+    } else {
+      physicalInterpretation = `The Lorentz factor diverges asymptotically as β → 1.0 (γ → ∞), requiring infinite energy for massive particles to reach c.`;
+    }
   }
 
   return {
@@ -234,8 +284,12 @@ export function Room3Graph({
   accentColor?: string;
 }) {
   const [hoveredPoint, setHoveredPoint] = useState<GraphPoint | null>(null);
+  const [relativityGraphMode, setRelativityGraphMode] = useState<'gamma' | 'time' | 'length'>('gamma');
 
-  const regression = useMemo(() => computeRoom3Regression(stationId, trials), [stationId, trials]);
+  const regression = useMemo(
+    () => computeRoom3Regression(stationId, trials, relativityGraphMode),
+    [stationId, trials, relativityGraphMode]
+  );
 
   if (!regression || regression.points.length < 2) {
     return (
@@ -278,6 +332,24 @@ export function Room3Graph({
   const ptLineX2 = scaleX(lineX2);
   const ptLineY2 = scaleY(lineY2);
 
+  // Theoretical relativistic curve
+  let theoreticalCurvePath = '';
+  if (stationId === 'relativity') {
+    const steps = 40;
+    const curvePoints: Array<[number, number]> = [];
+    for (let i = 0; i <= steps; i++) {
+      const b = 0.0 + (i / steps) * 0.92;
+      let y = 1;
+      if (relativityGraphMode === 'length') {
+        y = Math.sqrt(Math.max(0, 1 - b * b));
+      } else {
+        y = 1 / Math.sqrt(Math.max(1e-6, 1 - b * b));
+      }
+      curvePoints.push([scaleX(b), scaleY(y)]);
+    }
+    theoreticalCurvePath = curvePoints.map((pt, idx) => `${idx === 0 ? 'M' : 'L'} ${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`).join(' ');
+  }
+
   // Axis ticks
   const xTicks = [domainXMin, domainXMin + (domainXMax - domainXMin) * 0.33, domainXMin + (domainXMax - domainXMin) * 0.66, domainXMax];
   const yTicks = [domainYMin, domainYMin + (domainYMax - domainYMin) * 0.33, domainYMin + (domainYMax - domainYMin) * 0.66, domainYMax];
@@ -305,6 +377,56 @@ export function Room3Graph({
         </div>
       </div>
 
+      {stationId === 'relativity' && (
+        <div style={{ display: 'flex', gap: '6px', margin: '0 0 10px 0', padding: '0 4px' }}>
+          <button
+            type="button"
+            className={`dmm-btn ${relativityGraphMode === 'gamma' ? 'active' : ''}`}
+            style={{
+              fontSize: '11px',
+              padding: '4px 10px',
+              fontWeight: 700,
+              background: relativityGraphMode === 'gamma' ? '#0284c7' : 'rgba(255,255,255,0.06)',
+              borderColor: relativityGraphMode === 'gamma' ? '#38bdf8' : 'rgba(255,255,255,0.15)',
+              color: relativityGraphMode === 'gamma' ? '#fff' : '#cbd5e1',
+            }}
+            onClick={() => setRelativityGraphMode('gamma')}
+          >
+            Graph 1: γ vs. β (Lorentz Factor)
+          </button>
+          <button
+            type="button"
+            className={`dmm-btn ${relativityGraphMode === 'time' ? 'active' : ''}`}
+            style={{
+              fontSize: '11px',
+              padding: '4px 10px',
+              fontWeight: 700,
+              background: relativityGraphMode === 'time' ? '#0284c7' : 'rgba(255,255,255,0.06)',
+              borderColor: relativityGraphMode === 'time' ? '#38bdf8' : 'rgba(255,255,255,0.15)',
+              color: relativityGraphMode === 'time' ? '#fff' : '#cbd5e1',
+            }}
+            onClick={() => setRelativityGraphMode('time')}
+          >
+            Graph 2: Δt/Δτ vs. β (Time Dilation)
+          </button>
+          <button
+            type="button"
+            className={`dmm-btn ${relativityGraphMode === 'length' ? 'active' : ''}`}
+            style={{
+              fontSize: '11px',
+              padding: '4px 10px',
+              fontWeight: 700,
+              background: relativityGraphMode === 'length' ? '#0284c7' : 'rgba(255,255,255,0.06)',
+              borderColor: relativityGraphMode === 'length' ? '#38bdf8' : 'rgba(255,255,255,0.15)',
+              color: relativityGraphMode === 'length' ? '#fff' : '#cbd5e1',
+            }}
+            onClick={() => setRelativityGraphMode('length')}
+          >
+            Graph 3: L/L₀ vs. β (Length Contraction)
+          </button>
+        </div>
+      )}
+
       <div className="svg-container">
         <svg
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
@@ -328,17 +450,28 @@ export function Room3Graph({
             <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + plotHeight} />
           </g>
 
-          {/* Regression Line */}
-          <line
-            x1={ptLineX1}
-            y1={ptLineY1}
-            x2={ptLineX2}
-            y2={ptLineY2}
-            stroke={accentColor}
-            strokeWidth="2.5"
-            strokeDasharray="5,4"
-            className="regression-line"
-          />
+          {/* Theoretical Curve (Relativity) or Best-Fit Regression Line */}
+          {stationId === 'relativity' && theoreticalCurvePath ? (
+            <path
+              d={theoreticalCurvePath}
+              stroke={accentColor}
+              strokeWidth="2.5"
+              fill="none"
+              strokeDasharray="5,4"
+              className="regression-line"
+            />
+          ) : (
+            <line
+              x1={ptLineX1}
+              y1={ptLineY1}
+              x2={ptLineX2}
+              y2={ptLineY2}
+              stroke={accentColor}
+              strokeWidth="2.5"
+              strokeDasharray="5,4"
+              className="regression-line"
+            />
+          )}
 
           {/* Data Points */}
           {points.map((p) => {

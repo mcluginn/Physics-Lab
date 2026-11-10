@@ -479,11 +479,11 @@ const RELATIVITY_CURRICULUM: StationCurriculum = {
     {
       id: 'r-step-1',
       stepNumber: 1,
-      title: 'Step 1: Inspect Dual-Frame Observation Deck',
-      action: 'Inspect the relativistic flight tunnel, light clock, and alpha particle emitter.',
-      why: 'Special relativity compares two reference frames: stationary laboratory Frame S and moving particle proper Frame S\'.',
+      title: 'Step 1: Identify Relativistic Equipment & Reference Frames',
+      action: 'Identify the two-mirror photon clock, moving reference-frame telemetry console, velocity regulator dial, and moving-rod interferometer.',
+      why: 'Special relativity investigates relative motion between two inertial frames: Stationary Laboratory Frame S and Moving Rest Frame S\'.',
       expectedResult: 'Relativity apparatus confirmed on checklist.',
-      hint: 'Inspect velocity dial, light clock, and contracting rod.',
+      hint: 'Inspect velocity dial, light clock, contracting rod, and reference frame display.',
       targetApparatusId: 'relativity-velocity-dial',
       relevantTool: 'accelerator',
       validate: (state) => {
@@ -496,115 +496,106 @@ const RELATIVITY_CURRICULUM: StationCurriculum = {
     {
       id: 'r-step-2',
       stepNumber: 2,
-      title: 'Step 2: Reference Frame Alignment & Proper Calibration',
-      action: 'Calibrate Stationary Frame S against Moving Frame S\'. Confirm proper length L0 = 20.0 m and proper time Δt0 = 10.0 s.',
-      why: 'Proper quantities (L0, Δt0) are invariants measured in the particle\'s co-moving rest frame.',
-      expectedResult: 'Rest frame baseline calibrated: L0 = 20.0 m, Δt0 = 10.0 s.',
-      hint: 'Confirm rest frame baseline.',
-      targetApparatusId: 'relativity-velocity-dial',
+      title: 'Step 2: Observe the Rest Frame (Photon Clock Baseline)',
+      action: 'Inspect the stationary photon clock. Observe the vertical round-trip path between mirrors (D = 1.00 m) and verify proper time Δτ = 2D/c ≈ 6.671 ns.',
+      why: 'Proper time Δτ is measured by a clock at rest in its own inertial frame where ticks occur at the same spatial point.',
+      expectedResult: 'Proper time verified: Δτ = 6.671 ns for mirror separation D = 1.00 m.',
+      hint: 'Inspect the stationary photon clock and confirm proper time Δτ = 6.671 ns.',
+      targetApparatusId: 'relativity-light-clock',
       relevantTool: 'accelerator',
       validate: (state) => {
-        return { isPassed: true, feedback: '✓ Reference frames calibrated with invariant baseline proper dimensions.' };
+        return { isPassed: true, feedback: '✓ Proper time baseline verified: Δτ = 2D/c = 6.671 ns.' };
       },
     },
     {
       id: 'r-step-3',
       stepNumber: 3,
-      title: 'Step 3: Accelerator Power & Baseline Calibration (β = 0.00c)',
-      action: 'Select the Alpha Particle (⁴He²⁺) preset and set velocity ratio β = 0.000c with Accelerator ACTIVE.',
-      why: 'At rest (v = 0), the Lorentz factor is exactly γ = 1.000. Time flows at the proper rate (Δt = Δt₀) and tunnel length is uncontracted (L = L₀ = 20.0 m). Rest energy is E₀ = m₀c² = 3727.38 MeV.',
-      expectedResult: 'γ = 1.0000, Dilated Time = 10.0 s, Contracted Length = 20.0 m, Kinetic Energy K = 0 MeV.',
-      hint: 'Click "Alpha (He²⁺)" preset and slide velocity ratio β to 0.000c.',
+      title: 'Step 3: Introduce Relative Motion (Accelerate Sled)',
+      action: 'Accelerate the carrier sled to relativistic velocity. Observe relative motion and the distinction between moving rest frame S\' and stationary lab frame S.',
+      why: 'Einstein\'s first postulate dictates that the laws of physics are identical in all inertial reference frames, but measurements of time and space are frame-dependent.',
+      expectedResult: 'Carrier sled accelerating along maglev guide with relative velocity v = β·c.',
+      hint: 'Set velocity ratio β to 0.30c or higher.',
       targetApparatusId: 'relativity-velocity-dial',
       relevantTool: 'accelerator',
       validate: (state) => {
-        if (state.relativity.massPreset !== 'alpha') return { isPassed: false, feedback: 'Select the Alpha (He²⁺) particle preset.' };
-        if (state.relativity.beta > 0.01) return { isPassed: false, feedback: `Velocity ratio is ${state.relativity.beta}c. Set β to 0.000c.` };
-        return { isPassed: true, feedback: '✓ Rest Frame Baseline Verified! γ = 1.0000, Rest Energy E₀ = 3727.38 MeV, K = 0 MeV.' };
+        if (state.relativity.beta >= 0.10) {
+          return { isPassed: true, feedback: `✓ Relative motion established at β = ${state.relativity.beta.toFixed(2)}c.` };
+        }
+        return { isPassed: false, feedback: 'Increase velocity ratio to at least β = 0.10c.' };
       },
       autoAssist: {
-        label: 'Set Rest Frame Baseline (β = 0.000c)',
-        apply: () => ({ relativity: { massPreset: 'alpha', beta: 0.000, properTime: 10.0, properLength: 20.0, powerOn: true } }),
+        label: 'Accelerate to β = 0.300c',
+        apply: () => ({ relativity: { beta: 0.300, powerOn: true } }),
       },
     },
     {
       id: 'r-step-4',
       stepNumber: 4,
-      title: 'Step 4: Relativistic Light Clock Preparation',
-      action: 'Inspect the photon light clock mechanism and observe the vertical photon reflection path.',
-      why: 'Because the speed of light c is invariant, a moving light clock bounces photons along a longer hypotenuse path, causing it to tick slower in the lab frame.',
-      expectedResult: 'Light clock ready for relativistic acceleration.',
-      hint: 'Inspect light clock in 3D.',
+      title: 'Step 4: Investigate Photon Motion & Reference Frame Invariance',
+      action: 'Switch between Frame S (Lab Observer) and Frame S\' (Moving Rest Frame). Observe the diagonal zigzag photon path in the lab frame vs. vertical bounce in rest frame, while c remains invariant.',
+      why: 'Because the speed of light c is invariant in all frames, the light pulse traveling the longer diagonal hypotenuse in the lab frame requires a longer time interval.',
+      expectedResult: 'Diagonal photon trajectory observed in lab frame and vertical bounce confirmed in rest frame.',
+      hint: 'Toggle between Lab Frame S and Rest Frame S\' to observe the photon trajectory.',
       targetApparatusId: 'relativity-light-clock',
       relevantTool: 'accelerator',
       validate: (state) => {
-        return { isPassed: true, feedback: '✓ Light clock mechanism verified.' };
+        return { isPassed: true, feedback: '✓ Reference frame trajectory comparison verified.' };
       },
     },
     {
       id: 'r-step-5',
       stepNumber: 5,
-      title: 'Step 5: Relativistic Time Dilation Procedure',
-      action: 'Accelerate to β = 0.600c and observe dilated time interval Δt = γ Δt0 = 12.50 s.',
-      why: 'At 0.600c, the Lorentz factor is γ = 1 / √(1 - 0.36) = 1.2500, causing a 25% dilation in laboratory measured time.',
-      expectedResult: 'Dilated time Δt = 12.50 s (up from proper 10.0 s).',
-      hint: 'Tune velocity ratio β to 0.600c.',
-      targetApparatusId: 'relativity-velocity-dial',
+      title: 'Step 5: Investigate Relativistic Time Dilation',
+      action: 'Observe how the extended diagonal path in the laboratory frame causes the moving clock\'s tick interval to dilate: Δt = γ Δτ.',
+      why: 'Geometric substitution shows c²(Δt/2)² = D² + (v Δt/2)², yielding Δt = Δτ / √(1 - v²/c²) = γ Δτ.',
+      expectedResult: 'Laboratory measured tick interval Δt expands by Lorentz factor γ.',
+      hint: 'Observe dilated time readout Δt = γ Δτ.',
+      targetApparatusId: 'relativity-light-clock',
       relevantTool: 'accelerator',
       validate: (state) => {
-        if (Math.abs(state.relativity.beta - 0.600) <= 0.02) {
-          return { isPassed: true, feedback: '✓ Time Dilation Verified! β = 0.600c yields γ = 1.2500 and Δt = 12.50 s.' };
-        }
-        return { isPassed: false, feedback: `Current speed is ${state.relativity.beta}c. Set β to 0.600c.` };
-      },
-      autoAssist: {
-        label: 'Accelerate to β = 0.600c',
-        apply: () => ({ relativity: { beta: 0.600, powerOn: true } }),
+        return { isPassed: true, feedback: '✓ Time dilation principle verified: Δt = γ Δτ.' };
       },
     },
     {
       id: 'r-step-6',
       stepNumber: 6,
-      title: 'Step 6: Relativistic Length Contraction Procedure',
-      action: 'Observe physical contraction of the flight tunnel and meter rod strictly along the axis of motion (L = L0 / γ = 16.0 m).',
-      why: 'Moving objects appear physically shortened along their direction of motion by factor 1/γ to stationary observers.',
-      expectedResult: 'Contracted length L = 16.00 m (down from 20.0 m).',
-      hint: 'Inspect the contracting rod at β = 0.600c.',
+      title: 'Step 6: Investigate Length Contraction & Simultaneity',
+      action: 'Activate the moving-rod demonstration (L₀ = 10.00 m). Observe contracted length L = L₀/γ measured by simultaneous endpoint detection in the laboratory frame.',
+      why: 'Length contraction is an invariant consequence of the relativity of simultaneity: measuring both endpoints simultaneously in the lab frame yields L = L₀ / γ.',
+      expectedResult: 'Moving rod measured at contracted length L = L₀ / γ without mechanical force.',
+      hint: 'Inspect the contracting rod and verify simultaneity gates.',
       targetApparatusId: 'relativity-contracting-rod',
       relevantTool: 'accelerator',
       validate: (state) => {
-        if (Math.abs(state.relativity.beta - 0.600) <= 0.02) {
-          return { isPassed: true, feedback: '✓ Length Contraction Verified! Tunnel contracted by 20% to L = 16.00 m.' };
-        }
-        return { isPassed: false, feedback: 'Keep velocity ratio at β = 0.600c to observe 16.00 m contracted length.' };
+        return { isPassed: true, feedback: '✓ Relativistic length contraction verified: L = L₀ / γ.' };
       },
     },
     {
       id: 'r-step-7',
       stepNumber: 7,
-      title: 'Step 7: Five-Trial Simulation Data Collection',
-      action: 'Record five simulation trials across assigned velocity ratios β = [0.10, 0.20, 0.30, 0.40, 0.50]c. Log γ, Δt, and L.',
-      why: 'Systematic velocity variation provides the empirical curve needed to demonstrate non-linear relativistic acceleration.',
-      expectedResult: 'Five relativistic velocity trials logged in dataset.',
-      hint: 'Record trials for β = 0.10, 0.20, 0.30, 0.40, 0.50c.',
+      title: 'Step 7: Five-Condition Simulation Data Collection',
+      action: 'Run five simulation conditions across assigned relative velocities β = [0.10, 0.30, 0.50, 0.70, 0.90]c. Record Lorentz factor γ, dilated time Δt, and contracted length L.',
+      why: 'Collecting data across five velocity conditions demonstrates the non-linear asymptotic acceleration toward the speed of light.',
+      expectedResult: 'Five relativistic simulation runs logged in dataset.',
+      hint: 'Record simulation runs for β = 0.10, 0.30, 0.50, 0.70, 0.90c.',
       targetApparatusId: 'relativity-velocity-dial',
       relevantTool: 'accelerator',
       validate: (state) => {
-        return { isPassed: true, feedback: '✓ Special relativity 5-trial simulation collection active.' };
+        return { isPassed: true, feedback: '✓ Special relativity 5-condition simulation collection active.' };
       },
     },
     {
       id: 'r-step-8',
       stepNumber: 8,
-      title: 'Step 8: Experimental Data Computation & Analysis',
-      action: 'Compute theoretical Lorentz factors γ, dilated times Δt, sample standard deviation, and plot the relativistic γ vs β curve.',
+      title: 'Step 8: Computation of Relativistic Data & Scientific Analysis',
+      action: 'Calculate theoretical Lorentz factors γ, dilated times Δt, contracted lengths L, verify zero theoretical residual, analyze the 3 relativistic graphs (γ vs β, Δt/Δτ vs β, L/L₀ vs β), and answer the 7 conceptual questions.',
       why: 'Validates Einstein\'s kinematic equations against simulation data with zero residual error.',
-      expectedResult: 'Relativistic curve fit completed and report certified.',
+      expectedResult: 'Relativistic computations, graphs, and certified report completed.',
       hint: 'Navigate to Step 8 in Laboratory Notebook.',
       targetApparatusId: 'relativity-velocity-dial',
       relevantTool: 'accelerator',
       validate: (state) => {
-        return { isPassed: true, feedback: '✓ Special relativity experiment completed and certified!' };
+        return { isPassed: true, feedback: '✓ Special relativity simulation investigation completed and certified!' };
       },
     },
   ],

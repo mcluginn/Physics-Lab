@@ -6,6 +6,7 @@ import {
   type OpticsSettings,
   type RelativitySettings,
   type Room3StationId,
+  INITIAL_RELATIVITY,
   calculateCircuit,
   calculateOptics,
   calculateRelativity,
@@ -281,13 +282,7 @@ export function createRoom3Scene(
     screenDistance: 2.00,
   };
 
-  let currentRelativity: RelativitySettings = {
-    beta: 0.600,
-    properTime: 10.0,
-    properLength: 20.0,
-    massPreset: 'alpha',
-    restMass: 6.644657e-27,
-  };
+  let currentRelativity: RelativitySettings = { ...INITIAL_RELATIVITY };
 
   // -------------------------------------------------------------
   // 2. Texture & Asset Loading
@@ -1485,15 +1480,17 @@ export function createRoom3Scene(
     let sy = Math.max(1.2, r * Math.sin(elevation));
     let sz = r * Math.cos(elevation) * Math.sin(theta);
 
-    // Exclusion cone for Moon at (23.0, 3.0, -4.5):
-    // Prevent any background star from shining within the Moon's angular disc
+    // Broad exclusion zone for Moon backdrop behind East Window (z in [-9.5, 0.5], y in [0.8, 8.5])
+    // Divert any star in this corridor to the open West sky
+    if (sx > 0 && sz >= -9.5 && sz <= 0.5 && sy >= 0.8 && sy <= 8.5) {
+      sx = -Math.abs(sx);
+    }
     const dist = Math.sqrt(sx * sx + sy * sy + sz * sz);
     const uX = sx / dist;
     const uY = sy / dist;
     const uZ = sz / dist;
     const dotMoon = uX * 0.973 + uY * 0.127 - uZ * 0.190;
-    if (dotMoon > 0.972) {
-      // Divert star away from Moon's line of sight to open West sky
+    if (dotMoon > 0.950) {
       sx = -Math.abs(sx);
     }
 
@@ -1628,6 +1625,7 @@ export function createRoom3Scene(
     new THREE.SphereGeometry(2.1, 64, 64),
     moonMaterial
   );
+  moonMesh.renderOrder = 20;
   moonGroup.add(moonMesh);
 
   const objLoader = new OBJLoader();
@@ -1638,6 +1636,7 @@ export function createRoom3Scene(
         if ((child as THREE.Mesh).isMesh) {
           const m = child as THREE.Mesh;
           m.material = moonMaterial;
+          m.renderOrder = 20;
           m.castShadow = false;
           m.receiveShadow = false;
         }
@@ -2890,14 +2889,14 @@ export function createRoom3Scene(
   );
   sledGroup.add(sledBody);
 
-  // Contracting 3D Meter-Rod along X-axis of motion
+  // Contracting 3D Meter-Rod along X-axis of motion (Demo B: Length Contraction)
   const contractingRodGeo = new THREE.BoxGeometry(0.7, 0.04, 0.04);
   const contractingRodMat = material(0xf59e0b, { metalness: 0.8, roughness: 0.25 });
   const contractingRod = new THREE.Mesh(contractingRodGeo, contractingRodMat);
   contractingRod.position.set(0, 0.12, 0.12);
   sledGroup.add(contractingRod);
 
-  // Photon Light-Clock on Sled
+  // Photon Light-Clock on Sled (Demo A: Two-Mirror Photon Clock)
   const mirrorMat = material(0xffffff, { metalness: 0.98, roughness: 0.05 });
   const mirrorTop = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.015, 0.15), mirrorMat);
   mirrorTop.position.set(0, 0.35, -0.05);
@@ -2913,6 +2912,33 @@ export function createRoom3Scene(
   );
   photonPulse.position.set(0, 0.2, -0.05);
   sledGroup.add(photonPulse);
+
+  // Simultaneity Laser Detector Gates (Laboratory Frame S)
+  const gateMat = material(0x38bdf8, { metalness: 0.8, roughness: 0.2 });
+  const gateLeft = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.45), gateMat);
+  gateLeft.position.set(-0.35, 0.22, 0.12);
+  relativityGroup.add(gateLeft);
+
+  const gateRight = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.45), gateMat);
+  gateRight.position.set(0.35, 0.22, 0.12);
+  relativityGroup.add(gateRight);
+
+  // Dynamic 3D Photon Spacetime Path Tracer
+  const maxPathPoints = 64;
+  const pathPositions = new Float32Array(maxPathPoints * 3);
+  const pathGeometry = new THREE.BufferGeometry();
+  pathGeometry.setAttribute('position', new THREE.BufferAttribute(pathPositions, 3));
+  const pathMaterial = new THREE.LineBasicMaterial({
+    color: 0xfacc15,
+    transparent: true,
+    opacity: 0.85,
+    linewidth: 2,
+  });
+  const photonPathLine = new THREE.Line(pathGeometry, pathMaterial);
+  relativityGroup.add(photonPathLine);
+
+  let pathIndex = 0;
+  let pathCount = 0;
 
   // Load High-Fidelity Photon Clock GLB Model
   gltfLoader.load('/assets/room-3/relativity/photon_clock.glb', (gltf) => {
@@ -2939,10 +2965,10 @@ export function createRoom3Scene(
   const clockTexture = new THREE.CanvasTexture(clockCanvas);
 
   const atomicClock = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.48, 0.24),
+    new THREE.PlaneGeometry(0.56, 0.28),
     new THREE.MeshBasicMaterial({ map: clockTexture })
   );
-  atomicClock.position.set(-0.6, 0.25, -0.35);
+  atomicClock.position.set(-0.6, 0.27, -0.35);
   relativityGroup.add(atomicClock);
 
   // Load High-Fidelity Reference Frame Telemetry Console GLB Model
@@ -2960,42 +2986,124 @@ export function createRoom3Scene(
     relativityGroup.add(model);
   }, undefined, (err) => console.warn('Ref Frame Display GLB load note:', err));
 
-  let photonY = 0.05;
+  let photonY = 0.06;
   let photonDirection = 1;
+  let sledX = 0;
+  let sledDirection = 1;
   let labTime = 0;
+  let gateFlashTimer = 0;
 
   const updateRelativityApparatus = (delta: number) => {
     const relResult = calculateRelativity(currentRelativity);
-    const contractionFactor = 1 / relResult.gamma;
-    contractingRod.scale.x = Math.max(0.05, contractionFactor);
+    const isLabFrame = (currentRelativity.referenceFrame ?? 'lab') === 'lab';
+    const simSpeed = currentRelativity.simSpeed ?? 1.0;
+    const isPlaying = currentRelativity.simPlaying !== false;
 
-    // Animate photon bouncing between mirrors at speed c
-    const bounceSpeed = 1.2 * (1 / relResult.gamma);
+    // 1. Horizontal Sled Translation along maglev track
+    if (isLabFrame && isPlaying && currentRelativity.beta > 0) {
+      sledX += sledDirection * (currentRelativity.beta * simSpeed * 0.75) * delta;
+      if (sledX > 0.75) {
+        sledX = 0.75;
+        sledDirection = -1;
+      } else if (sledX < -0.75) {
+        sledX = -0.75;
+        sledDirection = 1;
+      }
+    } else if (!isLabFrame) {
+      // In co-moving Rest Frame S', clock is stationary at center of reference frame
+      sledX = 0;
+    }
+    sledGroup.position.x = sledX;
+
+    // 2. Demonstration B: Length Contraction strictly along motion axis
+    if (isLabFrame) {
+      contractingRod.scale.x = Math.max(0.05, 1 / relResult.gamma);
+    } else {
+      contractingRod.scale.x = 1.0; // Proper length L0 in rest frame
+    }
+
+    // 3. Demonstration A: Photon Bouncing between parallel mirrors
+    // In lab frame, tick interval is dilated by gamma (light follows longer diagonal hypotenuse)
+    const bounceSpeed = isPlaying
+      ? 1.2 * (1 / relResult.gamma) * simSpeed
+      : 0;
     photonY += photonDirection * bounceSpeed * delta;
-    if (photonY > 0.33) {
-      photonY = 0.33;
+    if (photonY > 0.34) {
+      photonY = 0.34;
       photonDirection = -1;
-    } else if (photonY < 0.07) {
-      photonY = 0.07;
+    } else if (photonY < 0.06) {
+      photonY = 0.06;
       photonDirection = 1;
     }
     photonPulse.position.y = photonY;
 
-    labTime += delta;
-    clockCtx.fillStyle = '#0f172a';
+    // 4. Trace Photon World Path in 3D (Zigzag in Lab Frame, Vertical in Rest Frame)
+    if (currentRelativity.showPhotonPath !== false && isPlaying) {
+      const worldPos = new THREE.Vector3();
+      photonPulse.getWorldPosition(worldPos);
+      relativityGroup.worldToLocal(worldPos);
+
+      pathPositions[pathIndex * 3 + 0] = worldPos.x;
+      pathPositions[pathIndex * 3 + 1] = worldPos.y;
+      pathPositions[pathIndex * 3 + 2] = worldPos.z;
+
+      pathIndex = (pathIndex + 1) % maxPathPoints;
+      pathCount = Math.min(maxPathPoints, pathCount + 1);
+      pathGeometry.setDrawRange(0, pathCount);
+      pathGeometry.attributes.position.needsUpdate = true;
+    } else if (!isPlaying) {
+      pathCount = 0;
+      pathGeometry.setDrawRange(0, 0);
+    }
+
+    // 5. Simultaneity Gates Endpoint Measurement Visualizer
+    if (Math.abs(sledX) < 0.05 && currentRelativity.showSimultaneityGates !== false) {
+      gateFlashTimer = 0.15;
+    }
+    if (gateFlashTimer > 0) {
+      gateFlashTimer -= delta;
+      gateMat.emissive.setHex(0x38bdf8);
+    } else {
+      gateMat.emissive.setHex(0x000000);
+    }
+
+    // 6. High-Contrast Scientific Digital Telemetry Display
+    labTime += delta * simSpeed;
+    clockCtx.fillStyle = '#090d16';
     clockCtx.fillRect(0, 0, 512, 256);
 
-    clockCtx.font = 'bold 28px monospace';
-    clockCtx.fillStyle = '#a855f7';
-    clockCtx.fillText('FRAME S (LAB)', 20, 40);
-    clockCtx.fillStyle = '#ffffff';
-    clockCtx.fillText(`t_lab: ${labTime.toFixed(1)} s`, 20, 80);
+    // Frame Header Banner
+    clockCtx.fillStyle = isLabFrame ? 'rgba(56, 189, 248, 0.2)' : 'rgba(168, 85, 247, 0.2)';
+    clockCtx.fillRect(0, 0, 512, 38);
+    clockCtx.font = 'bold 18px monospace';
+    clockCtx.fillStyle = isLabFrame ? '#38bdf8' : '#c084fc';
+    clockCtx.fillText(isLabFrame ? 'FRAME S: LABORATORY OBSERVER' : "FRAME S': CO-MOVING REST FRAME", 16, 26);
 
-    clockCtx.fillStyle = '#38bdf8';
-    clockCtx.fillText("FRAME S' (SPACECRAFT)", 20, 140);
+    // Main Parameters
+    clockCtx.font = 'bold 20px monospace';
+    clockCtx.fillStyle = '#fef08a';
+    clockCtx.fillText(`β = ${relResult.beta.toFixed(3)}c   γ = ${relResult.gamma.toFixed(4)}`, 16, 70);
+
+    clockCtx.font = '16px monospace';
+    clockCtx.fillStyle = '#94a3b8';
+    clockCtx.fillText(`Velocity v: ${(relResult.speedMps / 1e6).toFixed(2)} × 10⁶ m/s`, 16, 102);
+
+    // Demonstration A Readout
     clockCtx.fillStyle = '#34d399';
-    clockCtx.fillText(`γ = ${relResult.gamma.toFixed(3)}  β = ${relResult.beta.toFixed(3)}c`, 20, 180);
-    clockCtx.fillText(`L = ${relResult.contractedLength.toFixed(1)} m (-${relResult.lengthContractionPercent.toFixed(1)}%)`, 20, 220);
+    clockCtx.fillText(`Proper Time Δτ = 6.671 ns`, 16, 134);
+    clockCtx.fillStyle = isLabFrame ? '#38bdf8' : '#94a3b8';
+    clockCtx.fillText(`Dilated Time Δt = ${(relResult.dilatedTime).toFixed(3)} ns (${((relResult.gamma - 1) * 100).toFixed(1)}% dilation)`, 16, 162);
+
+    // Demonstration B Readout
+    clockCtx.fillStyle = '#f59e0b';
+    clockCtx.fillText(`Proper Length L₀ = 10.00 m`, 16, 194);
+    clockCtx.fillStyle = isLabFrame ? '#facc15' : '#94a3b8';
+    clockCtx.fillText(`Contracted L = ${(relResult.contractedLength).toFixed(3)} m (-${relResult.lengthContractionPercent.toFixed(1)}%)`, 16, 222);
+
+    // Timescale footer note
+    clockCtx.font = '11px sans-serif';
+    clockCtx.fillStyle = '#64748b';
+    clockCtx.fillText('Computational Physics Simulation · Invariant c = 299,792,458 m/s', 16, 246);
 
     clockTexture.needsUpdate = true;
   };
@@ -3007,10 +3115,10 @@ export function createRoom3Scene(
     id: 'relativity-contracting-rod',
     stationId: 'relativity',
     category: 'LORENTZ KINEMATICS',
-    name: 'Contracting Meter-Rod Interferometer',
+    name: 'Contracting Meter-Rod Interferometer (Demo B)',
     description: ROOM3_EQUIPMENT_DESCRIPTIONS['relativity-contracting-rod'],
     action: 'Observe Length Contraction L = L₀/γ',
-    readout: `Proper Length L₀ = ${currentRelativity.properLength.toFixed(1)} m · Contracted L = ${calculateRelativity(currentRelativity).contractedLength.toFixed(2)} m`,
+    readout: `Proper Length L₀ = 10.00 m · Contracted L = ${calculateRelativity(currentRelativity).contractedLength.toFixed(3)} m`,
   });
 
   registerInteractable(sledBody, {
@@ -3020,17 +3128,17 @@ export function createRoom3Scene(
     name: 'Relativistic Velocity Regulator Sled',
     description: ROOM3_EQUIPMENT_DESCRIPTIONS['relativity-velocity-dial'],
     action: 'Tune Frame Velocity β = v/c',
-    readout: `β = ${currentRelativity.beta.toFixed(3)}c · Lorentz Factor γ = ${calculateRelativity(currentRelativity).gamma.toFixed(3)}`,
+    readout: `β = ${currentRelativity.beta.toFixed(3)}c · Lorentz Factor γ = ${calculateRelativity(currentRelativity).gamma.toFixed(4)}`,
   });
 
   registerInteractable(atomicClock, {
     id: 'relativity-light-clock',
     stationId: 'relativity',
     category: 'CHRONOMETRY',
-    name: 'Synchronized Atomic Light-Clock',
+    name: 'Two-Mirror Photon Clock (Demo A)',
     description: ROOM3_EQUIPMENT_DESCRIPTIONS['relativity-light-clock'],
-    action: 'Observe Time Dilation Δt = γ·Δt₀',
-    readout: `Dilated Time Δt = ${calculateRelativity(currentRelativity).dilatedTime.toFixed(2)} s (vs proper Δt₀ = ${currentRelativity.properTime.toFixed(1)} s)`,
+    action: 'Observe Time Dilation Δt = γ·Δτ',
+    readout: `Proper Δτ = 6.671 ns · Dilated Δt = ${calculateRelativity(currentRelativity).dilatedTime.toFixed(3)} ns (γ = ${calculateRelativity(currentRelativity).gamma.toFixed(4)})`,
   });
 
   // -------------------------------------------------------------

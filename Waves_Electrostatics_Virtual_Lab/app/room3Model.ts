@@ -34,11 +34,17 @@ export type OpticsSettings = {
 
 export type RelativitySettings = {
   beta: number; // v/c (0.000 to 0.999)
-  properTime: number; // s (1.00 to 100.0 s)
-  properLength: number; // m (1.00 to 100.0 m)
+  properTime: number; // ns (6.671 ns for mirror separation D = 1.00 m)
+  properLength: number; // m (10.00 m rest rod)
   massPreset: 'electron' | 'proton' | 'muon' | 'alpha';
   restMass: number; // kg
   powerOn?: boolean;
+  referenceFrame: 'lab' | 'rest'; // Frame S (Lab Observer) vs Frame S' (Rest Frame)
+  activeDemo: 'clock' | 'rod' | 'both';
+  simPlaying: boolean;
+  simSpeed: number; // 0.25x, 0.5x, 1x, 2x
+  showPhotonPath: boolean;
+  showSimultaneityGates: boolean;
 };
 
 // -------------------------------------------------------------
@@ -83,12 +89,18 @@ export const INITIAL_OPTICS: OpticsSettings = {
 };
 
 export const INITIAL_RELATIVITY: RelativitySettings = {
-  beta: 0.600, // 0.60c (gamma = 1.250)
-  properTime: 10.0, // 10.0 s
-  properLength: 20.0, // 20.0 m (Tunnel Baseline)
+  beta: 0.100, // 0.10c
+  properTime: 6.671, // ns (Δτ = 2D/c for D = 1.00 m)
+  properLength: 10.00, // m (L0 = 10.00 m)
   massPreset: 'alpha',
   restMass: 6.644657e-27,
   powerOn: true,
+  referenceFrame: 'lab',
+  activeDemo: 'both',
+  simPlaying: true,
+  simSpeed: 1.0,
+  showPhotonPath: true,
+  showSimultaneityGates: true,
 };
 
 // -------------------------------------------------------------
@@ -370,10 +382,14 @@ export function calculateOptics(settings: OpticsSettings): OpticsResult {
 export type RelativityResult = {
   beta: number;
   gamma: number;
-  dilatedTime: number; // s
+  dilatedTime: number; // ns
+  properTime: number; // ns
   timeDilationRatio: number;
   contractedLength: number; // m
+  properLength: number; // m
   lengthContractionPercent: number; // %
+  photonPathLabM: number; // m (2L in lab frame)
+  photonPathRestM: number; // m (2D = 2.00 m in rest frame)
   speedMps: number; // m/s
   restEnergyJ: number; // J
   restEnergyMeV: number; // MeV
@@ -383,18 +399,28 @@ export type RelativityResult = {
   kineticEnergyMeV: number; // MeV
   momentumKgm_s: number; // kg m/s
   momentumMeV_c: number; // MeV/c
+  referenceFrame: 'lab' | 'rest';
+  isSimulated: boolean;
 };
 
 export function calculateRelativity(settings: RelativitySettings): RelativityResult {
-  const { beta, properTime, properLength, massPreset } = settings;
+  const { beta, properTime, properLength, massPreset, referenceFrame = 'lab' } = settings;
   const safeBeta = Math.min(0.9995, Math.max(0, beta));
   const betaSq = safeBeta * safeBeta;
   const gamma = 1 / Math.sqrt(Math.max(1e-6, 1 - betaSq));
 
   const speedMps = safeBeta * C_LIGHT;
-  const dilatedTime = gamma * properTime;
-  const contractedLength = properLength / gamma;
+  // D = 1.00 m mirror separation in photon clock
+  const tau0 = properTime > 0 ? properTime : 6.671;
+  const dilatedTime = gamma * tau0;
+
+  // L0 = 10.00 m proper length
+  const l0 = properLength > 0 ? properLength : 10.00;
+  const contractedLength = l0 / gamma;
   const lengthContractionPercent = (1 - 1 / gamma) * 100;
+
+  const photonPathRestM = 2.00; // 2 * D = 2 * 1.00 m
+  const photonPathLabM = 2.00 * gamma; // c * Δt = 2D * γ
 
   const presetInfo = MASS_PRESETS[massPreset] || MASS_PRESETS.alpha;
   const m0 = presetInfo.massKg;
@@ -415,9 +441,13 @@ export function calculateRelativity(settings: RelativitySettings): RelativityRes
     beta: safeBeta,
     gamma,
     dilatedTime,
+    properTime: tau0,
     timeDilationRatio: gamma,
     contractedLength,
+    properLength: l0,
     lengthContractionPercent,
+    photonPathLabM,
+    photonPathRestM,
     speedMps,
     restEnergyJ,
     restEnergyMeV,
@@ -427,13 +457,15 @@ export function calculateRelativity(settings: RelativitySettings): RelativityRes
     kineticEnergyMeV,
     momentumKgm_s,
     momentumMeV_c,
+    referenceFrame,
+    isSimulated: true,
   };
 }
 
 // -------------------------------------------------------------
 // 4. Lab Progress, Trials & Scoring Definitions
 // -------------------------------------------------------------
-export type TrialRecord = Record<string, number | string>;
+export type TrialRecord = Record<string, number | string | boolean>;
 
 export const TOTAL_TRIALS = 5;
 
@@ -603,22 +635,22 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
     id: 'relativity',
     number: '03',
     shortName: 'Special Relativity',
-    title: 'Special Relativity — Lorentz Transformation & Mass-Energy',
-    subtitle: 'Time Dilation · Length Contraction · Mass-Energy Equivalence',
+    title: 'Special Relativity — Computational Simulation Investigation',
+    subtitle: 'Time Dilation · Length Contraction · Lorentz Invariance',
     accent: '#c5a052',
-    objective: 'Apply the postulates of special relativity to calculate relativistic effects, including time dilation, length contraction, and mass-energy equivalence across multiple velocities.',
+    objective: 'Investigate the consequences of Einstein\'s postulates through computational simulations of a two-mirror photon clock and moving rod, demonstrating time dilation, length contraction, and mass-energy across multiple velocities.',
     sourceLesson: 'Lesson 10 — Special Theory of Relativity',
     placardSrc: '/assets/placards/apparatus_relativity.png',
     placardAlt: 'Cinematic relativistic photon light-clock apparatus and linear accelerator beam pipe',
     steps: [
-      { title: 'Inspect the dual-frame observation deck', prompt: 'Compare Stationary Frame S (lab clock, calorimeter) with Moving Frame S\' (relativistic spacecraft, photon light clock, contracting meter rod).', target: 'Observe how inertial reference frames compare according to Einstein\'s postulates.' },
-      { title: 'Reference Frame Calibration & Invariance Inspection', prompt: 'Compare Stationary Laboratory Frame S with Moving Particle Frame S\'. Verify the invariance of the speed of light c across both frames.', target: 'Calibrate reference frames and proper length L0 = 20.0 m.' },
-      { title: 'Particle Accelerator Power & Baseline Calibration', prompt: 'Turn ON particle accelerator in baseline rest state (β = 0.00c). Confirm proper time Δt0 = 10.0 s, rest energy E0 = m0c², and K = 0 MeV.', target: 'Initialize resting frame baseline parameters.' },
-      { title: 'Relativistic Light Clock Preparation', prompt: 'Inspect the photon light clock mechanism. Observe the diagonal photon bounce path geometry as observed from the stationary lab frame.', target: 'Understand light clock geometric time dilation mechanism.' },
-      { title: 'Time Dilation Measurement Procedure', prompt: 'Accelerate particle to relativistic velocity and measure dilated time interval Δt = γ Δt0 using the laboratory detector clock.', target: 'Observe time dilation effect as velocity increases.' },
-      { title: 'Length Contraction Measurement Procedure', prompt: 'Observe physical contraction of the flight tunnel and meter rod strictly along the axis of motion according to L = L0 / γ.', target: 'Measure longitudinal relativistic length contraction.' },
-      { title: 'Five-Trial Simulation Data Collection', prompt: 'Record five experimental simulation trials across assigned velocity ratios β = [0.10, 0.20, 0.30, 0.40, 0.50]c. Record Lorentz factor γ, dilated time Δt, and contracted length L.', target: 'Record five relativistic trials into simulation dataset.' },
-      { title: 'Experimental Data Computation & Analysis', prompt: 'Compute experimental Lorentz factor, dilated time, sample standard deviation, plot γ vs. β relativistic curve, and certify special relativity report.', target: 'Complete Lorentz calculations, curve fit, and certify relativity report.' },
+      { title: 'Identify Relativistic Equipment & Reference Frames', prompt: 'Inspect the two-mirror photon clock, moving reference-frame display, velocity regulator dial, and moving-rod interferometer.', target: 'Identify the apparatus components and establish Frame S (Lab) vs. Frame S\' (Moving Rest Frame).' },
+      { title: 'Observe the Rest Frame (Photon Clock Baseline)', prompt: 'Inspect the stationary photon clock. Observe the vertical round-trip path between mirrors (D = 1.00 m) and verify proper time Δτ = 2D/c ≈ 6.671 ns.', target: 'Verify proper time baseline in the clock\'s rest frame.' },
+      { title: 'Introduce Relative Motion (Moving Sled)', prompt: 'Accelerate the sled to relativistic velocity. Observe the distinction between the moving clock\'s rest frame S\' and the stationary laboratory observer frame S.', target: 'Understand relative motion across inertial frames.' },
+      { title: 'Investigate Photon Motion & Light Path Geometry', prompt: 'Switch between Frame S (Lab) and Frame S\' (Rest). Observe the diagonal zigzag photon path in the lab frame vs. vertical bounce in rest frame, while c remains invariant.', target: 'Analyze light trajectory invariance and diagonal path extension.' },
+      { title: 'Investigate Relativistic Time Dilation', prompt: 'Observe how the extended diagonal path in the laboratory frame causes the moving clock\'s tick interval to dilate: Δt = γ Δτ.', target: 'Validate time dilation Δt = γ Δτ.' },
+      { title: 'Investigate Length Contraction & Simultaneity', prompt: 'Activate the moving-rod demonstration (L₀ = 10.00 m). Observe contracted length L = L₀/γ measured by simultaneous endpoint detection in the laboratory frame.', target: 'Understand longitudinal length contraction and frame simultaneity.' },
+      { title: 'Five-Condition Simulation Data Collection', prompt: 'Run five simulation conditions across assigned relative velocities β = [0.10, 0.30, 0.50, 0.70, 0.90]c. Record Lorentz factor γ, dilated time Δt, and contracted length L.', target: 'Record five simulation conditions into dataset.' },
+      { title: 'Computation of Relativistic Data & Scientific Analysis', prompt: 'Compute theoretical Lorentz factors, time dilation, length contraction, verify zero numerical residual, analyze the 3 relativistic graphs, and complete the 7 interpretation questions.', target: 'Complete relativistic computations, graphs, and certified report.' },
     ],
     prediction: {
       question: 'As an inertial frame moves at relativistic velocity v relative to an observer, how does the elapsed time interval Δt measured by the stationary observer compare to the proper time interval Δt₀ measured in the moving frame?',
@@ -632,11 +664,11 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
       explanation: 'Under the Lorentz transformation, because the speed of light c is an invariant constant in all inertial reference frames, an observer at rest observes light traveling along a longer diagonal path inside a moving clock. Consequently, the moving clock ticks slower by the Lorentz factor γ = (1 - v²/c²)⁻¹/², producing relativistic time dilation: Δt = γ Δt₀.',
     },
     errors: [
-      'Non-inertial acceleration phases required to attain relativistic velocity',
-      'Gravitational time dilation gradient (General Relativistic correction)',
-      'Signal propagation latency when synchronizing remote atomic clocks',
-      'Quantum uncertainty in simultaneous position-momentum measurements',
-      'Cosmic microwave background drag on ultra-relativistic particles (GZK limit)',
+      'Numerical truncation and floating-point roundoff in transcendental Lorentz factor computation',
+      'Phase quantization in discrete photon-path rendering across finite simulation timesteps',
+      'Relativistic aberration in wide-angle optical projections',
+      'Finite signal transmission latency in remote detector synchronization',
+      'Approximation limits in non-continuous frame interpolation',
     ],
   },
 };
@@ -666,14 +698,14 @@ export const TRIAL_COLUMNS: Record<Room3StationId, Array<{ key: string; label: s
     { key: 'percentError', label: '% Error' },
   ],
   relativity: [
-    { key: 'trial', label: '#' },
+    { key: 'trial', label: 'Run' },
     { key: 'beta', label: 'β (v/c)' },
-    { key: 'speed', label: 'Speed (m/s)' },
-    { key: 'gamma', label: 'γ (Theory)' },
-    { key: 'measuredGamma', label: 'γ (Detector)' },
-    { key: 'dilatedTime', label: 'Δt (s)' },
-    { key: 'contractedLength', label: 'L (m)' },
-    { key: 'kineticEnergy', label: 'K (MeV)' },
+    { key: 'speed', label: 'Velocity (m/s)' },
+    { key: 'gamma', label: 'Lorentz Factor γ' },
+    { key: 'properTime', label: 'Proper Time Δτ (ns)' },
+    { key: 'dilatedTime', label: 'Dilated Time Δt (ns)' },
+    { key: 'properLength', label: 'Proper Length L₀ (m)' },
+    { key: 'contractedLength', label: 'Contracted Length L (m)' },
   ],
 };
 
@@ -704,11 +736,11 @@ export const ROOM3_ASSIGNED_TRIALS: Record<Room3StationId, AssignedTrialConditio
     { trialIndex: 4, label: 'Trial 5', targetParam: 'u', targetValue: 60.0, unit: 'cm', expectedSecondary: 30.00, secondaryUnit: 'cm', instruction: 'Position object lamp at u = 60.0 cm (3f). Slide observation screen until image achieves sharp focus (v = 30.0 cm).' },
   ],
   relativity: [
-    { trialIndex: 0, label: 'Trial 1', targetParam: 'β', targetValue: 0.10, unit: 'c', expectedSecondary: 1.005, secondaryUnit: 'γ', instruction: 'Accelerate particle to β = 0.100c. Measure Lorentz factor γ, dilated time Δt, and contracted length L.' },
-    { trialIndex: 1, label: 'Trial 2', targetParam: 'β', targetValue: 0.20, unit: 'c', expectedSecondary: 1.021, secondaryUnit: 'γ', instruction: 'Accelerate particle to β = 0.200c. Measure Lorentz factor γ, dilated time Δt, and contracted length L.' },
-    { trialIndex: 2, label: 'Trial 3', targetParam: 'β', targetValue: 0.30, unit: 'c', expectedSecondary: 1.048, secondaryUnit: 'γ', instruction: 'Accelerate particle to β = 0.300c. Measure Lorentz factor γ, dilated time Δt, and contracted length L.' },
-    { trialIndex: 3, label: 'Trial 4', targetParam: 'β', targetValue: 0.40, unit: 'c', expectedSecondary: 1.091, secondaryUnit: 'γ', instruction: 'Accelerate particle to β = 0.400c. Measure Lorentz factor γ, dilated time Δt, and contracted length L.' },
-    { trialIndex: 4, label: 'Trial 5', targetParam: 'β', targetValue: 0.50, unit: 'c', expectedSecondary: 1.155, secondaryUnit: 'γ', instruction: 'Accelerate particle to β = 0.500c. Measure Lorentz factor γ, dilated time Δt, and contracted length L.' },
+    { trialIndex: 0, label: 'Run 1', targetParam: 'β', targetValue: 0.10, unit: 'c', expectedSecondary: 1.0050, secondaryUnit: 'γ', instruction: 'Set relative velocity to β = 0.10c. Measure simulated dilated time (Δt = 6.705 ns) and contracted length (L = 9.950 m).' },
+    { trialIndex: 1, label: 'Run 2', targetParam: 'β', targetValue: 0.30, unit: 'c', expectedSecondary: 1.0483, secondaryUnit: 'γ', instruction: 'Set relative velocity to β = 0.30c. Measure simulated dilated time (Δt = 6.993 ns) and contracted length (L = 9.539 m).' },
+    { trialIndex: 2, label: 'Run 3', targetParam: 'β', targetValue: 0.50, unit: 'c', expectedSecondary: 1.1547, secondaryUnit: 'γ', instruction: 'Set relative velocity to β = 0.50c. Measure simulated dilated time (Δt = 7.703 ns) and contracted length (L = 8.660 m).' },
+    { trialIndex: 3, label: 'Run 4', targetParam: 'β', targetValue: 0.70, unit: 'c', expectedSecondary: 1.4003, secondaryUnit: 'γ', instruction: 'Set relative velocity to β = 0.70c. Measure simulated dilated time (Δt = 9.342 ns) and contracted length (L = 7.141 m).' },
+    { trialIndex: 4, label: 'Run 5', targetParam: 'β', targetValue: 0.90, unit: 'c', expectedSecondary: 2.2942, secondaryUnit: 'γ', instruction: 'Set relative velocity to β = 0.90c. Measure simulated dilated time (Δt = 15.305 ns) and contracted length (L = 4.359 m).' },
   ],
 };
 
