@@ -167,8 +167,17 @@ export function Room3CircuitWorkspace({
     }
   };
 
+  const handleWireSinglePreset = () => {
+    onUpdateCircuits({ topology: 'single', mode: 'dc', vs: 2.0, r1: 100, r2: 220, r3: 330, powerOn: true });
+    if (!jumperClosed) onToggleJumper();
+    onSetProbe('red', 'R3_A');
+    onSetProbe('black', 'R3_B');
+    onSetDmmMode('v_dc');
+    onSetDmmJack('v_ohm');
+  };
+
   const handleWireSeriesPreset = () => {
-    onUpdateCircuits({ topology: 'series', mode: 'dc', vs: 24.0, r1: 100, r2: 220, r3: 330, powerOn: true });
+    onUpdateCircuits({ topology: 'series', mode: 'dc', vs: 6.0, r1: 100, r2: 220, r3: 330, powerOn: true });
     if (!jumperClosed) onToggleJumper();
     onSetProbe('red', 'R1_A');
     onSetProbe('black', 'R1_B');
@@ -177,7 +186,7 @@ export function Room3CircuitWorkspace({
   };
 
   const handleWireParallelPreset = () => {
-    onUpdateCircuits({ topology: 'parallel', mode: 'dc', vs: 24.0, r1: 100, r2: 220, r3: 330, powerOn: true });
+    onUpdateCircuits({ topology: 'parallel', mode: 'dc', vs: 6.0, r1: 100, r2: 220, r3: 330, powerOn: true });
     if (!jumperClosed) onToggleJumper();
     onSetProbe('red', 'SRC_POS');
     onSetProbe('black', 'SRC_NEG');
@@ -308,6 +317,22 @@ export function Room3CircuitWorkspace({
               <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>CIRCUIT ARRANGEMENT:</span>
               <button
                 type="button"
+                className={`quick-chip ${circuits.topology === 'single' ? 'active' : ''}`}
+                style={{
+                  background: circuits.topology === 'single' ? '#d4af37' : '#35121d',
+                  color: circuits.topology === 'single' ? '#1a0b10' : '#fef08a',
+                  border: 'none',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                }}
+                onClick={handleWireSinglePreset}
+              >
+                Ohm&apos;s Law (Single R3 = 330Ω · 1W)
+              </button>
+              <button
+                type="button"
                 className={`quick-chip ${circuits.topology === 'series' ? 'active' : ''}`}
                 style={{
                   background: circuits.topology === 'series' ? '#d4af37' : '#35121d',
@@ -336,7 +361,7 @@ export function Room3CircuitWorkspace({
                 }}
                 onClick={handleWireParallelPreset}
               >
-                Parallel (R1 || R2 || R3 = 68.6Ω)
+                Parallel (R1 || R2 || R3 = 56.9Ω)
               </button>
               <button
                 type="button"

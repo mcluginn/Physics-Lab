@@ -61,6 +61,7 @@ export class Multimeter3D {
   public boardBaseMesh: THREE.Mesh | null = null;
   public boardGroup: THREE.Group | null = null;
   public meterGroup: THREE.Group | null = null;
+  public resistorGroups: Record<'R1' | 'R2' | 'R3', THREE.Group> | null = null;
 
   // Terminal Positions (World coordinates on workbench)
   public terminalPositions: Record<TerminalId, THREE.Vector3>;
@@ -465,6 +466,7 @@ export class Multimeter3D {
       if (child instanceof THREE.Mesh) this.interactableMeshes.push(child);
     });
     boardGroup.add(r3Mesh);
+    this.resistorGroups = { R1: r1Mesh, R2: r2Mesh, R3: r3Mesh };
 
     // 4. Build Realistic 3D Breadboard Jumper Wires (Solid-Core 22 AWG Arched Wires)
     this.buildBreadboardJumpers(boardGroup);
@@ -499,6 +501,7 @@ export class Multimeter3D {
     body.rotation.z = Math.PI / 2;
     body.position.copy(bodyPos);
     body.castShadow = true;
+    resGroup.userData.bodyMesh = body;
     resGroup.add(body);
 
     // Rounded bulbous end caps
@@ -1063,6 +1066,36 @@ export class Multimeter3D {
       this.dmmState.fuseBlown = true;
       this.callbacks.playTone?.(140, 'sawtooth', 0.4, 0.3);
       reading = readMultimeter(this.circuitState, this.dmmState);
+    }
+
+    // Dynamic Physical Resistor Thermal State & Hover Telemetry
+    const solution = solveCircuit(this.circuitState, this.dmmState);
+    if (this.resistorGroups && solution.resistors) {
+      (['R1', 'R2', 'R3'] as const).forEach((key) => {
+        const group = this.resistorGroups?.[key];
+        const resTel = solution.resistors[key];
+        if (group && resTel) {
+          const bodyMesh = group.userData.bodyMesh as THREE.Mesh | undefined;
+          if (bodyMesh && bodyMesh.material instanceof THREE.MeshStandardMaterial) {
+            if (resTel.powerW > 0.005) {
+              const emissiveColor = resTel.isOverloaded
+                ? 0xef4444
+                : resTel.powerW > 0.5
+                ? 0xea580c
+                : 0xf59e0b;
+              bodyMesh.material.emissive.setHex(emissiveColor);
+              bodyMesh.material.emissiveIntensity = Math.min(1.0, 0.15 + (resTel.powerPercent / 100) * 0.75);
+            } else {
+              bodyMesh.material.emissive.setHex(0x000000);
+              bodyMesh.material.emissiveIntensity = 0;
+            }
+          }
+          const tooltip = `Resistor ${resTel.id} (${resTel.nominalResistance} Ω · 1 W) · V = ${resTel.voltageDrop.toFixed(2)} V, I = ${resTel.currentMa.toFixed(2)} mA, P = ${resTel.powerW.toFixed(3)} W (${resTel.powerPercent.toFixed(1)}% of 1W rating)${resTel.isOverloaded ? ' [⚠️ OVERLOAD]' : ''}`;
+          group.traverse((c) => {
+            c.userData.hoverTooltip = tooltip;
+          });
+        }
+      });
     }
 
     // LCD Background

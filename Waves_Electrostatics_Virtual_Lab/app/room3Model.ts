@@ -7,7 +7,7 @@ export type Room3StationId = 'circuits' | 'optics' | 'relativity';
 // -------------------------------------------------------------
 export type CircuitSettings = {
   mode: 'dc' | 'ac';
-  topology: 'series' | 'parallel' | 'combo';
+  topology: 'single' | 'series' | 'parallel' | 'combo';
   vs: number; // Volts (1.0 - 240.0 V)
   freq: number; // Hz (10 - 1000 Hz, active in AC)
   r1: number; // Ohms (1.0 - 1000.0)
@@ -125,7 +125,9 @@ export function calculateCircuit(settings: CircuitSettings): CircuitResult {
   let i1 = 0, i2 = 0, i3 = 0;
   let v1 = 0, v2 = 0, v3 = 0;
 
-  if (topology === 'series') {
+  if (topology === 'single') {
+    req = r3;
+  } else if (topology === 'series') {
     req = r1 + r2 + r3;
   } else if (topology === 'parallel') {
     req = 1 / ((1 / Math.max(0.1, r1)) + (1 / Math.max(0.1, r2)) + (1 / Math.max(0.1, r3)));
@@ -148,7 +150,12 @@ export function calculateCircuit(settings: CircuitSettings): CircuitResult {
   const current = effectiveVs / Math.max(0.01, impedance);
 
   // Branch Voltages & Currents
-  if (topology === 'series') {
+  if (topology === 'single') {
+    v3 = effectiveVs;
+    i3 = effectiveVs / Math.max(0.1, r3);
+    v1 = 0; i1 = 0;
+    v2 = 0; i2 = 0;
+  } else if (topology === 'series') {
     i1 = current;
     i2 = current;
     i3 = current;
@@ -520,19 +527,19 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
     title: 'DC & AC Electrical Circuits — Verification of Ohm\'s Law',
     subtitle: 'Voltage · Current · Resistance · Digital Multimeter Operation',
     accent: '#d4af37',
-    objective: 'Investigate direct current series circuits to verify Ohm\'s Law (V = I·R) across multiple operating voltages using a digital multimeter in parallel and series configurations.',
+    objective: 'Investigate direct current circuits to verify Ohm\'s Law (V = I·R) and electrical power (P = V·I) across multiple operating voltages using a digital multimeter in parallel and series configurations.',
     sourceLesson: 'Lesson 8 — DC & AC Electrical Systems',
     placardSrc: '/assets/placards/apparatus_electricity.png',
     placardAlt: 'Cinematic laboratory test bench for DC and AC electrical circuits with oscilloscope and power supply',
     steps: [
       { title: 'Equipment Identification & Workbench Setup', prompt: 'Identify the DC power supply, AC function generator, Fluke 87V digital multimeter, Tektronix oscilloscope, and breadboard terminal matrix. Enter Workbench Close-Up mode [E].', target: 'Locate instruments and enter instrument close-up mode.' },
-      { title: 'Circuit Assembly & Continuity Inspection', prompt: 'Verify the series resistor network (R1 = 100 Ω, R2 = 220 Ω, R3 = 330 Ω) and ensure the series loop jumper is closed to provide a continuous conductive path (Req = 650 Ω).', target: 'Verify closed loop continuity before applying power.' },
-      { title: 'Power Supply Setup & Energization', prompt: 'Configure the DC power supply to nominal 24.0 V DC and energize the circuit. Observe the illuminated power indicator and oscilloscope standby display.', target: 'Apply potential across the network and verify steady-state power.' },
+      { title: 'Circuit Assembly & Continuity Inspection', prompt: 'Verify the resistor network (R1 = 100 Ω, R2 = 220 Ω, R3 = 330 Ω) and ensure the series loop jumper is closed to provide a continuous conductive path.', target: 'Verify closed loop continuity before applying power.' },
+      { title: 'Power Supply Setup & Energization', prompt: 'Configure the DC power supply to nominal voltage and energize the circuit. Observe the illuminated power indicator and oscilloscope standby display.', target: 'Apply potential across the network and verify steady-state power.' },
       { title: 'Multimeter Instrument Preparation', prompt: 'Configure the Fluke 87V digital multimeter: turn rotary selector dial to DC Voltage (V⎓) and verify test leads are connected to COM (ground) and V·Ω (high impedance) sockets.', target: 'Prepare digital multimeter for high-impedance voltage sensing.' },
-      { title: 'Voltage Measurement Procedure (Parallel)', prompt: 'Practice non-intrusive potential difference measurement by placing test probes in parallel across the power supply rails (24.00 V) and across resistor R1 (3.69 V).', target: 'Observe parallel potential difference measurement without breaking the circuit.' },
-      { title: 'Current Measurement Procedure (Series)', prompt: 'De-energize the supply, open the series break (remove jumper), move red lead to mA jack, switch dial to A⎓, connect in series across break terminals, and re-energize to measure loop current (36.92 mA).', target: 'Execute proper series ammeter insertion with burden shunt protection.' },
-      { title: 'Five-Trial Experimental Data Collection', prompt: 'Conduct five experimental measurement trials across assigned operating voltages (4 V, 8 V, 12 V, 16 V, 20 V). For each trial, measure network voltage and loop current.', target: 'Record five distinct voltage-current trials into the experimental dataset.' },
-      { title: 'Experimental Data Computation & Analysis', prompt: 'Compute experimental resistance (Ri = Vi / Ii), average resistance Rmean, sample standard deviation, percentage error vs. theoretical 650 Ω, and perform linear regression analysis (V vs. I).', target: 'Complete scientific calculations, regression analysis, and certify lab notebook.' },
+      { title: 'Voltage Measurement Procedure (Parallel)', prompt: 'Practice non-intrusive potential difference measurement by placing test probes in parallel across the power supply rails and across resistor components.', target: 'Observe parallel potential difference measurement without breaking the circuit.' },
+      { title: 'Current Measurement Procedure (Series)', prompt: 'De-energize the supply, open the series break (remove jumper), move red lead to mA jack, switch dial to A⎓, connect in series across break terminals, and re-energize to measure loop current.', target: 'Execute proper series ammeter insertion with burden shunt protection.' },
+      { title: 'Five-Trial Experimental Data Collection', prompt: 'Conduct five experimental measurement trials across assigned operating voltages (2 V, 4 V, 6 V, 8 V, 10 V) using the nominal 330 Ω resistor. For each trial, measure resistor voltage and loop current.', target: 'Record five distinct voltage-current trials into the experimental dataset.' },
+      { title: 'Experimental Data Computation & Analysis', prompt: 'Compute experimental resistance (Ri = Vi / Ii), power (Pi = Vi · Ii), average resistance Rmean, sample standard deviation across operating points, percentage error vs. nominal 330 Ω, and perform linear regression analysis (V vs. I, slope = 330 Ω).', target: 'Complete scientific calculations, regression analysis, and certify lab notebook.' },
     ],
     prediction: {
       question: 'In an AC series RLC circuit, what condition achieves resonance where total impedance Z is minimized?',
@@ -683,11 +690,11 @@ export type AssignedTrialCondition = {
 
 export const ROOM3_ASSIGNED_TRIALS: Record<Room3StationId, AssignedTrialCondition[]> = {
   circuits: [
-    { trialIndex: 0, label: 'Trial 1', targetParam: 'Vs', targetValue: 4.0, unit: 'V', expectedSecondary: 6.15, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 4.0 V. Measure voltage across network in parallel, then insert ammeter in series to measure current.' },
-    { trialIndex: 1, label: 'Trial 2', targetParam: 'Vs', targetValue: 8.0, unit: 'V', expectedSecondary: 12.31, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 8.0 V. Measure voltage across network in parallel, then insert ammeter in series to measure current.' },
-    { trialIndex: 2, label: 'Trial 3', targetParam: 'Vs', targetValue: 12.0, unit: 'V', expectedSecondary: 18.46, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 12.0 V. Measure voltage across network in parallel, then insert ammeter in series to measure current.' },
-    { trialIndex: 3, label: 'Trial 4', targetParam: 'Vs', targetValue: 16.0, unit: 'V', expectedSecondary: 24.62, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 16.0 V. Measure voltage across network in parallel, then insert ammeter in series to measure current.' },
-    { trialIndex: 4, label: 'Trial 5', targetParam: 'Vs', targetValue: 20.0, unit: 'V', expectedSecondary: 30.77, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 20.0 V. Measure voltage across network in parallel, then insert ammeter in series to measure current.' },
+    { trialIndex: 0, label: 'Trial 1', targetParam: 'Vs', targetValue: 2.0, unit: 'V', expectedSecondary: 6.06, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 2.0 V. Measure potential difference across nominal 330 Ω resistor and insert ammeter in series to measure loop current (expected: 6.06 mA, 0.0121 W).' },
+    { trialIndex: 1, label: 'Trial 2', targetParam: 'Vs', targetValue: 4.0, unit: 'V', expectedSecondary: 12.12, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 4.0 V. Measure potential difference across nominal 330 Ω resistor and insert ammeter in series to measure loop current (expected: 12.12 mA, 0.0485 W).' },
+    { trialIndex: 2, label: 'Trial 3', targetParam: 'Vs', targetValue: 6.0, unit: 'V', expectedSecondary: 18.18, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 6.0 V. Measure potential difference across nominal 330 Ω resistor and insert ammeter in series to measure loop current (expected: 18.18 mA, 0.1091 W).' },
+    { trialIndex: 3, label: 'Trial 4', targetParam: 'Vs', targetValue: 8.0, unit: 'V', expectedSecondary: 24.24, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 8.0 V. Measure potential difference across nominal 330 Ω resistor and insert ammeter in series to measure loop current (expected: 24.24 mA, 0.1939 W).' },
+    { trialIndex: 4, label: 'Trial 5', targetParam: 'Vs', targetValue: 10.0, unit: 'V', expectedSecondary: 30.30, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 10.0 V. Measure potential difference across nominal 330 Ω resistor and insert ammeter in series to measure loop current (expected: 30.30 mA, 0.3030 W).' },
   ],
   optics: [
     { trialIndex: 0, label: 'Trial 1', targetParam: 'u', targetValue: 30.0, unit: 'cm', expectedSecondary: 60.00, secondaryUnit: 'cm', instruction: 'Position object lamp at u = 30.0 cm. Slide observation screen until image achieves sharp focus (v ≈ 60.0 cm).' },
@@ -855,7 +862,7 @@ export function computeCircuitOhmMetrics(trials: TrialRecord[]) {
       mean: null as number | null,
       stdDev: null as number | null,
       sem: null as number | null,
-      theoreticalReq: 650.0,
+      theoreticalReq: 330.0,
       percentError: null as number | null,
       hasData: false,
     };
@@ -864,10 +871,10 @@ export function computeCircuitOhmMetrics(trials: TrialRecord[]) {
     if (typeof t.resistance === 'number' && Number(t.resistance) > 10.0) return Number(t.resistance);
     const v = Number(t.measuredV ?? t.vs ?? 0);
     const iA = Number(t.measuredI_A ?? (typeof t.measuredI_mA !== 'undefined' ? Number(t.measuredI_mA) / 1000 : null) ?? t.current ?? 0.001);
-    return iA > 0 ? (v * 1000) / (iA * 1000) : 650.0;
+    return iA > 0 ? (v * 1000) / (iA * 1000) : 330.0;
   });
   const stats = calculateTrialStats(resistances);
-  const theoreticalReq = 650.0;
+  const theoreticalReq = 330.0;
   const percentError = stats.mean > 0 ? Math.abs((stats.mean - theoreticalReq) / theoreticalReq) * 100 : 0;
   return {
     resistances,

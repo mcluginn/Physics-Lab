@@ -7,7 +7,7 @@
  * including shunt resistance, high-impedance voltage sensing, and failure modes.
  */
 
-export type CircuitTopology = 'series' | 'parallel' | 'combo';
+export type CircuitTopology = 'single' | 'series' | 'parallel' | 'combo';
 export type CircuitMode = 'dc' | 'ac';
 export type MultimeterMode = 'v_dc' | 'v_ac' | 'a_dc' | 'a_ac' | 'ohm' | 'cont';
 export type MultimeterJack = 'v_ohm' | 'ma_10a';
@@ -27,6 +27,18 @@ export type TerminalId =
   | 'IND_B'         // Inductor Right
   | 'CAP_A'         // Capacitor Left
   | 'CAP_B';        // Capacitor Right
+
+export type ResistorTelemetry = {
+  id: 'R1' | 'R2' | 'R3';
+  nominalResistance: number;
+  powerRatingW: number;
+  voltageDrop: number;
+  currentA: number;
+  currentMa: number;
+  powerW: number;
+  powerPercent: number;
+  isOverloaded: boolean;
+};
 
 export type CircuitState = {
   mode: CircuitMode;
@@ -69,6 +81,7 @@ export type CircuitSolution = {
     i2: number;
     i3: number;
   };
+  resistors: Record<'R1' | 'R2' | 'R3', ResistorTelemetry>;
   equivalentResistance: number;
   acImpedance: {
     zMagnitude: number;
@@ -132,16 +145,38 @@ export function solveCircuit(state: CircuitState, dmm: MultimeterState): Circuit
     nodeVoltages.SRC_POS = vs;
     nodeVoltages.SERIES_JACK_A = vs;
     nodeVoltages.SERIES_JACK_B = 0;
+    const zeroResistors: Record<'R1' | 'R2' | 'R3', ResistorTelemetry> = {
+      R1: { id: 'R1', nominalResistance: r1, powerRatingW: 1.0, voltageDrop: 0, currentA: 0, currentMa: 0, powerW: 0, powerPercent: 0, isOverloaded: false },
+      R2: { id: 'R2', nominalResistance: r2, powerRatingW: 1.0, voltageDrop: 0, currentA: 0, currentMa: 0, powerW: 0, powerPercent: 0, isOverloaded: false },
+      R3: { id: 'R3', nominalResistance: r3, powerRatingW: 1.0, voltageDrop: 0, currentA: 0, currentMa: 0, powerW: 0, powerPercent: 0, isOverloaded: false },
+    };
     return {
       nodeVoltages,
       branchCurrents: { total: 0, i1: 0, i2: 0, i3: 0 },
+      resistors: zeroResistors,
       equivalentResistance: Infinity,
       acImpedance: { zMagnitude: Infinity, phaseRad: 0, phaseDeg: 0, xl: 0, xc: 0, powerFactor: 1 },
     };
   }
 
   if (state.mode === 'dc') {
-    if (state.topology === 'series') {
+    if (state.topology === 'single') {
+      // Single 330 Ω Resistor Ohm's Law circuit (Experiment A)
+      req = r3 + ammeterBurdenR;
+      totalCurrent = vs / req;
+      i1 = 0;
+      i2 = 0;
+      i3 = totalCurrent;
+
+      nodeVoltages.SERIES_JACK_A = vs;
+      nodeVoltages.SERIES_JACK_B = vs - (isAmmeterInSeriesBreak ? totalCurrent * ammeterBurdenR : 0);
+      nodeVoltages.R3_A = nodeVoltages.SERIES_JACK_B;
+      nodeVoltages.R3_B = 0;
+      nodeVoltages.R1_A = 0;
+      nodeVoltages.R1_B = 0;
+      nodeVoltages.R2_A = 0;
+      nodeVoltages.R2_B = 0;
+    } else if (state.topology === 'series') {
       // R1 + R2 + R3 in series + burden resistance
       req = r1 + r2 + r3 + ammeterBurdenR;
       totalCurrent = vs / req;
@@ -214,9 +249,53 @@ export function solveCircuit(state: CircuitState, dmm: MultimeterState): Circuit
   const phaseDeg = (phaseRad * 180) / Math.PI;
   const powerFactor = Math.cos(phaseRad);
 
+  const vDropR1 = Math.abs((nodeVoltages.R1_A ?? 0) - (nodeVoltages.R1_B ?? 0));
+  const vDropR2 = Math.abs((nodeVoltages.R2_A ?? 0) - (nodeVoltages.R2_B ?? 0));
+  const vDropR3 = Math.abs((nodeVoltages.R3_A ?? 0) - (nodeVoltages.R3_B ?? 0));
+  const pR1 = vDropR1 * i1;
+  const pR2 = vDropR2 * i2;
+  const pR3 = vDropR3 * i3;
+
+  const resistors: Record<'R1' | 'R2' | 'R3', ResistorTelemetry> = {
+    R1: {
+      id: 'R1',
+      nominalResistance: r1,
+      powerRatingW: 1.0,
+      voltageDrop: vDropR1,
+      currentA: i1,
+      currentMa: i1 * 1000,
+      powerW: pR1,
+      powerPercent: (pR1 / 1.0) * 100,
+      isOverloaded: pR1 > 1.0,
+    },
+    R2: {
+      id: 'R2',
+      nominalResistance: r2,
+      powerRatingW: 1.0,
+      voltageDrop: vDropR2,
+      currentA: i2,
+      currentMa: i2 * 1000,
+      powerW: pR2,
+      powerPercent: (pR2 / 1.0) * 100,
+      isOverloaded: pR2 > 1.0,
+    },
+    R3: {
+      id: 'R3',
+      nominalResistance: r3,
+      powerRatingW: 1.0,
+      voltageDrop: vDropR3,
+      currentA: i3,
+      currentMa: i3 * 1000,
+      powerW: pR3,
+      powerPercent: (pR3 / 1.0) * 100,
+      isOverloaded: pR3 > 1.0,
+    },
+  };
+
   return {
     nodeVoltages,
     branchCurrents: { total: totalCurrent, i1, i2, i3 },
+    resistors,
     equivalentResistance: req,
     acImpedance: {
       zMagnitude: zMag,

@@ -119,10 +119,10 @@ const CIRCUITS_CURRICULUM: StationCurriculum = {
             errorType: 'wrong_mode',
           };
         }
-        if (state.circuits.topology !== 'series') {
+        if (state.circuits.topology !== 'series' && state.circuits.topology !== 'single') {
           return {
             isPassed: false,
-            feedback: 'Circuit topology is not set to Series. Select Series topology on the breadboard.',
+            feedback: 'Circuit topology is not set to Series or Single Resistor. Select an arrangement on the breadboard.',
             errorType: 'other',
           };
         }
@@ -135,7 +135,7 @@ const CIRCUITS_CURRICULUM: StationCurriculum = {
         }
         return {
           isPassed: true,
-          feedback: '✓ Circuit verified: R1 (100Ω) + R2 (220Ω) + R3 (330Ω) form an unbroken series path (Req = 650.0 Ω).',
+          feedback: '✓ Circuit verified: Conductive path confirmed with closed jumper loop.',
         };
       },
       autoAssist: {
@@ -288,15 +288,15 @@ const CIRCUITS_CURRICULUM: StationCurriculum = {
       id: 'c-step-7',
       stepNumber: 7,
       title: 'Step 7: Five-Trial Experimental Data Collection',
-      action: 'Conduct five measurement trials at assigned voltages: 4 V, 8 V, 12 V, 16 V, and 20 V. Measure voltage and current for each trial and record into the empirical dataset.',
+      action: 'Conduct five measurement trials at assigned voltages: 2 V, 4 V, 6 V, 8 V, and 10 V using the nominal 330 Ω resistor. Measure voltage across the resistor and series current for each trial and record into the empirical dataset.',
       why: 'Single measurements can be subject to random fluctuations. Recording a multi-point dataset across multiple operating points allows physicists to confirm linearity and verify Ohm\'s Law.',
-      expectedResult: 'All 5 experimental trials recorded with measured voltage Vi and measured current Ii.',
-      hint: 'Use the dedicated Five-Trial collection card. Set each assigned voltage, measure, and click "Record Trial".',
+      expectedResult: 'All 5 experimental trials recorded with measured voltage Vi, measured current Ii, and power Pi.',
+      hint: 'Use the dedicated Five-Trial collection card. Set each assigned voltage (2V, 4V, 6V, 8V, 10V), measure with the Fluke 87V, and click "Record Trial".',
       relevantTool: 'multimeter',
       validate: (state) => {
         return {
           isPassed: true,
-          feedback: '✓ Dedicated Five-Trial Data Collection active. Collect all 5 operating points (4 V, 8 V, 12 V, 16 V, 20 V).',
+          feedback: '✓ Dedicated Five-Trial Data Collection active. Collect all 5 operating points (2 V, 4 V, 6 V, 8 V, 10 V) with the 330 Ω resistor.',
         };
       },
     },
@@ -304,9 +304,9 @@ const CIRCUITS_CURRICULUM: StationCurriculum = {
       id: 'c-step-8',
       stepNumber: 8,
       title: 'Step 8: Experimental Data Computation & Analysis',
-      action: 'Calculate experimental resistance Ri = Vi / Ii for each trial, average resistance Rmean, sample standard deviation s, percentage error vs 650 Ω, and review linear regression fit.',
-      why: 'Quantitative error analysis and linear regression validate that the resistor network obeys Ohm\'s Law with high precision.',
-      expectedResult: 'Linear regression confirms slope m = Req = 650.0 Ω and R² ≥ 0.999.',
+      action: 'Calculate experimental resistance Ri = Vi / Ii and power Pi = Vi · Ii for each trial, average resistance Rmean, sample standard deviation s across operating points, percentage error vs 330 Ω, and review linear regression fit (slope = 330 Ω).',
+      why: 'Quantitative error analysis and linear regression validate that the resistor obeys Ohm\'s Law with high precision.',
+      expectedResult: 'Linear regression confirms slope m = R = 330.0 Ω and R² ≥ 0.999.',
       hint: 'Navigate to Step 8 in the Laboratory Notebook to view complete calculations, regression plot, and certify report.',
       relevantTool: 'breadboard',
       validate: (state) => {

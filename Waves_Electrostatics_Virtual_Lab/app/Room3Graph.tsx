@@ -42,9 +42,9 @@ export function computeRoom3Regression(stationId: Room3StationId, trials: TrialR
   let title = '';
 
   if (stationId === 'circuits') {
-    xAxisLabel = 'Total Current I (A)';
+    xAxisLabel = 'Circuit Current I (A)';
     yAxisLabel = 'Measured Voltage V (V)';
-    title = "Ohm's Law: Voltage vs. Current (Slope = Req = 650 Ω)";
+    title = "Ohm's Law: Voltage vs. Current (Slope = R_exp ≈ 330 Ω)";
 
     trials.forEach((trial, index) => {
       const trialNum = Number(trial.trial ?? index + 1);
@@ -188,7 +188,7 @@ export function computeRoom3Regression(stationId: Room3StationId, trials: TrialR
 
   let physicalInterpretation = '';
   if (stationId === 'circuits') {
-    physicalInterpretation = `Slope m = ${slope.toFixed(2)} Ω ⇒ Measured AC/DC Impedance Z_exp = ${slope.toFixed(2)} Ω (V = I·Z agreement verified)`;
+    physicalInterpretation = `Slope m = ${slope.toFixed(2)} Ω ⇒ Experimental Resistance R_exp = ${slope.toFixed(2)} Ω (Ohm's Law: V = I·R Verified with R² = ${rSquared.toFixed(4)})`;
   } else if (stationId === 'optics') {
     const subMode = String(trials[0]?.subMode ?? 'refraction');
     if (subMode === 'imaging') {

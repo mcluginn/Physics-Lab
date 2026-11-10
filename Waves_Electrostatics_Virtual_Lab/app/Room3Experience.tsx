@@ -1139,10 +1139,10 @@ export default function Room3Experience() {
     let newTrial: TrialRecord;
 
     if (stationId === 'circuits') {
-      // Check operating voltage match (assigned trial)
-      if (Math.abs(circuits.vs - assigned.targetValue) > 1.5) {
+      // Check operating voltage match (assigned trial: 2.0, 4.0, 6.0, 8.0, 10.0 V)
+      if (Math.abs(circuits.vs - assigned.targetValue) > 1.2) {
         setMeasurementWarning(
-          `Voltage Mismatch for Trial ${trialNum}: Assigned operating point is Vs = ${assigned.targetValue.toFixed(1)} V, but power supply is set to ${circuits.vs.toFixed(1)} V. Adjust voltage to ${assigned.targetValue.toFixed(1)} V or click "Set ${assigned.targetValue}V".`
+          `Voltage Mismatch for Trial ${trialNum}: Assigned operating point is Vs = ${assigned.targetValue.toFixed(1)} V, but power supply is set to ${circuits.vs.toFixed(1)} V. Adjust voltage to ${assigned.targetValue.toFixed(1)} V or click "${assigned.targetValue}V".`
         );
         playTone(220, 'sawtooth', 0.2, 0.25);
         return;
@@ -1154,24 +1154,25 @@ export default function Room3Experience() {
         return;
       }
 
-      // Measured voltage: live DMM reading if in DC voltage mode across source/network, else circuits.vs with slight realistic ADC display variation
-      let measuredV = circuits.vs * (1 + (Math.sin(trialNum * 13.7) * 0.002));
+      // Measured voltage: live DMM reading if in DC voltage mode across source/resistor, else circuits.vs with slight realistic ADC display variation (±0.15%)
+      let measuredV = circuits.vs * (1 + (Math.sin(trialNum * 13.7) * 0.0015));
       if (dmmMode === 'v_dc' && dmmJack === 'v_ohm' && dmmReading.value !== null && Math.abs(dmmReading.value) > 0.5) {
         measuredV = Math.abs(dmmReading.value);
       }
 
-      // True series current for this trial's measured voltage:
-      // In series loop Req = 650.0 Ω, I_true = (Vi / Req) * 1000 in mA with ±0.2% ADC jitter
-      const reqTheor = 650.0;
-      const iJitter = 1 + (Math.cos(trialNum * 11.3) * 0.002);
+      // Single-resistor R3 = 330.0 Ω (1W) Ohm's Law verification:
+      // In single resistor test, Req = 330.0 Ω, I_true = (Vi / Req) * 1000 in mA with ±0.2% ADC jitter
+      const reqTheor = 330.0;
+      const iJitter = 1 + (Math.cos(trialNum * 11.3) * 0.0018);
       let measuredI_mA = ((measuredV / reqTheor) * 1000) * iJitter;
-      // If student legitimately has DMM in series ammeter mode (a_dc, ma_10a, open jumper, series break):
-      if ((dmmMode === 'a_dc' || dmmMode === 'a_ac') && dmmJack === 'ma_10a' && !jumperClosed && dmmReading.value !== null && Math.abs(dmmReading.value) > 0.0001) {
+      // If student legitimately has DMM in series ammeter mode:
+      if ((dmmMode === 'a_dc' || dmmMode === 'a_ac') && dmmJack === 'ma_10a' && dmmReading.value !== null && Math.abs(dmmReading.value) > 0.0001) {
         measuredI_mA = Math.abs(dmmReading.value) * 1000;
       }
       const measuredI_A = measuredI_mA / 1000;
+      const powerW = measuredV * measuredI_A;
 
-      // Experimental resistance: Ri = Vi / I_A = (Vi * 1000) / I_mA ≈ 650.0 Ω
+      // Experimental resistance: Ri = Vi / I_A = (Vi * 1000) / I_mA ≈ 330.0 Ω
       const resistance = measuredI_mA > 0 ? (measuredV * 1000) / measuredI_mA : reqTheor;
       const expectedR = reqTheor;
       const percentError = Math.abs((resistance - expectedR) / expectedR) * 100;
@@ -1184,6 +1185,7 @@ export default function Room3Experience() {
         measuredI_A: Number(measuredI_A.toFixed(5)),
         resistance: Number(resistance.toFixed(1)),
         expectedR,
+        powerW: Number(powerW.toFixed(4)),
         percentError: Number(percentError.toFixed(2)),
         mode: circuits.mode.toUpperCase(),
         topology: circuits.topology,
@@ -1422,7 +1424,7 @@ export default function Room3Experience() {
       let val = currentCalcs[i];
       if (!val || val.trim() === '' || isNaN(parseFloat(val))) {
         if (stationId === 'circuits') {
-          val = Number(t.resistance ?? 650.0).toFixed(1);
+          val = Number(t.resistance ?? 330.0).toFixed(1);
         } else if (stationId === 'optics') {
           val = Number(t.f_exp ?? 20.0).toFixed(2);
         } else {
@@ -1445,9 +1447,9 @@ export default function Room3Experience() {
     for (let i = 0; i < trials.length; i++) {
       const t = trials[i];
       const userVal = parseFloat(currentCalcs[i]);
-      let expected = 650.0;
+      let expected = 330.0;
       if (stationId === 'circuits') {
-        expected = Number(t.resistance ?? 650.0);
+        expected = Number(t.resistance ?? 330.0);
       } else if (stationId === 'optics') {
         expected = Number(t.f_exp ?? 20.0);
       } else {
@@ -2450,9 +2452,9 @@ export default function Room3Experience() {
                   {stationId === 'circuits' && (
                     <>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginBottom: '8px' }}>
-                        {[4, 8, 12, 16, 20].map((v) => {
-                          const isDone = stationProgress.trials.some((tr) => Math.abs(Number(tr.vs ?? tr.paramA ?? 0) - v) < 1.0);
-                          const isCur = Math.abs(circuits.vs - v) < 1.0;
+                        {[2, 4, 6, 8, 10].map((v) => {
+                          const isDone = stationProgress.trials.some((tr) => Math.abs(Number(tr.vs ?? tr.paramA ?? 0) - v) < 0.8);
+                          const isCur = Math.abs(circuits.vs - v) < 0.8;
                           return (
                             <button
                               key={v}
@@ -2468,7 +2470,7 @@ export default function Room3Experience() {
                               }}
                               onClick={() => {
                                 setCircuits((prev) => ({ ...prev, vs: v, powerOn: true }));
-                                playTone(400 + v * 20, 'sine', 0.06, 0.15);
+                                playTone(400 + v * 30, 'sine', 0.06, 0.15);
                               }}
                             >
                               {isDone ? '✓ ' : ''}{v}V
@@ -2476,13 +2478,17 @@ export default function Room3Experience() {
                           );
                         })}
                       </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#cbd5e1', marginBottom: '6px' }}>
+                        <span>Power Supply Vs: <b>{circuits.vs.toFixed(1)} V</b></span>
+                        <span>Expected I (330Ω): <b>{((circuits.vs / 330) * 1000).toFixed(2)} mA</b></span>
+                      </div>
                       <button
                         type="button"
                         className="primary-button"
                         style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: 'bold' }}
                         onClick={() => recordCurrentTrial()}
                       >
-                        + Record Voltage & Current Trial to Lab Log ({stationProgress.trials.length}/5)
+                        + Record Ohm&apos;s Law Trial (V &amp; I) to Lab Log ({stationProgress.trials.length}/5)
                       </button>
                     </>
                   )}
@@ -2923,54 +2929,130 @@ export default function Room3Experience() {
                 <span>⇄ Flip Lead Polarity (Swap Red & Black)</span>
               </button>
 
-              {/* Quick Probe Placement Chips */}
-              <div style={{ marginTop: '2px' }}>
-                <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '3px', fontWeight: 700 }}>
-                  ⚡ QUICK PROBE CONNECTION:
+              {/* Multimeter Probe Management & Park Button */}
+              <div style={{ marginTop: '6px' }}>
+                <button
+                  type="button"
+                  className="dmm-btn"
+                  style={{ width: '100%', padding: '6px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: redTerminal === null && blackTerminal === null ? 'rgba(56,189,248,0.2)' : 'rgba(255,255,255,0.05)' }}
+                  onClick={() => handleQuickProbe('park')}
+                  title="Remove both multimeter probes and place them in the parked rest position"
+                >
+                  <span>🅿️ Park / Disconnect Multimeter Probes</span>
+                </button>
+              </div>
+
+              {/* Breadboard Circuit Configuration Selector */}
+              <div style={{ marginTop: '8px' }}>
+                <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '4px', fontWeight: 700 }}>
+                  🔌 CIRCUIT TOPOLOGY / LABORATORY EXERCISE:
                 </label>
-                <div className="quick-probe-chips">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
                   <button
                     type="button"
-                    className={`probe-chip-btn ${redTerminal === 'SRC_POS' && blackTerminal === 'SRC_NEG' ? 'active' : ''}`}
-                    onClick={() => handleQuickProbe('psu')}
+                    className="dmm-btn"
+                    style={{
+                      padding: '5px 2px',
+                      fontSize: '10px',
+                      fontWeight: 'bold',
+                      background: circuits.topology === 'single' ? '#0284c7' : 'rgba(255,255,255,0.06)',
+                      borderColor: circuits.topology === 'single' ? '#38bdf8' : 'rgba(255,255,255,0.15)',
+                      color: circuits.topology === 'single' ? '#fff' : '#cbd5e1',
+                    }}
+                    onClick={() => {
+                      setCircuits((prev) => ({ ...prev, topology: 'single', r3: 330, vs: 2.0, powerOn: true }));
+                      playTone(520, 'sine', 0.08, 0.15);
+                    }}
+                    title="Exp A: Single 330Ω Resistor across DC Supply for Ohm's Law verification"
                   >
-                    Across PSU (24V)
+                    Ohm&apos;s Law (330Ω)
                   </button>
                   <button
                     type="button"
-                    className={`probe-chip-btn ${redTerminal === 'R1_A' && blackTerminal === 'R1_B' ? 'active' : ''}`}
-                    onClick={() => handleQuickProbe('r1')}
+                    className="dmm-btn"
+                    style={{
+                      padding: '5px 2px',
+                      fontSize: '10px',
+                      fontWeight: 'bold',
+                      background: circuits.topology === 'series' ? '#0284c7' : 'rgba(255,255,255,0.06)',
+                      borderColor: circuits.topology === 'series' ? '#38bdf8' : 'rgba(255,255,255,0.15)',
+                      color: circuits.topology === 'series' ? '#fff' : '#cbd5e1',
+                    }}
+                    onClick={() => {
+                      setCircuits((prev) => ({ ...prev, topology: 'series', vs: 6.0, powerOn: true }));
+                      playTone(580, 'sine', 0.08, 0.15);
+                    }}
+                    title="Exp C: Series circuit with R1=100Ω, R2=220Ω, R3=330Ω across 6V DC"
                   >
-                    Across R1 (3.7V)
+                    Series (650Ω)
                   </button>
                   <button
                     type="button"
-                    className={`probe-chip-btn ${redTerminal === 'R2_A' && blackTerminal === 'R2_B' ? 'active' : ''}`}
-                    onClick={() => handleQuickProbe('r2')}
+                    className="dmm-btn"
+                    style={{
+                      padding: '5px 2px',
+                      fontSize: '10px',
+                      fontWeight: 'bold',
+                      background: circuits.topology === 'parallel' ? '#0284c7' : 'rgba(255,255,255,0.06)',
+                      borderColor: circuits.topology === 'parallel' ? '#38bdf8' : 'rgba(255,255,255,0.15)',
+                      color: circuits.topology === 'parallel' ? '#fff' : '#cbd5e1',
+                    }}
+                    onClick={() => {
+                      setCircuits((prev) => ({ ...prev, topology: 'parallel', vs: 6.0, powerOn: true }));
+                      playTone(640, 'sine', 0.08, 0.15);
+                    }}
+                    title="Exp D: Parallel circuit with R1, R2, R3 across 6V DC"
                   >
-                    Across R2 (8.1V)
+                    Parallel (56.9Ω)
                   </button>
-                  <button
-                    type="button"
-                    className={`probe-chip-btn ${redTerminal === 'R3_A' && blackTerminal === 'R3_B' ? 'active' : ''}`}
-                    onClick={() => handleQuickProbe('r3')}
-                  >
-                    Across R3 (12.2V)
-                  </button>
-                  <button
-                    type="button"
-                    className={`probe-chip-btn ${redTerminal === 'SERIES_JACK_A' && blackTerminal === 'SERIES_JACK_B' ? 'active' : ''}`}
-                    onClick={() => handleQuickProbe('series')}
-                  >
-                    Series Break (Ammeter)
-                  </button>
-                  <button
-                    type="button"
-                    className={`probe-chip-btn ${redTerminal === null && blackTerminal === null ? 'active' : ''}`}
-                    onClick={() => handleQuickProbe('park')}
-                  >
-                    Disconnect
-                  </button>
+                </div>
+              </div>
+
+              {/* Authoritative Resistor Telemetry & Thermal Dissipation Card */}
+              <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(212, 175, 55, 0.35)', borderRadius: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <b style={{ fontSize: '10px', color: '#d4af37', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    📊 Resistor Telemetry (1W Rating)
+                  </b>
+                  <span style={{ fontSize: '9px', color: '#94a3b8' }}>
+                    Req = <b>{circuitResult.req.toFixed(1)} Ω</b>
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '10px' }}>
+                  {/* R1 */}
+                  {circuits.topology !== 'single' && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '3px 6px', borderRadius: '4px' }}>
+                      <span style={{ color: '#cbd5e1' }}><b>R1 (100Ω):</b> {circuitResult.v1.toFixed(2)}V · {(circuitResult.i1 * 1000).toFixed(1)}mA</span>
+                      <span style={{ color: (circuitResult.v1 * circuitResult.i1) > 1.0 ? '#ef4444' : '#34d399', fontWeight: 600 }}>
+                        {(circuitResult.v1 * circuitResult.i1).toFixed(3)} W ({(((circuitResult.v1 * circuitResult.i1) / 1.0) * 100).toFixed(0)}%)
+                      </span>
+                    </div>
+                  )}
+
+                  {/* R2 */}
+                  {circuits.topology !== 'single' && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '3px 6px', borderRadius: '4px' }}>
+                      <span style={{ color: '#cbd5e1' }}><b>R2 (220Ω):</b> {circuitResult.v2.toFixed(2)}V · {(circuitResult.i2 * 1000).toFixed(1)}mA</span>
+                      <span style={{ color: (circuitResult.v2 * circuitResult.i2) > 1.0 ? '#ef4444' : '#34d399', fontWeight: 600 }}>
+                        {(circuitResult.v2 * circuitResult.i2).toFixed(3)} W ({(((circuitResult.v2 * circuitResult.i2) / 1.0) * 100).toFixed(0)}%)
+                      </span>
+                    </div>
+                  )}
+
+                  {/* R3 */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '3px 6px', borderRadius: '4px' }}>
+                    <span style={{ color: '#cbd5e1' }}><b>R3 (330Ω):</b> {circuitResult.v3.toFixed(2)}V · {(circuitResult.i3 * 1000).toFixed(1)}mA</span>
+                    <span style={{ color: (circuitResult.v3 * circuitResult.i3) > 1.0 ? '#ef4444' : '#34d399', fontWeight: 600 }}>
+                      {(circuitResult.v3 * circuitResult.i3).toFixed(3)} W ({(((circuitResult.v3 * circuitResult.i3) / 1.0) * 100).toFixed(0)}%)
+                    </span>
+                  </div>
+
+                  {/* Circuit Total */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '4px', marginTop: '2px', color: '#fef08a' }}>
+                    <span><b>Total Power (P = VI):</b></span>
+                    <span><b>{circuitResult.realPower.toFixed(3)} W</b> ({(circuitResult.current * 1000).toFixed(1)} mA)</span>
+                  </div>
                 </div>
               </div>
 
@@ -4539,7 +4621,7 @@ export default function Room3Experience() {
                         <tr>
                           {stationId === 'circuits' && (
                             <>
-                              <th>#</th><th>Vs (V)</th><th>Measured V (V)</th><th>Current (mA)</th><th>Current (A)</th><th>R_exp (Ω)</th><th>Req Theor (Ω)</th><th>% Error</th>
+                              <th>#</th><th>Vs (V)</th><th>Measured V (V)</th><th>Current (mA)</th><th>Current (A)</th><th>R_exp (Ω)</th><th>Power (W)</th><th>R_nom (Ω)</th><th>% Error</th>
                             </>
                           )}
                           {stationId === 'optics' && (
@@ -4565,7 +4647,8 @@ export default function Room3Experience() {
                                 <td style={{ color: '#10b981' }}>{formatValue(t.measuredI_mA ?? (Number(t.current) * 1000))}</td>
                                 <td>{formatValue(t.measuredI_A ?? t.current)}</td>
                                 <td style={{ color: '#fef08a', fontWeight: 700 }}>{formatValue(t.resistance ?? t.impedance)}</td>
-                                <td>650.0</td>
+                                <td style={{ color: '#38bdf8' }}>{formatValue(t.powerW ?? (Number(t.measuredV ?? t.vs) * Number(t.measuredI_A ?? 0.006)))} W</td>
+                                <td>330.0 Ω</td>
                                 <td>{formatValue(t.percentError)}%</td>
                               </>
                             )}
@@ -4735,21 +4818,21 @@ export default function Room3Experience() {
                               </small>
                             </div>
                             <div>
-                              <b>3. Percentage Error vs. Theoretical Equivalent Resistance (650.0 Ω):</b>
+                              <b>3. Percentage Error vs. Nominal Resistor Specification (330.0 Ω):</b>
                               <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
-                                Percentage Error = |Rmean - Req| / Req × 100% = {circuitMetrics.percentError !== null ? circuitMetrics.percentError.toFixed(2) : '—'}%
+                                Percentage Error = |Rmean - Rnom| / Rnom × 100% = {circuitMetrics.percentError !== null ? circuitMetrics.percentError.toFixed(2) : '—'}%
                               </div>
                               <small style={{ color: '#94a3b8' }}>
-                                |{circuitMetrics.mean.toFixed(2)} - 650.0| / 650.0 × 100% (Within strict ±2% academic threshold)
+                                |{circuitMetrics.mean.toFixed(2)} - 330.0| / 330.0 × 100% (Within strict ±2% academic threshold)
                               </small>
                             </div>
                             <div>
-                              <b>4. Theoretical Equivalent Resistance (Req):</b>
+                              <b>4. Resistor Specification & Power Rating:</b>
                               <div style={{ fontFamily: 'monospace', color: '#a855f7', margin: '4px 0' }}>
-                                Req = R1 + R2 + R3 = 100 Ω + 220 Ω + 330 Ω = 650.0 Ω
+                                R = 330.0 Ω · 1 Watt Rating (Carbon Film Resistor)
                               </div>
                               <small style={{ color: '#94a3b8' }}>
-                                Series Kirchhoff addition verified with zero branch leakage
+                                Max permissible continuous current: Imax = √(P/R) = √(1.0/330) ≈ 55.0 mA
                               </small>
                             </div>
                           </div>
@@ -4779,7 +4862,7 @@ export default function Room3Experience() {
                       {/* 3. Least-Squares Linear Regression Plot & Substituted Formula */}
                       <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
                         <h5 style={{ margin: 0, color: '#fef08a', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                          Section C: Least-Squares Linear Regression Analysis (Slope = Req)
+                          Section C: Least-Squares Linear Regression Analysis (Slope = R_exp ≈ 330 Ω)
                         </h5>
                       </div>
 
@@ -4799,8 +4882,109 @@ export default function Room3Experience() {
                             m = [ 5·({regression.sumXY.toFixed(4)}) - ({regression.sumX.toFixed(4)})·({regression.sumY.toFixed(2)}) ] / [ 5·({regression.sumX2.toFixed(6)}) - ({regression.sumX.toFixed(4)})² ] = <b>{regression.slope.toFixed(2)} Ω</b>
                           </div>
                           <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#94a3b8' }}>
-                            Physical Interpretation: The slope <b>m = {regression.slope.toFixed(2)} Ω</b> directly represents the equivalent resistance Req. With coefficient of determination <b>R² = {regression.rSquared.toFixed(5)}</b>, the empirical data conclusively verifies Ohm&apos;s Law (V = I·R).
+                            Physical Interpretation: The slope <b>m = {regression.slope.toFixed(2)} Ω</b> directly represents the experimental resistance R_exp. With coefficient of determination <b>R² = {regression.rSquared.toFixed(5)}</b>, the empirical dataset conclusively confirms Ohm&apos;s Law (V = I·R) with linear precision.
                           </p>
+                        </div>
+                      )}
+
+                      {/* SECTION D: SERIES VS. PARALLEL CIRCUIT COMPARATIVE ANALYSIS (STATION 01) */}
+                      {stationId === 'circuits' && (
+                        <div style={{ marginTop: '20px' }}>
+                          <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
+                            <h5 style={{ margin: 0, color: '#fef08a', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                              Section D: Series vs. Parallel Circuit Comparative Analysis (R1 = 100Ω, R2 = 220Ω, R3 = 330Ω at Vs = 6.0 V)
+                            </h5>
+                          </div>
+
+                          <div className="table-scroll" style={{ marginBottom: '14px' }}>
+                            <table className="trial-table">
+                              <thead>
+                                <tr>
+                                  <th>Circuit Parameter</th>
+                                  <th>Series Circuit (Exp C)</th>
+                                  <th>Parallel Circuit (Exp D)</th>
+                                  <th>Physical Principle / Scientific Law</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td><b>Equivalent Resistance (Req)</b></td>
+                                  <td style={{ color: '#fef08a', fontWeight: 700 }}>650.0 Ω (R1 + R2 + R3)</td>
+                                  <td style={{ color: '#38bdf8', fontWeight: 700 }}>56.90 Ω (1 / Σ(1/Rk))</td>
+                                  <td>Parallel reduces resistance 11.4× below the smallest resistor</td>
+                                </tr>
+                                <tr>
+                                  <td><b>Total Circuit Current (Itot at 6V)</b></td>
+                                  <td style={{ color: '#d4af37' }}>9.23 mA (0.00923 A)</td>
+                                  <td style={{ color: '#34d399' }}>105.45 mA (0.10545 A)</td>
+                                  <td>Ohm&apos;s Law: Itot = Vs / Req (Parallel draws 11.4× more current)</td>
+                                </tr>
+                                <tr>
+                                  <td><b>Current Behavior</b></td>
+                                  <td>Identical everywhere (I1 = I2 = I3 = 9.23 mA)</td>
+                                  <td>Branch division: I1 = 60.0 mA, I2 = 27.3 mA, I3 = 18.2 mA</td>
+                                  <td>Kirchhoff&apos;s Current Law: Itot = I1 + I2 + I3</td>
+                                </tr>
+                                <tr>
+                                  <td><b>Voltage Distribution</b></td>
+                                  <td>Divides: V1 = 0.92V, V2 = 2.03V, V3 = 3.05V</td>
+                                  <td>Identical across all: V1 = V2 = V3 = 6.00 V</td>
+                                  <td>Kirchhoff&apos;s Voltage Law: Vs = Σ Vk (Series) vs Equal (Parallel)</td>
+                                </tr>
+                                <tr>
+                                  <td><b>Total Power Dissipated (P = VI)</b></td>
+                                  <td style={{ color: '#f59e0b' }}>0.0554 W (55.4 mW)</td>
+                                  <td style={{ color: '#ef4444' }}>0.6327 W (632.7 mW)</td>
+                                  <td>P = V² / Req (Parallel dissipates 11.4× more thermal energy)</td>
+                                </tr>
+                                <tr>
+                                  <td><b>Impact of Open-Circuit Failure</b></td>
+                                  <td>Entire circuit breaks; all current ceases (I = 0)</td>
+                                  <td>Fault isolated; other parallel branches remain operational</td>
+                                  <td>Universal engineering reason why building power distribution is parallel</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* 5 Student Conceptual Interpretation Questions */}
+                          <div style={{ padding: '14px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px' }}>
+                            <h5 style={{ margin: '0 0 10px', color: '#f8fafc', fontSize: '13px' }}>
+                              🎓 Student Conceptual Interpretation &amp; Laboratory Review:
+                            </h5>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '11px' }}>
+                              <div>
+                                <b style={{ color: '#fef08a' }}>Q1. Why does equivalent resistance increase when adding resistors in series, but decrease when adding resistors in parallel?</b>
+                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                                  In series, each resistor adds obstacle length to the single charge flow path (Req = R1 + R2 + R3). In parallel, each resistor adds an additional alternative pathway (cross-sectional area) for charge to bypass, strictly decreasing total resistance: 1/Req = 1/R1 + 1/R2 + 1/R3 &lt; min(Rk).
+                                </p>
+                              </div>
+                              <div>
+                                <b style={{ color: '#fef08a' }}>Q2. Why does the largest resistor drop the most voltage in series, while the smallest resistor draws the most current in parallel?</b>
+                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                                  In series, current I is identical through all components; by V = I·R, voltage drop is directly proportional to resistance (R3 = 330Ω drops 3.05V vs R1 = 100Ω dropping 0.92V). In parallel, voltage V is identical across all branches; by I = V/R, current is inversely proportional to resistance, so the 100Ω branch carries 60.0 mA while the 330Ω branch carries only 18.2 mA.
+                                </p>
+                              </div>
+                              <div>
+                                <b style={{ color: '#fef08a' }}>Q3. How does total power dissipation compare between series and parallel connections across the same 6 V supply?</b>
+                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                                  Total power is P = V² / Req. Because Req is 11.4× smaller in parallel (56.9 Ω vs 650 Ω), the parallel arrangement consumes and dissipates 11.4× more power (0.633 W vs 0.055 W) from the exact same 6 V source.
+                                </p>
+                              </div>
+                              <div>
+                                <b style={{ color: '#fef08a' }}>Q4. If one component fails open-circuit in a series circuit versus in a parallel circuit, what happens to the remaining components?</b>
+                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                                  In series, an open failure creates an infinite-impedance break in the single loop, extinguishing current to all components. In parallel, an open branch leaves the independent voltage paths of other branches intact, allowing the remaining branches to operate continuously without interruption.
+                                </p>
+                              </div>
+                              <div>
+                                <b style={{ color: '#fef08a' }}>Q5. Explain how the slope of the voltage vs. current graph directly proves Ohm&apos;s Law (R = ΔV / ΔI).</b>
+                                <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
+                                  Ohm&apos;s Law defines linear proportionality between electric potential and current: V = R·I. When plotted with Current on the x-axis and Voltage on the y-axis, the gradient ΔV / ΔI is constant and directly equals the resistance (m ≈ 330.0 Ω with R² ≥ 0.999).
+                                </p>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </>
