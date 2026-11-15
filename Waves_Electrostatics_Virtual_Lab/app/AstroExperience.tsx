@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   ASTRONOMY_ACTIVITIES,
   CONSTELLATIONS,
@@ -18,7 +18,8 @@ import {
   type SurveyScaleAnswer,
 } from './astroModel';
 import { createAstroScene, type AstroInteraction, type AstroSceneApi } from './astroScene';
-import { type CharacterType } from './characterController';
+import { CHARACTER_META, type CharacterType } from './characterController';
+import { isMobileTouchDevice, subscribeMobileTouch } from './graphicsSettings';
 import {
   SpaceSoundscapeEngine,
   SPACE_MOVEMENTS,
@@ -175,6 +176,7 @@ export default function AstroExperience() {
   // Survey State
   const [surveyData, setSurveyData] = useState<SurveyResponses>(INITIAL_SURVEY_RESPONSES);
   const [surveyStep, setSurveyStep] = useState<'questions' | 'contact' | 'completed'>('questions');
+  const isTouchDevice = useSyncExternalStore(subscribeMobileTouch, isMobileTouchDevice, () => false);
 
   // Load exploration and HUD state from localStorage on mount
   useEffect(() => {
@@ -382,7 +384,7 @@ export default function AstroExperience() {
         const next = sceneApi.current?.switchCharacter();
         if (next) {
           setActiveCharacter(next);
-          showToast(`Character changed to: ${next === 'female' ? 'Female (Carla)' : 'Male (Eric)'}`);
+          showToast(`Character changed to: ${CHARACTER_META[next].label}`);
         }
       }
       if (e.key === 'Escape') {
@@ -397,6 +399,7 @@ export default function AstroExperience() {
   // Mobile joystick handlers
   const moveJoystick = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (joystickPointerId.current !== event.pointerId) return;
+    event.preventDefault();
     const bounds = event.currentTarget.getBoundingClientRect();
     const maxR = Math.min(bounds.width, bounds.height) * 0.38;
     const rawX = event.clientX - (bounds.left + bounds.width / 2);
@@ -412,7 +415,9 @@ export default function AstroExperience() {
   };
 
   const startJoystick = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
     event.stopPropagation();
+    if (joystickPointerId.current !== null && joystickPointerId.current !== event.pointerId) return;
     joystickPointerId.current = event.pointerId;
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -423,6 +428,7 @@ export default function AstroExperience() {
   const releaseJoystick = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
     if (joystickPointerId.current !== event.pointerId) return;
+    event.preventDefault();
     joystickPointerId.current = null;
     try {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -515,7 +521,7 @@ export default function AstroExperience() {
       )}
 
       {/* Enter Walk Mode / Controls Prompt */}
-      {!pointerLocked && !activeModal && !externalOverlay && (
+      {!pointerLocked && !activeModal && !externalOverlay && !isTouchDevice && (
         <button className="astro-enter-walk" onClick={() => sceneApi.current?.requestPointerLock()}>
           <b>DRAG OR USE ARROW KEYS TO ROTATE VIEW</b>
           <span>Click canvas or here to lock cursor · WASD or Arrow Keys move · ESC release</span>
@@ -688,7 +694,7 @@ export default function AstroExperience() {
                 if (next) setActiveCharacter(next);
               }}
             >
-              👤 {activeCharacter === 'female' ? 'Female (Carla)' : 'Male (Eric)'} (C)
+              👤 {CHARACTER_META[activeCharacter].label} (C)
             </button>
             <button
               type="button"

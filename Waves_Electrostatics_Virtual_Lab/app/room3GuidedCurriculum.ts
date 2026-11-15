@@ -403,11 +403,18 @@ const OPTICS_CURRICULUM: StationCurriculum = {
       relevantTool: 'lens',
       validate: (state) => {
         const focalV = (state.optics.objectDistance * 20.0) / Math.max(0.1, state.optics.objectDistance - 20.0);
-        const isSharp = Math.abs(state.optics.screenDistance * 100 - focalV) < 8.0;
+        const screenPos = state.optics.screenPositionCm ?? 45.0;
+        const isSharp =
+          state.optics.subMode === 'imaging'
+            ? Math.abs(screenPos - focalV) <= 2.5
+            : Math.abs(state.optics.screenDistance * 100 - focalV) < 8.0;
         if (!isSharp) {
-          return { isPassed: false, feedback: 'Slide the observation screen until image achieves sharp focus.' };
+          return {
+            isPassed: false,
+            feedback: `Screen at v = ${screenPos.toFixed(1)} cm is out of focus. Slide the screen carriage in 3D or adjust Screen Position v until sharp focus is achieved.`,
+          };
         }
-        return { isPassed: true, feedback: '✓ Image sharpness verified at focal plane.' };
+        return { isPassed: true, feedback: `✓ Image sharpness verified at focal plane (v = ${screenPos.toFixed(1)} cm).` };
       },
     },
     {

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { CharacterController, type CharacterType } from './characterController';
 import type { AstroActivityId } from './astroModel';
+import { getEffectivePixelRatio, isMobileTouchDevice } from './graphicsSettings';
 
 export type AstroInteraction = {
   id: string;
@@ -47,11 +48,16 @@ export function createAstroScene(
   scene.fog = new THREE.Fog(0x050b18, 35, 110);
 
   const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 100);
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.8));
+  const mobileTouch = isMobileTouchDevice();
+  const renderer = new THREE.WebGLRenderer({
+    antialias: !mobileTouch || (window.devicePixelRatio || 1) < 2,
+    powerPreference: 'high-performance',
+  });
+  renderer.setPixelRatio(getEffectivePixelRatio(1.8));
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = mobileTouch ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
+  renderer.domElement.style.touchAction = 'none';
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
 
@@ -68,8 +74,8 @@ export function createAstroScene(
   const celestialMoonlight = new THREE.DirectionalLight(0x7dd3fc, 2.6);
   celestialMoonlight.position.set(0, 10, -18);
   celestialMoonlight.castShadow = true;
-  celestialMoonlight.shadow.mapSize.width = 2048;
-  celestialMoonlight.shadow.mapSize.height = 2048;
+  celestialMoonlight.shadow.mapSize.width = mobileTouch ? 512 : 2048;
+  celestialMoonlight.shadow.mapSize.height = mobileTouch ? 512 : 2048;
   celestialMoonlight.shadow.camera.near = 0.5;
   celestialMoonlight.shadow.camera.far = 35;
   celestialMoonlight.shadow.camera.left = -12;
@@ -83,7 +89,7 @@ export function createAstroScene(
   const solarSpot = new THREE.SpotLight(0xfff5dd, 5.2, 16, Math.PI / 3.2, 0.4, 1.2);
   solarSpot.position.set(0, 4.6, -1.5);
   solarSpot.target.position.set(0, 0.9, -1.5);
-  solarSpot.castShadow = true;
+  solarSpot.castShadow = !mobileTouch;
   scene.add(solarSpot);
   scene.add(solarSpot.target);
 
@@ -105,7 +111,7 @@ export function createAstroScene(
   const entranceSpot = new THREE.SpotLight(0xffedd5, 4.8, 12, Math.PI / 3.4, 0.35, 1.1);
   entranceSpot.position.set(0, 4.5, 3.8);
   entranceSpot.target.position.set(0, 1.6, 5.85);
-  entranceSpot.castShadow = true;
+  entranceSpot.castShadow = !mobileTouch;
   scene.add(entranceSpot);
   scene.add(entranceSpot.target);
 
@@ -711,7 +717,7 @@ export function createAstroScene(
   // Active radiant sunlight illuminating the solar table exhibits and student character
   const sunLight = new THREE.PointLight(0xffdf78, 4.5, 9.5, 1.2);
   sunLight.position.set(0, 1.15, 0);
-  sunLight.castShadow = true;
+  sunLight.castShadow = !mobileTouch;
   sunLight.shadow.bias = -0.002;
   solarGroup.add(sunLight);
 
@@ -3150,14 +3156,23 @@ export function createAstroScene(
         }
       }
     }
-    // If not clicking an interactive object, clicking canvas requests pointer lock
-    renderer.domElement.requestPointerLock?.();
+    // If not clicking an interactive object, clicking canvas requests pointer lock on desktop
+    if (lastPointerType !== 'touch' && !isMobileTouchDevice()) {
+      renderer.domElement.requestPointerLock?.();
+    }
   };
+
+  let lastPointerType = 'mouse';
 
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
+    if (e.pointerType === 'touch' && isDragging && dragPointerId !== e.pointerId) return;
+    lastPointerType = e.pointerType;
     isDragging = true;
     dragPointerId = e.pointerId;
+    try {
+      renderer.domElement.setPointerCapture(e.pointerId);
+    } catch {}
     lastPointerX = e.clientX;
     lastPointerY = e.clientY;
     pointerDownX = e.clientX;
@@ -3493,6 +3508,7 @@ export function createAstroScene(
       requestAnimationFrame(animateDoor);
     },
     requestPointerLock: () => {
+      if (isMobileTouchDevice()) return;
       renderer.domElement.requestPointerLock?.();
     },
     resetView: () => {

@@ -3,10 +3,12 @@
 import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import Link from 'next/link';
 import {
@@ -59,10 +61,11 @@ import { Room3CircuitWorkspace } from './Room3CircuitWorkspace';
 import {
   createRoom3Scene,
   type EquipmentInteraction,
+  type Room3CloseupFocus,
   type Room3SceneApi,
 } from './room3Scene';
 import { createLaboratoryPdf } from './pdfReport';
-import { type CharacterType } from './characterController';
+import { CHARACTER_META, type CharacterType } from './characterController';
 import {
   type MultimeterMode,
   type MultimeterJack,
@@ -77,8 +80,10 @@ import {
 } from './room3GuidedCurriculum';
 import {
   type GraphicsSettings,
+  isMobileTouchDevice,
   loadGraphicsSettings,
   saveGraphicsSettings,
+  subscribeMobileTouch,
 } from './graphicsSettings';
 import { Room3GraphicsModal } from './Room3GraphicsModal';
 
@@ -108,12 +113,34 @@ const INSPECTION_LABELS: Record<string, string> = {
 const GUIDANCE_LABELS: Record<string, string> = {
   'circuits-placard': 'circuits reference board',
   'circuits-power-switch': 'power supply switch',
+  'circuits-function-generator': 'function generator power switch',
   'circuits-voltage-knob': 'voltage regulator dial',
   'circuits-multimeter': 'Fluke digital multimeter',
   'circuits-dmm-dial': 'Fluke multimeter rotary dial',
   'circuits-dmm-jack': 'multimeter input terminals',
+  'circuits-dmm-jack-v': 'multimeter V·Ω (+) input jack',
+  'circuits-dmm-jack-ma': 'multimeter mA/10A current jack',
+  'circuits-dmm-jack-com': 'multimeter COM (-) ground jack',
+  'circuits-probe-red': 'Red (+) multimeter test probe',
+  'circuits-probe-black': 'Black (COM) reference probe',
   'circuits-oscilloscope': 'Tektronix oscilloscope',
+  'circuits-osc-time-knob': 'oscilloscope SEC/DIV timebase knob',
+  'circuits-osc-ch1-knob': 'oscilloscope CH1 VOLTS/DIV knob',
+  'circuits-osc-ch2-knob': 'oscilloscope CH2 SCALE/DIV knob',
+  'circuits-osc-trigger-knob': 'oscilloscope RUN/STOP trigger knob',
+  'circuits-osc-ch1-input': 'oscilloscope BNC CH1 input',
+  'circuits-osc-ch2-input': 'oscilloscope BNC CH2 input',
   'circuits-topology-selector': 'breadboard resistor network',
+  'circuits-terminal-SRC_POS': 'PSU +V supply socket (SRC_POS)',
+  'circuits-terminal-SRC_NEG': 'PSU GND return socket (SRC_NEG)',
+  'circuits-terminal-R1_A': 'resistor R1 left socket (R1_A)',
+  'circuits-terminal-R1_B': 'resistor R1 right socket (R1_B)',
+  'circuits-terminal-R2_A': 'resistor R2 left socket (R2_A)',
+  'circuits-terminal-R2_B': 'resistor R2 right socket (R2_B)',
+  'circuits-terminal-R3_A': 'resistor R3 left socket (R3_A)',
+  'circuits-terminal-R3_B': 'resistor R3 right socket (R3_B)',
+  'circuits-terminal-SERIES_JACK_A': 'series ammeter input socket (+A)',
+  'circuits-terminal-SERIES_JACK_B': 'series ammeter output socket (-A)',
   'circuits-probe-r1': 'resistor R1 probe point',
   'circuits-probe-r2': 'resistor R2 probe point',
   'circuits-probe-r3': 'resistor R3 probe point',
@@ -124,12 +151,14 @@ const GUIDANCE_LABELS: Record<string, string> = {
   'optics-angle-dial': 'goniometer prism dial',
   'optics-screen': 'observation screen',
   'optics-rail': 'optical rail bench',
+  'optics-object-target': 'illuminated object target carriage',
   'optics-lens-carrier': 'converging lens mount',
   'optics-clipboard': 'laboratory notebook & data log',
   'relativity-placard': 'relativity reference board',
   'relativity-velocity-dial': 'relativistic velocity dial',
   'relativity-contracting-rod': 'contracting meter-rod',
   'relativity-light-clock': 'atomic light-clock',
+  'relativity-telemetry-console': 'reference frame telemetry console',
   'relativity-accelerator': 'maglev particle accelerator',
   'relativity-clipboard': 'laboratory notebook & data log',
   'campus-door': 'corridor exit doors',
@@ -195,7 +224,168 @@ function RangeControl({
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Frac({ num, den }: { num: ReactNode; den: ReactNode }) {
+  return (
+    <span className="math-frac">
+      <span className="math-frac-num">{num}</span>
+      <span className="math-frac-den">{den}</span>
+    </span>
+  );
+}
+
+function Sqrt({ children }: { children: ReactNode }) {
+  return (
+    <span className="math-sqrt">
+      <span className="math-sqrt-sign" aria-hidden="true">√</span>
+      <span className="math-sqrt-radicand">{children}</span>
+    </span>
+  );
+}
+
+function renderMathLeaf(segment: string, keyPrefix: string): ReactNode[] {
+  const tokenRe =
+    /(p\^μ|p_μ|θ_c|([RVIfnθ])_([A-Za-z0-9]+)|(?<![\w.])1\s*\/\s*(?:f|u|v|di|do|Req|R[123])(?![A-Za-z0-9])|(?:v²|v\^2)\s*\/\s*(?:c²|c\^2)|(?:Δt[₀0]|L[₀0])\s*\/\s*γ|[n]([₁1₂2])\s*\/\s*[n]([₁1₂2])|\b(?:Req|Itot|Rmean|Rnom|fmean|Imax|Vrms|Irms|XL|XC|θc|m[₀0]|E[₀0]|L[₀0]|f[₀0]|τ[₀0]|Δt[₀0]|n[₁1₂2]|θ[₁1₂2]|R[₁1₂2₃3₄4₅5]|V[₁1₂2₃3]|I[₁1₂2₃3]|f[₁1₂2])\b|cm⁻¹|⁻¹\/²|⁻¹|²|³)/g;
+  const out: ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let idx = 0;
+
+  while ((m = tokenRe.exec(segment)) !== null) {
+    if (m.index > last) out.push(segment.slice(last, m.index));
+    const tok = m[0];
+    const k = `${keyPrefix}-${idx++}`;
+
+    if (tok === 'p^μ') {
+      out.push(<span key={k} className="math-inline">p<sup>μ</sup></span>);
+    } else if (tok === 'p_μ') {
+      out.push(<span key={k} className="math-inline">p<sub>μ</sub></span>);
+    } else if (tok === 'θ_c' || tok === 'θc') {
+      out.push(<span key={k} className="math-inline">θ<sub>c</sub></span>);
+    } else if (m[2] && m[3]) {
+      out.push(<span key={k} className="math-inline">{m[2]}<sub>{m[3]}</sub></span>);
+    } else if (/^1\s*\/\s*/.test(tok)) {
+      const denRaw = tok.replace(/^1\s*\/\s*/, '');
+      out.push(<Frac key={k} num="1" den={renderMathLeaf(denRaw, `${k}d`)} />);
+    } else if (/^(?:v²|v\^2)\s*\//.test(tok)) {
+      out.push(<Frac key={k} num={<>v<sup>2</sup></>} den={<>c<sup>2</sup></>} />);
+    } else if (/^(?:Δt[₀0]|L[₀0])\s*\/\s*γ$/.test(tok)) {
+      const base = tok.startsWith('Δt') ? <>Δt<sub>0</sub></> : <>L<sub>0</sub></>;
+      out.push(<Frac key={k} num={base} den="γ" />);
+    } else if (/^[n][₁1₂2]\s*\/\s*[n][₁1₂2]$/.test(tok)) {
+      const nums = tok.replace(/\s+/g, '').split('/');
+      out.push(<Frac key={k} num={renderMathLeaf(nums[0], `${k}n`)} den={renderMathLeaf(nums[1], `${k}d`)} />);
+    } else if (tok === 'Req') {
+      out.push(<span key={k} className="math-inline">R<sub>eq</sub></span>);
+    } else if (tok === 'Itot') {
+      out.push(<span key={k} className="math-inline">I<sub>tot</sub></span>);
+    } else if (tok === 'Rmean') {
+      out.push(<span key={k} className="math-inline">R<sub>mean</sub></span>);
+    } else if (tok === 'Rnom') {
+      out.push(<span key={k} className="math-inline">R<sub>nom</sub></span>);
+    } else if (tok === 'fmean') {
+      out.push(<span key={k} className="math-inline">f<sub>mean</sub></span>);
+    } else if (tok === 'Imax') {
+      out.push(<span key={k} className="math-inline">I<sub>max</sub></span>);
+    } else if (tok === 'Vrms') {
+      out.push(<span key={k} className="math-inline">V<sub>rms</sub></span>);
+    } else if (tok === 'Irms') {
+      out.push(<span key={k} className="math-inline">I<sub>rms</sub></span>);
+    } else if (tok === 'XL') {
+      out.push(<span key={k} className="math-inline">X<sub>L</sub></span>);
+    } else if (tok === 'XC') {
+      out.push(<span key={k} className="math-inline">X<sub>C</sub></span>);
+    } else if (tok === 'cm⁻¹') {
+      out.push(<span key={k} className="math-inline">cm<sup>−1</sup></span>);
+    } else if (tok === '⁻¹/²') {
+      out.push(<sup key={k}>−1/2</sup>);
+    } else if (tok === '⁻¹') {
+      out.push(<sup key={k}>−1</sup>);
+    } else if (tok === '²') {
+      out.push(<sup key={k}>2</sup>);
+    } else if (tok === '³') {
+      out.push(<sup key={k}>3</sup>);
+    } else {
+      const subMap: Record<string, string> = { '₀': '0', '₁': '1', '₂': '2', '₃': '3' };
+      const subChar = tok.slice(-1);
+      const base = tok.slice(0, -1);
+      out.push(<span key={k} className="math-inline">{base}<sub>{subMap[subChar] ?? subChar}</sub></span>);
+    }
+
+    last = tokenRe.lastIndex;
+  }
+
+  if (last < segment.length) out.push(segment.slice(last));
+  return out;
+}
+
+function renderMathNodes(input: string, keyPrefix = 'm'): ReactNode[] {
+  const out: ReactNode[] = [];
+  let cursor = 0;
+  let seq = 0;
+
+  while (cursor < input.length) {
+    const sqrtIdx = input.indexOf('√(', cursor);
+    if (sqrtIdx === -1) {
+      out.push(...renderMathLeaf(input.slice(cursor), `${keyPrefix}-l${seq++}`));
+      break;
+    }
+
+    let depth = 1;
+    let endIdx = sqrtIdx + 2;
+    while (endIdx < input.length && depth > 0) {
+      if (input[endIdx] === '(') depth++;
+      else if (input[endIdx] === ')') depth--;
+      endIdx++;
+    }
+
+    if (depth !== 0) {
+      out.push(...renderMathLeaf(input.slice(cursor), `${keyPrefix}-u${seq++}`));
+      break;
+    }
+
+    const before = input.slice(cursor, sqrtIdx);
+    const radicand = input.slice(sqrtIdx + 2, endIdx - 1);
+    const oneOverMatch = before.match(/^(.*?(?:^|[\s=(=]))(1)\s*\/\s*$/);
+    const parenOverMatch = !oneOverMatch ? before.match(/^(.*)\(([^()]+)\)\s*\/\s*$/) : null;
+
+    if (oneOverMatch) {
+      if (oneOverMatch[1]) {
+        out.push(...renderMathLeaf(oneOverMatch[1], `${keyPrefix}-b${seq++}`));
+      }
+      out.push(
+        <Frac
+          key={`${keyPrefix}-f${seq++}`}
+          num="1"
+          den={<Sqrt>{renderMathNodes(radicand, `${keyPrefix}-s${seq}`)}</Sqrt>}
+        />,
+      );
+    } else if (parenOverMatch) {
+      if (parenOverMatch[1]) {
+        out.push(...renderMathLeaf(parenOverMatch[1], `${keyPrefix}-b${seq++}`));
+      }
+      out.push(
+        <Frac
+          key={`${keyPrefix}-f${seq++}`}
+          num={renderMathNodes(parenOverMatch[2], `${keyPrefix}-fn${seq}`)}
+          den={<Sqrt>{renderMathNodes(radicand, `${keyPrefix}-s${seq}`)}</Sqrt>}
+        />,
+      );
+    } else {
+      if (before) out.push(...renderMathLeaf(before, `${keyPrefix}-b${seq++}`));
+      out.push(<Sqrt key={`${keyPrefix}-s${seq++}`}>{renderMathNodes(radicand, `${keyPrefix}-r${seq}`)}</Sqrt>);
+    }
+
+    cursor = endIdx;
+  }
+
+  return out;
+}
+
+function MathText({ text }: { text: string }) {
+  return <span className="math-inline">{renderMathNodes(text)}</span>;
+}
+
+function Metric({ label, value }: { label: ReactNode; value: ReactNode }) {
   return (
     <div>
       <dt>{label}</dt>
@@ -247,14 +437,8 @@ export default function Room3Experience() {
   const soundEnabledRef = useRef(true);
   const joystickPointerId = useRef<number | null>(null);
 
-  // Station & Physical Settings States
-  const [stationId, setStationId] = useState<Room3StationId>(() => {
-    if (typeof window !== 'undefined') {
-      const q = new URLSearchParams(window.location.search).get('station') as Room3StationId;
-      if (q && ['circuits', 'optics', 'relativity'].includes(q)) return q;
-    }
-    return 'circuits';
-  });
+  // Station & Physical Settings States (SSR-safe defaults; URL params synced after mount)
+  const [stationId, setStationId] = useState<Room3StationId>('circuits');
   const [circuits, setCircuits] = useState<CircuitSettings>(INITIAL_CIRCUITS);
   const [oscilloscope, setOscilloscope] = useState<OscilloscopeSettings>(INITIAL_OSCILLOSCOPE);
   const [optics, setOptics] = useState<OpticsSettings>(INITIAL_OPTICS);
@@ -281,21 +465,9 @@ export default function Room3Experience() {
   const [progress, setProgress] = useState<Room3Progress>(createDefaultRoom3Progress);
   const [hydrated, setHydrated] = useState(false);
 
-  // Notebook Modal States
-  const [notebookOpen, setNotebookOpen] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const q = new URLSearchParams(window.location.search).get('notebook');
-      if (q === 'true' || q === '1') return true;
-    }
-    return false;
-  });
-  const [notebookStep, setNotebookStep] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const s = Number(new URLSearchParams(window.location.search).get('step'));
-      if (!isNaN(s) && s >= 0 && s <= 7) return s;
-    }
-    return 0;
-  });
+  // Notebook Modal States (SSR-safe defaults; URL params synced after mount)
+  const [notebookOpen, setNotebookOpen] = useState(false);
+  const [notebookStep, setNotebookStep] = useState(0);
   const [calculationFeedback, setCalculationFeedback] = useState('');
   const [calculationStatus, setCalculationStatus] = useState<'idle' | 'correct' | 'incorrect'>('idle');
   const [showCalcHint, setShowCalcHint] = useState(false);
@@ -313,34 +485,36 @@ export default function Room3Experience() {
   // Coordinated Workspace Views (View A: 3D Laboratory vs View B: DCACLab Interactive Breadboard Workspace)
   const [activeWorkspaceView, setActiveWorkspaceView] = useState<'3d' | 'circuit_workspace'>('3d');
 
-  // Multimeter & Workbench Instrument States
-  const [cameraMode, setCameraMode] = useState<'walk' | 'closeup'>(() => {
-    if (typeof window !== 'undefined') {
-      const q = new URLSearchParams(window.location.search).get('closeup');
-      if (q === 'true' || q === '1') return 'closeup';
-    }
-    return 'walk';
-  });
+  // Multimeter & Workbench Instrument States (SSR-safe default)
+  const [cameraMode, setCameraMode] = useState<'walk' | 'closeup'>('walk');
   const [dmmReading, setDmmReading] = useState<MultimeterReading>({
-    value: 24.0,
-    displayString: '24.00 V',
+    value: 0.0,
+    displayString: '0.00 V',
     unit: 'V',
     isContinuityBeep: false,
     warning: null,
-    isValidMeasurement: true,
+    isValidMeasurement: false,
   });
-  const [dmmMode, setDmmModeState] = useState<MultimeterMode>('v_dc');
+  const [dmmMode, setDmmModeState] = useState<MultimeterMode>('cont');
   const [dmmJack, setDmmJackState] = useState<MultimeterJack>('v_ohm');
-  const [redTerminal, setRedTerminalState] = useState<TerminalId | null>('SRC_POS');
-  const [blackTerminal, setBlackTerminalState] = useState<TerminalId | null>('SRC_NEG');
+  const [redTerminal, setRedTerminalState] = useState<TerminalId | null>(null);
+  const [blackTerminal, setBlackTerminalState] = useState<TerminalId | null>(null);
+  const [activeProbe, setActiveProbeState] = useState<'red' | 'black'>('red');
   const [jumperClosed, setJumperClosed] = useState(true);
   const [closeupHoverText, setCloseupHoverText] = useState<string | null>(null);
-  const [closeupFocus, setCloseupFocus] = useState<'station' | 'board' | 'multimeter' | 'psu' | 'oscilloscope'>('station');
+  const [closeupFocus, setCloseupFocus] = useState<Room3CloseupFocus>('station');
+  const [closeupZoom, setCloseupZoom] = useState(1.0);
+  const [labelsVisible, setLabelsVisible] = useState(true);
+
+  useEffect(() => {
+    sceneApi.current?.setLabelsVisible?.(labelsVisible);
+  }, [labelsVisible, sceneReady]);
 
   // 3D Graphics & Visual Performance Settings
   const [graphicsSettings, setGraphicsSettingsState] = useState<GraphicsSettings>(() => {
     return loadGraphicsSettings();
   });
+  const isTouchDevice = useSyncExternalStore(subscribeMobileTouch, isMobileTouchDevice, () => false);
   const [graphicsModalOpen, setGraphicsModalOpen] = useState(false);
   const [perfStats, setPerfStats] = useState({ fps: 60, frameTimeMs: 16.6 });
 
@@ -350,9 +524,125 @@ export default function Room3Experience() {
     sceneApi.current?.setGraphicsSettings(newSettings);
   };
 
-  const handleSetCloseupFocus = (focus: 'station' | 'board' | 'multimeter' | 'psu' | 'oscilloscope') => {
+  const handleSetCloseupFocus = (focus: Room3CloseupFocus) => {
+    setMobilePanel('none');
     setCloseupFocus(focus);
+    setCloseupZoom(1.0);
     sceneApi.current?.setCloseupFocus?.(focus);
+  };
+
+  const handleCloseupZoomIn = () => {
+    const next = sceneApi.current?.zoomCloseup?.(-0.15);
+    if (typeof next === 'number') setCloseupZoom(next);
+  };
+
+  const handleCloseupZoomOut = () => {
+    const next = sceneApi.current?.zoomCloseup?.(0.15);
+    if (typeof next === 'number') setCloseupZoom(next);
+  };
+
+  const handleResetCloseupCamera = () => {
+    sceneApi.current?.resetCloseupCamera?.();
+    setCloseupZoom(1.0);
+  };
+
+  const renderCloseupUtilityButtons = () => (
+    <>
+      <button
+        type="button"
+        className="cam-focus-btn"
+        onClick={handleCloseupZoomIn}
+        title="Zoom In (or Scroll Up when not over a knob)"
+      >
+        🔍+
+      </button>
+      <button
+        type="button"
+        className="cam-focus-btn"
+        onClick={handleCloseupZoomOut}
+        title="Zoom Out (or Scroll Down when not over a knob)"
+      >
+        🔍−
+      </button>
+      <button
+        type="button"
+        className="cam-focus-btn"
+        onClick={handleResetCloseupCamera}
+        title="Reset Close-Up Zoom & Drag Pan (Drag canvas to pan)"
+      >
+        ↺ {Math.round((1 / closeupZoom) * 100)}%
+      </button>
+      <button
+        type="button"
+        className={`cam-focus-btn ${labelsVisible ? 'active' : ''}`}
+        onClick={() => setLabelsVisible((v) => !v)}
+        title="Toggle 3D Floating Equipment Labels"
+      >
+        🏷️ Labels: {labelsVisible ? 'ON' : 'OFF'}
+      </button>
+    </>
+  );
+
+  const handleSelectActiveProbe = (probe: 'red' | 'black') => {
+    setActiveProbeState(probe);
+    sceneApi.current?.setActiveProbe?.(probe);
+    playTone(probe === 'red' ? 740 : 540, 'sine', 0.05, 0.12);
+  };
+
+  const handleFocusInspectionTarget = (tgt: string) => {
+    setNotebookOpen(false);
+    setMobilePanel('none');
+    setActiveWorkspaceView('3d');
+    setManualGuidanceTarget(tgt);
+    if (cameraMode !== 'closeup') {
+      handleSetCloseup('closeup');
+    }
+    let subFocus: Room3CloseupFocus = 'station';
+    if (tgt === 'circuits-power-switch' || tgt === 'circuits-voltage-knob' || tgt === 'circuits-function-generator') {
+      subFocus = 'psu';
+    } else if (
+      tgt === 'circuits-multimeter' ||
+      tgt.startsWith('circuits-dmm-') ||
+      tgt === 'circuits-probe-red' ||
+      tgt === 'circuits-probe-black'
+    ) {
+      subFocus = 'multimeter';
+    } else if (tgt === 'circuits-oscilloscope' || tgt.startsWith('circuits-osc-')) {
+      subFocus = 'oscilloscope';
+    } else if (
+      tgt === 'circuits-topology-selector' ||
+      tgt === 'circuits-series-jumper' ||
+      tgt.startsWith('circuits-probe-r') ||
+      tgt.startsWith('circuits-terminal-')
+    ) {
+      subFocus = 'board';
+    } else if (tgt === 'optics-laser') {
+      subFocus = 'laser';
+    } else if (tgt === 'optics-rail') {
+      subFocus = 'station';
+    } else if (
+      tgt === 'optics-angle-dial' ||
+      tgt === 'optics-object-target' ||
+      tgt === 'optics-lens-carrier' ||
+      tgt === 'optics-submode-toggle'
+    ) {
+      subFocus = 'lens';
+    } else if (tgt === 'optics-screen') {
+      subFocus = 'screen';
+    } else if (tgt === 'relativity-light-clock' || tgt === 'relativity-telemetry-console') {
+      subFocus = 'clock';
+    } else if (tgt === 'relativity-contracting-rod') {
+      subFocus = 'rod';
+    } else if (tgt === 'relativity-velocity-dial') {
+      subFocus = 'console';
+    } else if (tgt === 'relativity-accelerator') {
+      subFocus = 'station';
+    }
+
+    handleSetCloseupFocus(subFocus);
+    sceneApi.current?.setGuidance(tgt);
+    const label = INSPECTION_LABELS[tgt] || GUIDANCE_LABELS[tgt] || tgt;
+    setEquipmentMessage(`👆 Locate and click "${label}" directly on the 3D apparatus.`);
   };
 
   // Student-Centered Experience: Exclusively Guided Experiment
@@ -360,23 +650,38 @@ export default function Room3Experience() {
   const stationProgress = progress[stationId];
   const [viewStepIndex, setViewStepIndex] = useState<number | null>(null);
   const activeStepIdx = viewStepIndex !== null ? viewStepIndex : stationProgress.currentStep;
+  const [manualGuidanceTarget, setManualGuidanceTarget] = useState<string | null>(null);
+  const [lastInspectedTarget, setLastInspectedTarget] = useState<string | null>(null);
   const [hintLevel, setHintLevel] = useState<number>(0);
   const [calcPerTrialStatus, setCalcPerTrialStatus] = useState<('correct' | 'incorrect' | 'empty')[]>(Array(TOTAL_TRIALS).fill('empty'));
   const [conclusionFeedback, setConclusionFeedback] = useState<string>('');
   const [retakeTrialIndex, setRetakeTrialIndex] = useState<number | null>(null);
   const [activeTrialTab, setActiveTrialTab] = useState<number>(0);
 
-  // Reset step view on station or current step change
+  // Reset step view & guidance override on station or step change
   useEffect(() => {
     setViewStepIndex(null);
     setHintLevel(0);
     setRetakeTrialIndex(null);
     setActiveTrialTab(0);
+    setManualGuidanceTarget(null);
+    setLastInspectedTarget(null);
   }, [stationId]);
 
   useEffect(() => {
     setViewStepIndex(null);
   }, [stationProgress.currentStep]);
+
+  useEffect(() => {
+    setManualGuidanceTarget(null);
+  }, [activeStepIdx]);
+
+  // Resume automatic step-by-step guidance once the user interacts with any step control in Steps 2–9
+  useEffect(() => {
+    if (activeStepIdx > 0) {
+      setManualGuidanceTarget(null);
+    }
+  }, [activeStepIdx, circuits, oscilloscope, optics, relativity, dmmMode, dmmJack, redTerminal, blackTerminal, jumperClosed]);
 
   // Station Definitions & Telemetry Derived States
   const station = ROOM3_STATIONS[stationId];
@@ -517,12 +822,26 @@ export default function Room3Experience() {
 
   // Dynamic, Real-Time Synchronized Guidance Target pointing to exactly what the student needs next
   const guidanceTarget = useMemo(() => {
+    if (manualGuidanceTarget) return manualGuidanceTarget;
+
+    const pickCyclicInspectionTarget = (targets: string[], fallback: string) => {
+      if (lastInspectedTarget) {
+        const anchorIdx = targets.indexOf(lastInspectedTarget);
+        if (anchorIdx !== -1) {
+          for (let offset = 1; offset <= targets.length; offset++) {
+            const candidate = targets[(anchorIdx + offset) % targets.length];
+            if (!stationProgress.inspected.includes(candidate)) return candidate;
+          }
+        }
+      }
+      return targets.find((id) => !stationProgress.inspected.includes(id)) || fallback;
+    };
+
     // 1. Station 01: Circuits (Ohm's Law)
     if (stationId === 'circuits') {
       // Step 1: Equipment Identification
       if (activeStepIdx === 0) {
-        const missing = INSPECTION_TARGETS.circuits.find((id) => !stationProgress.inspected.includes(id));
-        return missing || 'circuits-power-switch';
+        return pickCyclicInspectionTarget(INSPECTION_TARGETS.circuits, 'circuits-power-switch');
       }
       // Step 2: Circuit Assembly & Inspection (DC series continuity & Req = 650 Ω)
       if (activeStepIdx === 1) {
@@ -532,24 +851,36 @@ export default function Room3Experience() {
       // Step 3: Power Supply Setup & Energization (24.0 V DC)
       if (activeStepIdx === 2) {
         if (!circuits.powerOn) return 'circuits-power-switch';
-        if (Math.abs(circuits.vs - 24.0) > 1.0) return 'circuits-voltage-knob';
+        if (circuits.vs < 2.0) return 'circuits-voltage-knob';
         return 'circuits-power-switch';
       }
       // Step 4: Multimeter Instrument Preparation (DC V mode, V·Ω jack)
       if (activeStepIdx === 3) {
-        if (dmmJack !== 'v_ohm') return 'circuits-dmm-jack';
+        if (dmmJack !== 'v_ohm') return 'circuits-dmm-jack-v';
         if (dmmMode !== 'v_dc') return 'circuits-dmm-dial';
         return 'circuits-multimeter';
       }
       // Step 5: Voltage Measurement Procedure (Parallel across PSU or R1)
       if (activeStepIdx === 4) {
         if (!circuits.powerOn) return 'circuits-power-switch';
+        if (dmmJack !== 'v_ohm') return 'circuits-dmm-jack-v';
         if (dmmMode !== 'v_dc') return 'circuits-dmm-dial';
         const isParallelConnected =
           (redTerminal === 'SRC_POS' && blackTerminal === 'SRC_NEG') ||
           (redTerminal === 'R1_A' && blackTerminal === 'R1_B') ||
           (redTerminal === 'R1_B' && blackTerminal === 'R1_A');
-        if (!isParallelConnected) return 'circuits-probe-r1';
+        if (!isParallelConnected) {
+          if (redTerminal === 'SRC_POS' && blackTerminal !== 'SRC_NEG') {
+            return 'circuits-terminal-SRC_NEG';
+          }
+          if (redTerminal === 'R1_A' && blackTerminal !== 'R1_B') {
+            return 'circuits-terminal-R1_B';
+          }
+          if (redTerminal === 'R1_B' && blackTerminal !== 'R1_A') {
+            return 'circuits-terminal-R1_A';
+          }
+          return 'circuits-terminal-R1_A';
+        }
         return 'circuits-multimeter';
       }
       // Step 6: Current Measurement Procedure (Series ammeter insertion)
@@ -558,27 +889,42 @@ export default function Room3Experience() {
         if (circuits.powerOn && (jumperClosed || dmmJack !== 'ma_10a' || (dmmMode !== 'a_dc' && dmmMode !== 'a_ac'))) {
           return 'circuits-power-switch';
         }
-        if (dmmJack !== 'ma_10a') return 'circuits-dmm-jack';
+        if (dmmJack !== 'ma_10a') return 'circuits-dmm-jack-ma';
         if (dmmMode !== 'a_dc' && dmmMode !== 'a_ac') return 'circuits-dmm-dial';
         if (jumperClosed) return 'circuits-series-jumper';
         const isSeriesBreak =
           (redTerminal === 'SERIES_JACK_A' && blackTerminal === 'SERIES_JACK_B') ||
           (redTerminal === 'SERIES_JACK_B' && blackTerminal === 'SERIES_JACK_A');
-        if (!isSeriesBreak) return 'circuits-series-jumper';
+        if (!isSeriesBreak) {
+          if (redTerminal === 'SERIES_JACK_A' && blackTerminal !== 'SERIES_JACK_B') {
+            return 'circuits-terminal-SERIES_JACK_B';
+          }
+          if (redTerminal === 'SERIES_JACK_B' && blackTerminal !== 'SERIES_JACK_A') {
+            return 'circuits-terminal-SERIES_JACK_A';
+          }
+          return 'circuits-terminal-SERIES_JACK_A';
+        }
         if (!circuits.powerOn) return 'circuits-power-switch'; // Restore power
         return 'circuits-multimeter';
       }
       // Step 7: Five-Trial Experimental Data Collection (sweep 2V, 4V, 6V, 8V, 10V)
       if (activeStepIdx === 6) {
+        if (dmmJack !== 'ma_10a') return 'circuits-dmm-jack-ma';
+        if (dmmMode !== 'a_dc' && dmmMode !== 'a_ac') return 'circuits-dmm-dial';
+        if (jumperClosed) return 'circuits-series-jumper';
+        const isSeriesBreak =
+          (redTerminal === 'SERIES_JACK_A' && blackTerminal === 'SERIES_JACK_B') ||
+          (redTerminal === 'SERIES_JACK_B' && blackTerminal === 'SERIES_JACK_A');
+        if (!isSeriesBreak) {
+          return redTerminal === 'SERIES_JACK_A'
+            ? 'circuits-terminal-SERIES_JACK_B'
+            : 'circuits-terminal-SERIES_JACK_A';
+        }
         if (!circuits.powerOn) return 'circuits-power-switch';
         const curTrialIdx = stationProgress.trials.length;
         if (curTrialIdx < TOTAL_TRIALS) {
           const targetV = ROOM3_ASSIGNED_TRIALS.circuits[curTrialIdx]?.targetValue ?? 4.0;
           if (Math.abs(circuits.vs - targetV) > 0.6) return 'circuits-voltage-knob';
-          const isSeriesBreak =
-            (redTerminal === 'SERIES_JACK_A' && blackTerminal === 'SERIES_JACK_B') ||
-            (redTerminal === 'SERIES_JACK_B' && blackTerminal === 'SERIES_JACK_A');
-          if (!isSeriesBreak) return 'circuits-series-jumper';
           return 'circuits-multimeter';
         }
         return 'circuits-clipboard';
@@ -596,8 +942,7 @@ export default function Room3Experience() {
     // 2. Station 02: Optics (Thin Lens)
     if (stationId === 'optics') {
       if (activeStepIdx === 0) {
-        const missing = INSPECTION_TARGETS.optics.find((id) => !stationProgress.inspected.includes(id));
-        return missing || 'optics-laser';
+        return pickCyclicInspectionTarget(INSPECTION_TARGETS.optics, 'optics-laser');
       }
       if (activeStepIdx === 1) return 'optics-rail';
       if (activeStepIdx === 2) {
@@ -629,8 +974,7 @@ export default function Room3Experience() {
     // 3. Station 03: Special Relativity (Lorentz Transformations)
     if (stationId === 'relativity') {
       if (activeStepIdx === 0) {
-        const missing = INSPECTION_TARGETS.relativity.find((id) => !stationProgress.inspected.includes(id));
-        return missing || 'relativity-velocity-dial';
+        return pickCyclicInspectionTarget(INSPECTION_TARGETS.relativity, 'relativity-velocity-dial');
       }
       if (activeStepIdx === 1) return 'relativity-light-clock';
       if (activeStepIdx === 2) {
@@ -672,6 +1016,8 @@ export default function Room3Experience() {
     optics.objectDistance,
     relativity.beta,
     relativity.powerOn,
+    manualGuidanceTarget,
+    lastInspectedTarget,
   ]);
 
   useEffect(() => {
@@ -682,7 +1028,9 @@ export default function Room3Experience() {
     setNotebookOpen(false);
     setMobilePanel('none');
     setEquipmentMessage(message);
-    sceneApi.current?.requestPointerLock();
+    if (!isMobileTouchDevice()) {
+      sceneApi.current?.requestPointerLock();
+    }
   };
 
   // Sound Synthesizer via Web Audio API
@@ -777,10 +1125,21 @@ export default function Room3Experience() {
         onOscilloscopeChange: (patch) => {
           setOscilloscope((prev) => ({ ...prev, ...patch }));
         },
+        onOpticsChange: (patch) => {
+          setOptics((prev) => ({ ...prev, ...patch }));
+        },
+        onRelativityChange: (patch) => {
+          setRelativity((prev) => ({ ...prev, ...patch }));
+        },
         onInteractionChange: (inter) => setInteraction(inter),
         onFootstep: () => playTone(80, 'sine', 0.05, 0.1),
         onCameraModeChange: (mode) => setCameraMode(mode),
+        onCloseupZoomChange: (z) => setCloseupZoom(z),
         onDmmReadingChange: (reading) => setDmmReading(reading),
+        onDmmModeChange: (mode) => setDmmModeState(mode),
+        onDmmJackChange: (jack) => setDmmJackState(jack),
+        onJumperChange: (closed) => setJumperClosed(closed),
+        onActiveProbeChange: (probe) => setActiveProbeState(probe),
         onProbePlaced: (probe, term) => {
           if (probe === 'red') setRedTerminalState(term);
           else setBlackTerminalState(term);
@@ -790,19 +1149,42 @@ export default function Room3Experience() {
         onStationProximityChange: (st) => setProximateStation(st),
         onPerfStatsChange: (fps, frameTimeMs) => setPerfStats({ fps, frameTimeMs }),
         onGuidanceIndicator: (info) => setGuidanceIndicator(info),
+        onCharacterChange: (char) => setActiveCharacter(char),
+        onContextLost: () => {
+          setSceneError(true);
+          setSceneReady(false);
+        },
       });
       sceneApi.current = api;
+      setActiveCharacter(api.getCharacter());
       api.setGraphicsSettings(graphicsSettings);
+      api.setDmmMode(dmmMode);
+      api.setDmmJack(dmmJack);
       if (redTerminal) api.setProbeTerminal('red', redTerminal);
       if (blackTerminal) api.setProbeTerminal('black', blackTerminal);
       if (typeof window !== 'undefined') {
         (window as unknown as { __room3Scene?: unknown }).__room3Scene = api;
-        const queryStation = new URLSearchParams(window.location.search).get('station') as Room3StationId;
+        const params = new URLSearchParams(window.location.search);
+        const queryStation = params.get('station') as Room3StationId;
         if (queryStation && ['circuits', 'optics', 'relativity'].includes(queryStation)) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setStationId(queryStation);
           api.setStation(queryStation);
         }
-        const queryCloseup = new URLSearchParams(window.location.search).get('closeup');
+        const queryNotebook = params.get('notebook');
+        if (queryNotebook === 'true' || queryNotebook === '1') {
+          setNotebookOpen(true);
+        }
+        const queryStepRaw = params.get('step');
+        if (queryStepRaw !== null) {
+          const queryStep = Number(queryStepRaw);
+          if (!Number.isNaN(queryStep) && queryStep >= 0 && queryStep <= 7) {
+            setNotebookStep(queryStep);
+          }
+        }
+        const queryCloseup = params.get('closeup');
         if (queryCloseup === 'true' || queryCloseup === '1') {
+          setCameraMode('closeup');
           api.setCameraMode('closeup', queryStation || 'circuits');
         }
       }
@@ -872,6 +1254,16 @@ export default function Room3Experience() {
 
   const handleSetCloseup = (mode: 'walk' | 'closeup') => {
     setCameraMode(mode);
+    if (mode === 'closeup') {
+      setMobilePanel('none');
+    }
+    if (mode === 'closeup') {
+      setCloseupFocus('station');
+      setCloseupZoom(1.0);
+      sceneApi.current?.setLabelsVisible?.(labelsVisible);
+    } else {
+      setCloseupHoverText(null);
+    }
     sceneApi.current?.setCameraMode(mode, stationId);
     playTone(mode === 'closeup' ? 660 : 440, 'triangle', 0.08, 0.15);
   };
@@ -902,13 +1294,19 @@ export default function Room3Experience() {
 
   const handleInspectApparatus = (targetId: string) => {
     let canonicalId = targetId;
-    if (['circuits-power-switch', 'circuits-voltage-knob'].includes(targetId)) {
+    if (['circuits-power-switch', 'circuits-voltage-knob', 'circuits-function-generator'].includes(targetId)) {
       canonicalId = 'circuits-power-switch';
-    } else if (['circuits-multimeter', 'circuits-dmm-dial', 'circuits-dmm-jack'].includes(targetId)) {
+    } else if (
+      ['circuits-multimeter', 'circuits-dmm-dial', 'circuits-dmm-jack', 'circuits-probe-red', 'circuits-probe-black'].includes(targetId) ||
+      targetId.startsWith('circuits-dmm-')
+    ) {
       canonicalId = 'circuits-multimeter';
-    } else if (['circuits-oscilloscope'].includes(targetId)) {
+    } else if (targetId === 'circuits-oscilloscope' || targetId.startsWith('circuits-osc-')) {
       canonicalId = 'circuits-oscilloscope';
-    } else if (['circuits-topology-selector', 'circuits-probe-r1', 'circuits-probe-r2', 'circuits-probe-r3', 'circuits-series-jumper'].includes(targetId)) {
+    } else if (
+      ['circuits-topology-selector', 'circuits-probe-r1', 'circuits-probe-r2', 'circuits-probe-r3', 'circuits-series-jumper'].includes(targetId) ||
+      targetId.startsWith('circuits-terminal-')
+    ) {
       canonicalId = 'circuits-topology-selector';
     } else if (['optics-laser'].includes(targetId)) {
       canonicalId = 'optics-laser';
@@ -916,11 +1314,11 @@ export default function Room3Experience() {
       canonicalId = 'optics-angle-dial';
     } else if (['optics-screen'].includes(targetId)) {
       canonicalId = 'optics-screen';
-    } else if (['optics-rail', 'optics-submode-toggle'].includes(targetId)) {
+    } else if (['optics-rail', 'optics-submode-toggle', 'optics-lens-carrier', 'optics-object-target'].includes(targetId)) {
       canonicalId = 'optics-rail';
     } else if (['relativity-velocity-dial'].includes(targetId)) {
       canonicalId = 'relativity-velocity-dial';
-    } else if (['relativity-light-clock'].includes(targetId)) {
+    } else if (['relativity-light-clock', 'relativity-telemetry-console'].includes(targetId)) {
       canonicalId = 'relativity-light-clock';
     } else if (['relativity-contracting-rod'].includes(targetId)) {
       canonicalId = 'relativity-contracting-rod';
@@ -930,6 +1328,9 @@ export default function Room3Experience() {
 
     const required = INSPECTION_TARGETS[stationId];
     if (!required || !required.includes(canonicalId)) return;
+
+    setLastInspectedTarget(canonicalId);
+    setManualGuidanceTarget((prev) => (prev === targetId || prev === canonicalId ? null : prev));
 
     setProgress((prev) => {
       const st = { ...prev[stationId] };
@@ -973,16 +1374,6 @@ export default function Room3Experience() {
     // Inspect tracking for Step 1
     handleInspectApparatus(id);
 
-    if (id === 'circuits-voltage-knob') {
-      const VOLT_CYCLE_STEPS = [2, 4, 6, 8, 10, 12, 16, 20, 24];
-      const curVs = circuits.vs;
-      const nextIdx = VOLT_CYCLE_STEPS.findIndex((v) => v > curVs + 0.1);
-      const nextVs = nextIdx !== -1 ? VOLT_CYCLE_STEPS[nextIdx] : VOLT_CYCLE_STEPS[0];
-      setCircuits((prev) => ({ ...prev, vs: nextVs }));
-      playTone(480 + (nextVs / 24) * 200, 'sine', 0.05, 0.15);
-      return;
-    }
-
     if (id === 'circuits-oscilloscope') {
       handleSetCloseup('closeup');
       handleSetCloseupFocus('oscilloscope');
@@ -997,11 +1388,11 @@ export default function Room3Experience() {
 
     if (id.includes('placard') || id.includes('clipboard')) {
       setNotebookOpen(true);
-    } else if (['circuits-multimeter', 'circuits-power-switch', 'circuits-topology-selector'].includes(id)) {
+    } else if (['circuits-multimeter', 'circuits-power-switch', 'circuits-voltage-knob', 'circuits-function-generator', 'circuits-topology-selector'].includes(id)) {
       handleSetCloseup('closeup');
-    } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen', 'optics-rail'].includes(id)) {
+    } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen', 'optics-rail', 'optics-lens-carrier', 'optics-object-target'].includes(id)) {
       handleSetCloseup('closeup');
-    } else if (['relativity-velocity-dial', 'relativity-contracting-rod', 'relativity-light-clock', 'relativity-accelerator'].includes(id)) {
+    } else if (['relativity-velocity-dial', 'relativity-contracting-rod', 'relativity-light-clock', 'relativity-telemetry-console', 'relativity-accelerator'].includes(id)) {
       handleSetCloseup('closeup');
     }
   };
@@ -1039,7 +1430,7 @@ export default function Room3Experience() {
         } else if (cameraMode === 'closeup') {
           handleSetCloseup('walk');
         } else if (interaction) {
-          handleEquipmentAction(interaction.id);
+          sceneApi.current?.interact();
         } else if (proximateStation) {
           setStationId(proximateStation);
           handleSetCloseup('closeup');
@@ -1049,7 +1440,14 @@ export default function Room3Experience() {
         if (typeof next === 'boolean') setIsThirdPerson(next);
       } else if (e.key.toLowerCase() === 'c') {
         const next = sceneApi.current?.switchCharacter();
-        if (next) setActiveCharacter(next);
+        if (next) {
+          setActiveCharacter(next);
+          if (next === 'madara') {
+            setEquipmentMessage('👁️ Infinite Tsukuyomi Activated! Look up through the glass ceiling at the Crimson Moon.');
+          } else {
+            setEquipmentMessage(`👤 Character switched to ${CHARACTER_META[next].label}`);
+          }
+        }
       } else if (e.key.toLowerCase() === 'g') {
         setGraphicsModalOpen((prev) => !prev);
       }
@@ -1061,13 +1459,18 @@ export default function Room3Experience() {
 
   // Touch Analog Walking Joystick Handlers
   const handleJoystickPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (joystickPointerId.current !== null && joystickPointerId.current !== event.pointerId) return;
     joystickPointerId.current = event.pointerId;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {}
     handleJoystickMove(event);
   };
 
   const handleJoystickMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (joystickPointerId.current !== event.pointerId) return;
+    event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
@@ -1648,14 +2051,73 @@ export default function Room3Experience() {
                 >
                   ⚡ Breadboard 3D (DCACLab)
                 </button>
+                {renderCloseupUtilityButtons()}
+              </div>
+            )}
+            {stationId === 'optics' && (
+              <div className="closeup-cam-controls">
                 <button
                   type="button"
-                  className="cam-focus-btn"
-                  onClick={() => setGraphicsModalOpen(true)}
-                  title="3D Graphics & Visual Settings [Key G]"
+                  className={`cam-focus-btn ${closeupFocus === 'station' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('station')}
                 >
-                  ⚙️ Graphics
+                  📐 Full Bench
                 </button>
+                <button
+                  type="button"
+                  className={`cam-focus-btn ${closeupFocus === 'laser' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('laser')}
+                >
+                  🔴 Laser
+                </button>
+                <button
+                  type="button"
+                  className={`cam-focus-btn ${closeupFocus === 'lens' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('lens')}
+                >
+                  🔍 Lens / Mount
+                </button>
+                <button
+                  type="button"
+                  className={`cam-focus-btn ${closeupFocus === 'screen' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('screen')}
+                >
+                  🖥️ Screen
+                </button>
+                {renderCloseupUtilityButtons()}
+              </div>
+            )}
+            {stationId === 'relativity' && (
+              <div className="closeup-cam-controls">
+                <button
+                  type="button"
+                  className={`cam-focus-btn ${closeupFocus === 'station' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('station')}
+                >
+                  📐 Full Track
+                </button>
+                <button
+                  type="button"
+                  className={`cam-focus-btn ${closeupFocus === 'clock' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('clock')}
+                >
+                  ⏱️ Photon Clock
+                </button>
+                <button
+                  type="button"
+                  className={`cam-focus-btn ${closeupFocus === 'rod' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('rod')}
+                >
+                  📏 Meter Rod
+                </button>
+                <button
+                  type="button"
+                  className={`cam-focus-btn ${closeupFocus === 'console' ? 'active' : ''}`}
+                  onClick={() => handleSetCloseupFocus('console')}
+                >
+                  🖥️ Frame Console
+                </button>
+                {renderCloseupUtilityButtons()}
               </div>
             )}
             <button
@@ -1667,151 +2129,148 @@ export default function Room3Experience() {
             </button>
           </div>
 
-          {/* 3D Data Collection Trial Quick Bar */}
-          <div className="closeup-trial-bar" style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-            marginTop: '8px',
-            paddingTop: '8px',
-            borderTop: '1px solid rgba(212, 175, 55, 0.3)',
-            flexWrap: 'wrap',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 800, color: '#fef08a' }}>
-                📊 3D TRIALS: {stationProgress.trials.length} / {TOTAL_TRIALS}
-              </span>
-              {stationProgress.trials.length < TOTAL_TRIALS && (
-                <span style={{ fontSize: '11px', color: '#e2e8f0', background: 'rgba(53, 18, 29, 0.85)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
-                  Target #{stationProgress.trials.length + 1}: <b style={{ color: '#fef08a' }}>
-                    {(() => {
-                      const tgt = ROOM3_ASSIGNED_TRIALS[stationId][stationProgress.trials.length];
-                      return tgt ? `${tgt.targetParam} = ${tgt.targetValue} ${tgt.unit}` : '';
-                    })()}
-                  </b>
-                </span>
-              )}
-            </div>
+          {/* 3D Data Collection & Hands-On Instrument Bar */}
+          {(() => {
+            const showTrialRecordingRow =
+              activeStepIdx >= 5 ||
+              stationProgress.currentStep >= 5 ||
+              stationProgress.trials.length > 0;
+            const showProbeLeadRow =
+              stationId === 'circuits' &&
+              (activeStepIdx >= 3 ||
+                stationProgress.currentStep >= 3 ||
+                Boolean(redTerminal || blackTerminal));
+            if (!showTrialRecordingRow && !showProbeLeadRow) return null;
+            return (
+              <div className="closeup-trial-bar" style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                marginTop: '6px',
+                paddingTop: '6px',
+                borderTop: '1px solid rgba(212, 175, 55, 0.3)',
+                flexWrap: 'wrap',
+              }}>
+                {showTrialRecordingRow && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#fef08a' }}>
+                      📊 3D TRIALS: {stationProgress.trials.length} / {TOTAL_TRIALS}
+                    </span>
+                    {stationProgress.trials.length < TOTAL_TRIALS && (
+                      <span style={{ fontSize: '11px', color: '#e2e8f0', background: 'rgba(53, 18, 29, 0.85)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
+                        Target #{stationProgress.trials.length + 1}: <b style={{ color: '#fef08a' }}>
+                          {(() => {
+                            const tgt = ROOM3_ASSIGNED_TRIALS[stationId][stationProgress.trials.length];
+                            return tgt ? `${tgt.targetParam} = ${tgt.targetValue} ${tgt.unit}` : '';
+                          })()}
+                        </b>
+                      </span>
+                    )}
+                  </div>
+                )}
 
-            {/* Quick Operating Point Setter */}
-            {stationProgress.trials.length < TOTAL_TRIALS && (
-              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                <span style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>Target Set:</span>
-                {stationId === 'circuits' && [4, 8, 12, 16, 20].map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    style={{
-                      background: circuits.vs === v ? '#d4af37' : 'rgba(35, 12, 20, 0.7)',
-                      color: circuits.vs === v ? '#1a0b10' : '#fffbeb',
-                      border: '1px solid rgba(212, 175, 55, 0.5)',
-                      borderRadius: '4px',
-                      padding: '2px 7px',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => {
-                      const next = { ...circuits, vs: v, powerOn: true };
-                      setCircuits(next);
-                      sceneApi.current?.setCircuits(next);
-                      playTone(600, 'sine', 0.05, 0.1);
-                    }}
-                  >
-                    {v}V
-                  </button>
-                ))}
-                {stationId === 'optics' && [30, 40, 50, 60, 70].map((u) => (
-                  <button
-                    key={u}
-                    type="button"
-                    style={{
-                      background: optics.objectDistance === u ? '#d4af37' : 'rgba(35, 12, 20, 0.7)',
-                      color: optics.objectDistance === u ? '#1a0b10' : '#fffbeb',
-                      border: '1px solid rgba(212, 175, 55, 0.5)',
-                      borderRadius: '4px',
-                      padding: '2px 7px',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => {
-                      const next = { ...optics, objectDistance: u, powerOn: true };
-                      setOptics(next);
-                      sceneApi.current?.setOptics(next);
-                      playTone(600, 'sine', 0.05, 0.1);
-                    }}
-                  >
-                    {u}cm
-                  </button>
-                ))}
-                {stationId === 'relativity' && [0.1, 0.3, 0.5, 0.7, 0.9].map((b) => (
-                  <button
-                    key={b}
-                    type="button"
-                    style={{
-                      background: relativity.beta === b ? '#d4af37' : 'rgba(35, 12, 20, 0.7)',
-                      color: relativity.beta === b ? '#1a0b10' : '#fffbeb',
-                      border: '1px solid rgba(212, 175, 55, 0.5)',
-                      borderRadius: '4px',
-                      padding: '2px 7px',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => {
-                      const next = { ...relativity, beta: b, powerOn: true };
-                      setRelativity(next);
-                      sceneApi.current?.setRelativity(next);
-                      playTone(600, 'sine', 0.05, 0.1);
-                    }}
-                  >
-                    {b}c
-                  </button>
-                ))}
+                {/* Hands-On Station Status & Probe Selector (No Auto Target Shortcuts) */}
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {showProbeLeadRow && (
+                    <>
+                      <span style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>Active Lead:</span>
+                      <button
+                        type="button"
+                        style={{
+                          background: activeProbe === 'red' ? 'rgba(220, 38, 38, 0.9)' : 'rgba(35, 12, 20, 0.75)',
+                          color: '#fffbeb',
+                          border: `1.5px solid ${activeProbe === 'red' ? '#f87171' : 'rgba(220, 38, 38, 0.5)'}`,
+                          borderRadius: '4px',
+                          padding: '2px 8px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => handleSelectActiveProbe('red')}
+                        title="Select Red (+) Lead, then Left-Click any breadboard socket in 3D"
+                      >
+                        🔴 Red (+) {redTerminal ? `→ ${redTerminal}` : '(Parked)'}
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          background: activeProbe === 'black' ? '#334155' : 'rgba(35, 12, 20, 0.75)',
+                          color: '#fffbeb',
+                          border: `1.5px solid ${activeProbe === 'black' ? '#94a3b8' : 'rgba(148, 163, 184, 0.45)'}`,
+                          borderRadius: '4px',
+                          padding: '2px 8px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => handleSelectActiveProbe('black')}
+                        title="Select Black (COM) Lead, then Left-Click or Right-Click any breadboard socket in 3D"
+                      >
+                        ⚫ Black (COM) {blackTerminal ? `→ ${blackTerminal}` : '(Parked)'}
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          background: 'rgba(15, 23, 42, 0.8)',
+                          color: '#cbd5e1',
+                          border: '1px solid rgba(148, 163, 184, 0.35)',
+                          borderRadius: '4px',
+                          padding: '2px 7px',
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => handleQuickProbe('park')}
+                        title="Return both test probes to parked holster"
+                      >
+                        🅿️ Park
+                      </button>
+                    </>
+                  )}
+                  {showTrialRecordingRow && stationId === 'optics' && (
+                    <span style={{ fontSize: '11px', color: '#e2e8f0', background: 'rgba(15, 23, 42, 0.8)', padding: '3px 8px', borderRadius: '4px', border: '1px solid rgba(56, 189, 248, 0.35)' }}>
+                      u = <b>{optics.objectDistance.toFixed(1)} cm</b> · Screen v = <b>{(optics.screenPositionCm ?? 45).toFixed(1)} cm</b> · Sharpness: <b style={{ color: opticsResult.focusSharpness >= 85 ? '#34d399' : '#f59e0b' }}>{opticsResult.focusSharpness.toFixed(0)}%</b>
+                    </span>
+                  )}
+                  {showTrialRecordingRow && stationId === 'relativity' && (
+                    <span style={{ fontSize: '11px', color: '#e2e8f0', background: 'rgba(15, 23, 42, 0.8)', padding: '3px 8px', borderRadius: '4px', border: '1px solid rgba(250, 204, 21, 0.35)' }}>
+                      Frame: <b>{(relativity.referenceFrame ?? 'lab') === 'lab' ? 'Lab S' : 'Sled S\''}</b> · β = <b>{relativity.beta.toFixed(2)}c</b> · γ = <b>{relativityResult.gamma.toFixed(3)}</b>
+                    </span>
+                  )}
+                </div>
+
+                {showTrialRecordingRow && (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="cam-focus-btn"
+                      style={{
+                        background: stationProgress.trials.length >= TOTAL_TRIALS ? 'rgba(16, 185, 129, 0.25)' : 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)',
+                        color: stationProgress.trials.length >= TOTAL_TRIALS ? '#34d399' : '#1a0b10',
+                        borderColor: stationProgress.trials.length >= TOTAL_TRIALS ? '#10b981' : '#fef08a',
+                        fontWeight: 800,
+                        fontSize: '12px',
+                        padding: '5px 12px',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => {
+                        if (stationProgress.trials.length >= TOTAL_TRIALS) {
+                          setNotebookOpen(true);
+                          setNotebookStep(7);
+                        } else {
+                          recordCurrentTrial();
+                        }
+                      }}
+                    >
+                      {stationProgress.trials.length >= TOTAL_TRIALS
+                        ? '✓ 5 Trials Done · Open Step 8 Computation →'
+                        : `📝 Record 3D Trial (${stationProgress.trials.length + 1} / 5)`}
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button
-                type="button"
-                className="cam-focus-btn"
-                style={{
-                  background: stationProgress.trials.length >= TOTAL_TRIALS ? 'rgba(16, 185, 129, 0.25)' : 'linear-gradient(135deg, #d4af37 0%, #b58b45 100%)',
-                  color: stationProgress.trials.length >= TOTAL_TRIALS ? '#34d399' : '#1a0b10',
-                  borderColor: stationProgress.trials.length >= TOTAL_TRIALS ? '#10b981' : '#fef08a',
-                  fontWeight: 800,
-                  fontSize: '12px',
-                  padding: '5px 12px',
-                  cursor: 'pointer',
-                }}
-                onClick={() => {
-                  if (stationProgress.trials.length >= TOTAL_TRIALS) {
-                    setNotebookOpen(true);
-                    setNotebookStep(7);
-                  } else {
-                    recordCurrentTrial();
-                  }
-                }}
-              >
-                {stationProgress.trials.length >= TOTAL_TRIALS
-                  ? '✓ 5 Trials Done · Open Step 8 Computation →'
-                  : `📝 Record 3D Trial (${stationProgress.trials.length + 1} / 5)`}
-              </button>
-              <button
-                type="button"
-                className="cam-focus-btn"
-                onClick={() => {
-                  setNotebookOpen(true);
-                  setNotebookStep(stationProgress.currentStep);
-                }}
-                title="Open Lab Notebook"
-              >
-                📓 Notebook
-              </button>
-            </div>
-          </div>
+            );
+          })()}
 
           {measurementWarning && (
             <div style={{
@@ -1841,14 +2300,49 @@ export default function Room3Experience() {
         </div>
       )}
 
-      {cameraMode === 'closeup' && !notebookOpen && activeWorkspaceView === '3d' && closeupHoverText && (
-        <div className="closeup-hover-pill" role="status" aria-live="polite">
-          <span className="hover-icon">⚡</span>
-          <span className="hover-text">{closeupHoverText}</span>
-        </div>
-      )}
+      {cameraMode === 'closeup' && !notebookOpen && activeWorkspaceView === '3d' && closeupHoverText && (() => {
+        const parts = closeupHoverText.split('|').map((p) => p.trim());
+        const title = parts[0] || closeupHoverText;
+        const purpose = parts[1];
+        const liveValue = parts[2];
+        const controls = parts[3];
+        return (
+          <div className="closeup-hover-pill closeup-inspector-card" role="status" aria-live="polite">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '12.5px', color: '#fde68a' }}>
+                <span>⚡</span>
+                <span>{title}</span>
+              </span>
+              {liveValue && (
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  color: '#6ee7b7',
+                  background: 'rgba(6, 78, 59, 0.55)',
+                  border: '1px solid rgba(52, 211, 153, 0.45)',
+                  padding: '2px 8px',
+                  borderRadius: '999px',
+                  fontFamily: 'ui-monospace, monospace',
+                }}>
+                  {liveValue}
+                </span>
+              )}
+            </div>
+            {purpose && (
+              <div style={{ fontSize: '11.5px', lineHeight: 1.38, color: '#f8fafc', opacity: 0.94 }}>
+                {purpose}
+              </div>
+            )}
+            {controls && (
+              <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#fcd34d', letterSpacing: '0.02em', opacity: 0.92 }}>
+                🎮 {controls}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
-      {!pointerLocked && !notebookOpen && cameraMode === 'walk' && !sceneError && (
+      {!pointerLocked && !notebookOpen && cameraMode === 'walk' && !sceneError && !isTouchDevice && (
         <button className="enter-walk-mode" onClick={() => sceneApi.current?.requestPointerLock()}>
           <b>ENTER WALK MODE</b><span>Click to capture mouse · WASD walk · ESC releases</span>
         </button>
@@ -1862,12 +2356,19 @@ export default function Room3Experience() {
             className="room3-dock-btn"
             onClick={() => {
               const next = sceneApi.current?.switchCharacter();
-              if (next) setActiveCharacter(next);
+              if (next) {
+                setActiveCharacter(next);
+                if (next === 'madara') {
+                  setEquipmentMessage('👁️ Infinite Tsukuyomi Activated! Look up through the glass ceiling at the Crimson Moon.');
+                } else {
+                  setEquipmentMessage(`👤 Character switched to ${CHARACTER_META[next].label}`);
+                }
+              }
             }}
-            title="Switch Avatar Model (Carla / Eric) [Key C]"
+            title="Switch Avatar Model (Carla / Eric / Madara) [Key C]"
           >
-            <span>👤</span>
-            <b>{activeCharacter === 'female' ? 'Carla' : 'Eric'}</b>
+            <span>{activeCharacter === 'madara' ? '👁️' : '👤'}</span>
+            <b>{CHARACTER_META[activeCharacter].name}</b>
             <kbd>C</kbd>
           </button>
           <button
@@ -2216,17 +2717,57 @@ export default function Room3Experience() {
 
               <div className="guided-action-box">
                 <b>🎯 ACTION:</b>
-                <span>{currentGuidedStep.action}</span>
+                <span><MathText text={currentGuidedStep.action} /></span>
               </div>
 
               <div className="guided-why-box">
                 <b>💡 PHYSICAL PRINCIPLE (WHY):</b>
-                <span>{currentGuidedStep.why}</span>
+                <span><MathText text={currentGuidedStep.why} /></span>
               </div>
 
               <div className="guided-expected-box">
                 <b>👁️ EXPECTED RESULT:</b>
-                <span>{currentGuidedStep.expectedResult}</span>
+                <span><MathText text={currentGuidedStep.expectedResult} /></span>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  marginTop: '8px',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  background: 'rgba(14, 165, 233, 0.12)',
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                  fontSize: '0.78rem',
+                }}
+              >
+                <span style={{ color: '#e0f2fe', fontWeight: 600 }}>
+                  🎯 NEXT 3D TARGET: <span style={{ color: '#38bdf8' }}>{GUIDANCE_LABELS[guidanceTarget] || guidanceTarget}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleFocusInspectionTarget(guidanceTarget);
+                    playTone(660, 'sine', 0.1, 0.2);
+                  }}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(56, 189, 248, 0.5)',
+                    background: 'rgba(2, 132, 199, 0.3)',
+                    color: '#f0f9ff',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={`Focus 3D arrow and camera on ${GUIDANCE_LABELS[guidanceTarget] || guidanceTarget}`}
+                >
+                  📍 Locate 3D
+                </button>
               </div>
 
               {/* Step 1: Physical Apparatus Inspection Checklist Card */}
@@ -2259,21 +2800,20 @@ export default function Room3Experience() {
                             color: isInspected ? '#34d399' : '#e9dfc9',
                           }}
                           onClick={() => {
-                            handleInspectApparatus(tgt);
-                            handleSetCloseup('closeup');
-                            playTone(isInspected ? 520 : 660, 'sine', 0.1, 0.2);
+                            handleFocusInspectionTarget(tgt);
+                            playTone(isInspected ? 520 : 660, 'sine', isInspected ? 0.08 : 0.1, isInspected ? 0.15 : 0.2);
                           }}
-                          title={isInspected ? 'Component verified' : `Click to inspect ${label}`}
+                          title={isInspected ? `Re-locate verified ${label} in 3D` : `Focus camera on ${label} and click it in 3D`}
                         >
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '85px' }}>{label}</span>
-                          <b style={{ color: isInspected ? '#34d399' : '#d4af37' }}>{isInspected ? '✓' : 'Inspect'}</b>
+                          <b style={{ color: isInspected ? '#34d399' : '#d4af37' }}>{isInspected ? '✓' : 'Locate 3D'}</b>
                         </button>
                       );
                     })}
                   </div>
                   {!allInspected ? (
                     <div style={{ color: '#fef08a', fontSize: '11px', marginTop: '6px' }}>
-                      Click each instrument above or walk up to it in 3D to inspect.
+                      Click &ldquo;Locate 3D&rdquo; to aim at an instrument, then click the flashing 3D apparatus on the bench to verify it.
                     </div>
                   ) : (
                     <div style={{ color: '#34d399', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>
@@ -2287,7 +2827,7 @@ export default function Room3Experience() {
               {activeStepIdx === 1 && (
                 <div style={{ marginTop: '10px', background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(212,175,55,0.3)' }}>
                   <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: 'bold', color: '#fef08a' }}>
-                    🤔 Formative Prediction: {station.prediction.question}
+                    🤔 Formative Prediction: <MathText text={station.prediction.question} />
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {station.prediction.options.map((opt, oIdx) => {
@@ -2310,7 +2850,7 @@ export default function Room3Experience() {
                           style={{ textAlign: 'left', padding: '6px 10px', fontSize: '11px', background: btnBg, borderColor }}
                           onClick={() => verifyPrediction(oIdx)}
                         >
-                          {opt} {stationProgress.completed[1] && isCorrectChoice ? `✓ (+${STEP_POINTS[1]} pts)` : ''}
+                          <MathText text={opt} /> {stationProgress.completed[1] && isCorrectChoice ? `✓ (+${STEP_POINTS[1]} pts)` : ''}
                         </button>
                       );
                     })}
@@ -2439,12 +2979,20 @@ export default function Room3Experience() {
                       {stationProgress.trials.length} / 5 Trials
                     </span>
                   </div>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#cbd5e1', lineHeight: '1.4' }}>
-                    {stationId === 'circuits'
-                      ? 'Compute experimental resistance R = V / I for each trial. Theoretical series resistance Req = 650.0 Ω.'
-                      : stationId === 'optics'
-                      ? 'Compute experimental focal length f = (u · v)/(u + v) using the thin-lens equation. Theoretical focal length f = 20.0 cm.'
-                      : 'Compute Lorentz dilation factor γ = 1 / √(1 - β²) across all relativistic frames.'}
+                  <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#cbd5e1', lineHeight: '1.5' }}>
+                    {stationId === 'circuits' ? (
+                      <>
+                        Compute experimental resistance <span className="math-expr">R = <Frac num="V" den="I" /></span> for each trial. Theoretical series resistance <span className="math-inline">R<sub>eq</sub> = 650.0 Ω</span>.
+                      </>
+                    ) : stationId === 'optics' ? (
+                      <>
+                        Compute experimental focal length <span className="math-expr">f = <Frac num="u · v" den="u + v" /></span> using the thin-lens equation. Theoretical focal length <span className="math-inline">f = 20.0 cm</span>.
+                      </>
+                    ) : (
+                      <>
+                        Compute Lorentz dilation factor <span className="math-expr">γ = <Frac num="1" den={<Sqrt>1 − β<sup>2</sup></Sqrt>} /></span> across all relativistic frames.
+                      </>
+                    )}
                   </p>
 
                   <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
@@ -2535,9 +3083,9 @@ export default function Room3Experience() {
                     </button>
                   </div>
                   <div style={{ fontSize: '12px', color: '#fef08a', lineHeight: 1.45 }}>
-                    {hintLevel === 1 && <span><b>📘 Level 1 (Guidance):</b> {currentGuidedStep.hints.guidance}</span>}
-                    {hintLevel === 2 && <span><b>🔬 Level 2 (Physical Principle):</b> {currentGuidedStep.hints.concept}</span>}
-                    {hintLevel === 3 && <span><b>🛠️ Level 3 (Procedure):</b> {currentGuidedStep.hints.procedure}</span>}
+                    {hintLevel === 1 && <span><b>📘 Level 1 (Guidance):</b> <MathText text={currentGuidedStep.hints.guidance} /></span>}
+                    {hintLevel === 2 && <span><b>🔬 Level 2 (Physical Principle):</b> <MathText text={currentGuidedStep.hints.concept} /></span>}
+                    {hintLevel === 3 && <span><b>🛠️ Level 3 (Procedure):</b> <MathText text={currentGuidedStep.hints.procedure} /></span>}
                   </div>
                   <div style={{ marginTop: '6px', fontSize: '10px', color: '#94a3b8', fontStyle: 'italic' }}>
                     Note: Hints provide educational guidance only and never advance steps, record trials, or award points.
@@ -2548,8 +3096,8 @@ export default function Room3Experience() {
               {/* Dynamic Physical Validation Status Badge */}
               {stepValidation.hazardWarning ? (
                 <div className="guided-validation-badge hazard">
-                  <span>⚠️ HAZARD ALERT: {stepValidation.hazardWarning}</span>
-                  <small>{stepValidation.feedback}</small>
+                  <span>⚠️ HAZARD ALERT: <MathText text={stepValidation.hazardWarning} /></span>
+                  <small><MathText text={stepValidation.feedback} /></small>
                   {dmmReading.tripFuse && (
                     <button
                       type="button"
@@ -2563,14 +3111,14 @@ export default function Room3Experience() {
                 </div>
               ) : stepPrereq.canAdvance ? (
                 <div className="guided-validation-badge passed">
-                  <span>{stepPrereq.feedback || stepValidation.feedback}</span>
+                  <span><MathText text={stepPrereq.feedback || stepValidation.feedback} /></span>
                 </div>
               ) : (
                 <div className="guided-validation-badge in-progress">
-                  <span>⏳ STATUS: {stepPrereq.feedback || stepValidation.feedback}</span>
+                  <span>⏳ STATUS: <MathText text={stepPrereq.feedback || stepValidation.feedback} /></span>
                   {stepPrereq.remainingTasks.length > 0 && (
                     <div style={{ marginTop: '4px', fontSize: '11px', color: '#fca5a5' }}>
-                      Required: {stepPrereq.remainingTasks.join('; ')}
+                      Required: <MathText text={stepPrereq.remainingTasks.join('; ')} />
                     </div>
                   )}
                 </div>
@@ -3009,50 +3557,46 @@ export default function Room3Experience() {
                 </div>
               </div>
 
-              {/* Authoritative Resistor Telemetry & Thermal Dissipation Card */}
+              {/* Component Ratings & Live DMM Probe Wiring Card (No Pre-Solved Answers) */}
               <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(212, 175, 55, 0.35)', borderRadius: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <b style={{ fontSize: '10px', color: '#d4af37', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    📊 Resistor Telemetry (1W Rating)
+                    📊 Breadboard Spec & Probe Wiring
                   </b>
-                  <span style={{ fontSize: '9px', color: '#94a3b8' }}>
-                    Req = <b>{circuitResult.req.toFixed(1)} Ω</b>
+                  <span style={{ fontSize: '9px', color: circuits.powerOn ? '#34d399' : '#94a3b8' }}>
+                    {circuits.powerOn ? `PSU: ${circuits.vs.toFixed(1)} V ON` : 'PSU STANDBY'}
                   </span>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '10px' }}>
-                  {/* R1 */}
                   {circuits.topology !== 'single' && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '3px 6px', borderRadius: '4px' }}>
-                      <span style={{ color: '#cbd5e1' }}><b>R1 (100Ω):</b> {circuitResult.v1.toFixed(2)}V · {(circuitResult.i1 * 1000).toFixed(1)}mA</span>
+                      <span style={{ color: '#cbd5e1' }}><b>R1 (Brn-Blk-Brn):</b> {circuits.r1} Ω ±1% · 1W</span>
                       <span style={{ color: (circuitResult.v1 * circuitResult.i1) > 1.0 ? '#ef4444' : '#34d399', fontWeight: 600 }}>
-                        {(circuitResult.v1 * circuitResult.i1).toFixed(3)} W ({(((circuitResult.v1 * circuitResult.i1) / 1.0) * 100).toFixed(0)}%)
+                        {(circuitResult.v1 * circuitResult.i1) > 1.0 ? 'OVERLOAD' : 'Safe (<1W)'}
                       </span>
                     </div>
                   )}
 
-                  {/* R2 */}
                   {circuits.topology !== 'single' && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '3px 6px', borderRadius: '4px' }}>
-                      <span style={{ color: '#cbd5e1' }}><b>R2 (220Ω):</b> {circuitResult.v2.toFixed(2)}V · {(circuitResult.i2 * 1000).toFixed(1)}mA</span>
+                      <span style={{ color: '#cbd5e1' }}><b>R2 (Red-Red-Brn):</b> {circuits.r2} Ω ±1% · 1W</span>
                       <span style={{ color: (circuitResult.v2 * circuitResult.i2) > 1.0 ? '#ef4444' : '#34d399', fontWeight: 600 }}>
-                        {(circuitResult.v2 * circuitResult.i2).toFixed(3)} W ({(((circuitResult.v2 * circuitResult.i2) / 1.0) * 100).toFixed(0)}%)
+                        {(circuitResult.v2 * circuitResult.i2) > 1.0 ? 'OVERLOAD' : 'Safe (<1W)'}
                       </span>
                     </div>
                   )}
 
-                  {/* R3 */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '3px 6px', borderRadius: '4px' }}>
-                    <span style={{ color: '#cbd5e1' }}><b>R3 (330Ω):</b> {circuitResult.v3.toFixed(2)}V · {(circuitResult.i3 * 1000).toFixed(1)}mA</span>
+                    <span style={{ color: '#cbd5e1' }}><b>R3 (Org-Org-Brn):</b> {circuits.r3} Ω ±1% · 1W</span>
                     <span style={{ color: (circuitResult.v3 * circuitResult.i3) > 1.0 ? '#ef4444' : '#34d399', fontWeight: 600 }}>
-                      {(circuitResult.v3 * circuitResult.i3).toFixed(3)} W ({(((circuitResult.v3 * circuitResult.i3) / 1.0) * 100).toFixed(0)}%)
+                      {(circuitResult.v3 * circuitResult.i3) > 1.0 ? 'OVERLOAD' : 'Safe (<1W)'}
                     </span>
                   </div>
 
-                  {/* Circuit Total */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '4px', marginTop: '2px', color: '#fef08a' }}>
-                    <span><b>Total Power (P = VI):</b></span>
-                    <span><b>{circuitResult.realPower.toFixed(3)} W</b> ({(circuitResult.current * 1000).toFixed(1)} mA)</span>
+                    <span><b>Leads:</b> 🔴 {redTerminal ?? 'Parked'} | ⚫ {blackTerminal ?? 'Parked'}</span>
+                    <span><b>DMM:</b> {dmmReading.displayString}</span>
                   </div>
                 </div>
               </div>
@@ -3372,7 +3916,7 @@ export default function Room3Experience() {
             {optics.subMode === 'imaging' && (
               <>
                 <RangeControl
-                  label="Focal Length f"
+                  label="Lens Focal Spec f"
                   value={optics.focalLength}
                   unit="cm"
                   min={-50.0}
@@ -3382,13 +3926,23 @@ export default function Room3Experience() {
                   digits={1}
                 />
                 <RangeControl
-                  label="Object Distance do"
+                  label="Object Distance u"
                   value={optics.objectDistance}
                   unit="cm"
-                  min={5.0}
-                  max={200.0}
+                  min={25.0}
+                  max={80.0}
                   step={1.0}
                   onChange={(v) => setOptics((o) => ({ ...o, objectDistance: v }))}
+                  digits={1}
+                />
+                <RangeControl
+                  label="Screen Position v"
+                  value={optics.screenPositionCm ?? 45.0}
+                  unit="cm"
+                  min={15.0}
+                  max={120.0}
+                  step={0.5}
+                  onChange={(v) => setOptics((o) => ({ ...o, screenPositionCm: v }))}
                   digits={1}
                 />
               </>
@@ -3430,47 +3984,57 @@ export default function Room3Experience() {
             )}
 
             <div className="formula-readout">
-              <span>
-                {optics.subMode === 'refraction'
-                  ? 'n1 · sin θ1 = n2 · sin θ2'
-                  : optics.subMode === 'imaging'
-                    ? '1/f = 1/do + 1/di'
-                    : 'Δy = (λ · L) / d'}
+              <span className="math-expr">
+                {optics.subMode === 'refraction' ? (
+                  <>n<sub>1</sub> · sin θ<sub>1</sub> = n<sub>2</sub> · sin θ<sub>2</sub></>
+                ) : optics.subMode === 'imaging' ? (
+                  <>
+                    <Frac num="1" den="f" /> = <Frac num="1" den="u" /> + <Frac num="1" den="v" />
+                  </>
+                ) : (
+                  <>
+                    Δy = <Frac num="λ · L" den="d" />
+                  </>
+                )}
               </span>
               <strong>
                 {optics.subMode === 'refraction'
-                  ? (opticsResult.isTIR ? 'TIR Active' : `${opticsResult.theta2Deg?.toFixed(1)}°`)
+                  ? (opticsResult.isTIR ? 'TIR Active' : <span className="math-inline">θ<sub>1</sub> = {optics.theta1.toFixed(1)}°</span>)
                   : optics.subMode === 'imaging'
-                    ? (opticsResult.imageDistanceCm ? `${opticsResult.imageDistanceCm.toFixed(1)} cm` : '∞ (Collimated Beam)')
-                    : `${opticsResult.fringeSpacingMm.toFixed(2)} mm`}
+                    ? `Sharpness: ${opticsResult.focusSharpness.toFixed(0)}%`
+                    : `L = ${optics.screenDistance.toFixed(2)} m`}
               </strong>
               <dl>
                 {optics.subMode === 'refraction' && (
                   <>
+                    <Metric label={<>Incident Angle θ<sub>1</sub></>} value={`${optics.theta1.toFixed(1)}°`} />
                     <Metric
-                      label="Refracted Angle θ2"
-                      value={opticsResult.isTIR ? 'TIR (Reflected)' : `${opticsResult.theta2Deg?.toFixed(1)}°`}
+                      label={<>Critical Angle θ<sub>c</sub></>}
+                      value={opticsResult.criticalAngleDeg ? `${opticsResult.criticalAngleDeg.toFixed(1)}°` : <>None (n<sub>1</sub> ≤ n<sub>2</sub>)</>}
                     />
                     <Metric
-                      label="Critical Angle θc"
-                      value={opticsResult.criticalAngleDeg ? `${opticsResult.criticalAngleDeg.toFixed(1)}°` : 'None (n1 <= n2)'}
+                      label="3D Beam Observation"
+                      value={opticsResult.isTIR ? 'Total Reflection' : 'Transmitted on Screen'}
                     />
-                    <Metric label="Reflected Angle" value={`${opticsResult.reflectAngleDeg.toFixed(1)}°`} />
                     <Metric
-                      label="TIR Status"
-                      value={opticsResult.isTIR ? 'TOTAL REFLECTION' : 'Normal Refraction'}
+                      label={<>Refracted Angle θ<sub>2</sub></>}
+                      value={opticsResult.isTIR ? 'N/A (TIR)' : 'Observe 3D Screen Spot'}
                     />
                   </>
                 )}
                 {optics.subMode === 'imaging' && (
                   <>
                     <Metric
-                      label="Image Distance di"
-                      value={opticsResult.imageDistanceCm ? `${opticsResult.imageDistanceCm.toFixed(1)} cm` : '∞ (Collimated Beam)'}
+                      label="Screen Vernier v"
+                      value={`${opticsResult.screenPositionCm.toFixed(1)} cm`}
                     />
                     <Metric
-                      label="Magnification M"
-                      value={opticsResult.magnification ? `${opticsResult.magnification.toFixed(2)}×` : 'Infinite'}
+                      label="Focus Quality"
+                      value={
+                        opticsResult.focusSharpness >= 85
+                          ? `${opticsResult.focusSharpness.toFixed(0)}% (IN FOCUS)`
+                          : `${opticsResult.focusSharpness.toFixed(0)}% (Blurry — Slide v)`
+                      }
                     />
                     <Metric label="Image Type" value={opticsResult.imageType} />
                     <Metric label="Orientation" value={opticsResult.imageOrientation} />
@@ -3479,9 +4043,9 @@ export default function Room3Experience() {
                 )}
                 {optics.subMode === 'diffraction' && (
                   <>
-                    <Metric label="Fringe Spacing Δy" value={`${opticsResult.fringeSpacingMm.toFixed(2)} mm`} />
-                    <Metric label="1st-Order Maxima y1" value={`${opticsResult.firstMaxPosMm.toFixed(2)} mm`} />
-                    <Metric label="Central Max Width w0" value={`${opticsResult.centralMaxMm.toFixed(2)} mm`} />
+                    <Metric label="Wavelength λ" value={`${optics.wavelength} nm`} />
+                    <Metric label="Slit Separation d" value={`${optics.slitSeparation.toFixed(2)} mm`} />
+                    <Metric label="Screen Distance L" value={`${optics.screenDistance.toFixed(2)} m`} />
                     <Metric label="Angular Spread θ" value={`${opticsResult.thetaDiffractionDeg.toFixed(3)}°`} />
                   </>
                 )}
@@ -3671,24 +4235,26 @@ export default function Room3Experience() {
             {/* 5. Authoritative Telemetry Readout */}
             <div className="formula-readout" style={{ padding: '10px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '6px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '4px' }}>
-                <span style={{ fontSize: '11px', color: '#fef08a' }}>Lorentz Factor: <b>γ = 1 / √(1 − β²)</b></span>
+                <span style={{ fontSize: '11px', color: '#fef08a' }}>
+                  Lorentz Factor: <b className="math-expr">γ = <Frac num="1" den={<Sqrt>1 − β<sup>2</sup></Sqrt>} /></b>
+                </span>
                 <strong style={{ fontSize: '13px', color: '#38bdf8' }}>γ = {relativityResult.gamma.toFixed(4)}</strong>
               </div>
               <dl style={{ margin: 0 }}>
-                <Metric label="Velocity v" value={`${(relativityResult.speedMps / 1e6).toFixed(2)} × 10⁶ m/s`} />
-                <Metric label="Proper Time Δτ" value={`${relativityResult.properTime.toFixed(3)} ns (2D/c)`} />
+                <Metric label="Velocity v" value={<span className="math-inline">{(relativityResult.speedMps / 1e6).toFixed(2)} × 10<sup>6</sup> m/s</span>} />
+                <Metric label="Proper Time Δτ" value={<span className="math-inline">{relativityResult.properTime.toFixed(3)} ns (<Frac num="2D" den="c" />)</span>} />
                 <Metric label="Dilated Time Δt" value={`${relativityResult.dilatedTime.toFixed(3)} ns (γΔτ)`} />
-                <Metric label="Proper Length L₀" value={`${relativityResult.properLength.toFixed(2)} m`} />
-                <Metric label="Contracted Length L" value={`${relativityResult.contractedLength.toFixed(3)} m (L₀/γ)`} />
+                <Metric label={<>Proper Length L<sub>0</sub></>} value={`${relativityResult.properLength.toFixed(2)} m`} />
+                <Metric label="Contracted Length L" value={<span className="math-inline">{relativityResult.contractedLength.toFixed(3)} m (<Frac num={<>L<sub>0</sub></>} den="γ" />)</span>} />
               </dl>
 
               <details className="telemetry-details" style={{ marginTop: '6px', fontSize: '10px' }}>
                 <summary style={{ cursor: 'pointer', color: '#fef08a' }}>Relativistic Mass-Energy Breakdown (No Relativistic Mass)</summary>
                 <dl style={{ margin: '4px 0 0' }}>
-                  <Metric label="Rest Energy E₀ (m₀c²)" value={`${formatValue(relativityResult.restEnergyMeV)} MeV`} />
-                  <Metric label="Total Energy E (γm₀c²)" value={`${formatValue(relativityResult.totalEnergyMeV)} MeV`} />
-                  <Metric label="Kinetic Energy K ((γ−1)m₀c²)" value={`${formatValue(relativityResult.kineticEnergyMeV)} MeV`} />
-                  <Metric label="Relativistic Momentum p (γm₀v)" value={`${formatValue(relativityResult.momentumMeV_c)} MeV/c`} />
+                  <Metric label={<span className="math-inline">Rest Energy E<sub>0</sub> (m<sub>0</sub>c<sup>2</sup>)</span>} value={`${formatValue(relativityResult.restEnergyMeV)} MeV`} />
+                  <Metric label={<span className="math-inline">Total Energy E (γm<sub>0</sub>c<sup>2</sup>)</span>} value={`${formatValue(relativityResult.totalEnergyMeV)} MeV`} />
+                  <Metric label={<span className="math-inline">Kinetic Energy K ((γ−1)m<sub>0</sub>c<sup>2</sup>)</span>} value={`${formatValue(relativityResult.kineticEnergyMeV)} MeV`} />
+                  <Metric label={<span className="math-inline">Relativistic Momentum p (γm<sub>0</sub>v)</span>} value={`${formatValue(relativityResult.momentumMeV_c)} MeV/c`} />
                 </dl>
               </details>
             </div>
@@ -3736,83 +4302,10 @@ export default function Room3Experience() {
             )}
 
             {stationProgress.trials.length < TOTAL_TRIALS && (
-              <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginBottom: '10px' }}>
-                <span style={{ fontSize: '10px', color: '#94a3b8' }}>Target:</span>
-                {stationId === 'circuits' && [4, 8, 12, 16, 20].map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    style={{
-                      flex: 1,
-                      background: circuits.vs === v ? '#d4af37' : 'rgba(35, 12, 20, 0.8)',
-                      color: circuits.vs === v ? '#1a0b10' : '#fffbeb',
-                      border: '1px solid rgba(212, 175, 55, 0.5)',
-                      borderRadius: '4px',
-                      padding: '3px 0',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => {
-                      const next = { ...circuits, vs: v, powerOn: true };
-                      setCircuits(next);
-                      sceneApi.current?.setCircuits(next);
-                      playTone(600, 'sine', 0.05, 0.1);
-                    }}
-                  >
-                    {v}V
-                  </button>
-                ))}
-                {stationId === 'optics' && [30, 40, 50, 60, 70].map((u) => (
-                  <button
-                    key={u}
-                    type="button"
-                    style={{
-                      flex: 1,
-                      background: optics.objectDistance === u ? '#d4af37' : 'rgba(35, 12, 20, 0.8)',
-                      color: optics.objectDistance === u ? '#1a0b10' : '#fffbeb',
-                      border: '1px solid rgba(212, 175, 55, 0.5)',
-                      borderRadius: '4px',
-                      padding: '3px 0',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => {
-                      const next = { ...optics, objectDistance: u, powerOn: true };
-                      setOptics(next);
-                      sceneApi.current?.setOptics(next);
-                      playTone(600, 'sine', 0.05, 0.1);
-                    }}
-                  >
-                    {u}cm
-                  </button>
-                ))}
-                {stationId === 'relativity' && [0.1, 0.3, 0.5, 0.7, 0.9].map((b) => (
-                  <button
-                    key={b}
-                    type="button"
-                    style={{
-                      flex: 1,
-                      background: relativity.beta === b ? '#d4af37' : 'rgba(35, 12, 20, 0.8)',
-                      color: relativity.beta === b ? '#1a0b10' : '#fffbeb',
-                      border: '1px solid rgba(212, 175, 55, 0.5)',
-                      borderRadius: '4px',
-                      padding: '3px 0',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => {
-                      const next = { ...relativity, beta: b, powerOn: true };
-                      setRelativity(next);
-                      sceneApi.current?.setRelativity(next);
-                      playTone(600, 'sine', 0.05, 0.1);
-                    }}
-                  >
-                    {b}c
-                  </button>
-                ))}
+              <div style={{ marginBottom: '10px', fontSize: '11px', color: '#cbd5e1', background: 'rgba(15, 23, 42, 0.72)', padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(212, 175, 55, 0.25)' }}>
+                {stationId === 'circuits' && 'Configure the 3D power supply & DMM probes on the workbench, obtain a live reading, then record.'}
+                {stationId === 'optics' && 'Set u on the rail, slide Screen Position v until sharp focus (≥85%) appears in 3D, then record.'}
+                {stationId === 'relativity' && 'Tune frame velocity β on the maglev console, observe clock/length changes, then log the run.'}
               </div>
             )}
 
@@ -3924,8 +4417,58 @@ export default function Room3Experience() {
       </div>
 
       {/* Mobile Touch Controls */}
-      {!notebookOpen && (
+      {!notebookOpen && activeWorkspaceView === '3d' && (
         <div className="mobile-lab-controls" aria-label="Touch laboratory controls">
+          {cameraMode === 'closeup' ? (
+            <div className="mobile-closeup-touchbar">
+              <div className="mobile-closeup-zoom-group">
+                <button
+                  type="button"
+                  className="mobile-closeup-btn"
+                  onClick={() => sceneApi.current?.zoomCloseup?.(0.18)}
+                  title="Zoom Out"
+                >
+                  − Zoom Out
+                </button>
+                <button
+                  type="button"
+                  className="mobile-closeup-btn"
+                  onClick={() => sceneApi.current?.zoomCloseup?.(-0.18)}
+                  title="Zoom In"
+                >
+                  + Zoom In
+                </button>
+                <button
+                  type="button"
+                  className="mobile-closeup-btn"
+                  onClick={() => handleSetCloseupFocus('station')}
+                  title="Reset Pan & Zoom"
+                >
+                  ⌖ Reset
+                </button>
+              </div>
+              <span className="mobile-closeup-hint">1-finger pan · Pinch zoom · Tap apparatus</span>
+              <div className="mobile-closeup-action-group">
+                {stationId === 'circuits' && (
+                  <button
+                    type="button"
+                    className="mobile-closeup-btn"
+                    onClick={() => setActiveWorkspaceView('circuit_workspace')}
+                  >
+                    🔌 2D Board
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="mobile-closeup-btn primary"
+                  onClick={() => handleSetCloseup('walk')}
+                >
+                  🚶 Exit Close-Up
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
           <div
             className="mobile-joystick"
             role="group"
@@ -3947,17 +4490,37 @@ export default function Room3Experience() {
           <div className="mobile-lab-action-cluster">
             <button
               type="button"
-              className={`mobile-equipment-action ${interaction ? 'ready' : ''}`}
+              className={`mobile-equipment-action ${interaction || proximateStation ? 'ready' : ''}`}
               onClick={() => {
-                if (interaction) equipmentActionRef.current(interaction.id);
+                if (interaction) {
+                  equipmentActionRef.current(interaction.id);
+                } else if (proximateStation) {
+                  setStationId(proximateStation);
+                  sceneApi.current?.setStation(proximateStation);
+                  handleSetCloseup('closeup');
+                }
               }}
-              disabled={!interaction}
+              disabled={!interaction && !proximateStation}
             >
-              <span className="mobile-btn-icon">⚡</span>
-              <span className="mobile-btn-text">{interaction ? interaction.action : 'LOOK AT APPARATUS'}</span>
+              <span className="mobile-btn-icon">{interaction ? '⚡' : '🔬'}</span>
+              <span className="mobile-btn-text">
+                {interaction
+                  ? interaction.action
+                  : proximateStation
+                    ? `CLOSE-UP: ${ROOM3_STATIONS[proximateStation].shortName.toUpperCase()}`
+                    : 'LOOK AT APPARATUS'}
+              </span>
             </button>
 
             <div className="mobile-lab-subactions">
+              <button
+                type="button"
+                className="mobile-subaction-btn"
+                onClick={() => handleSetCloseup('closeup')}
+                title="Enter Workbench Close-Up (Key E)"
+              >
+                <span>🔬 CLOSE-UP</span>
+              </button>
               <button
                 type="button"
                 className="mobile-subaction-btn"
@@ -3978,7 +4541,7 @@ export default function Room3Experience() {
                 }}
                 title="Switch Character (Key C)"
               >
-                <span>{activeCharacter === 'female' ? '👩 CARLA' : '👨 ERIC'}</span>
+                <span>{CHARACTER_META[activeCharacter].shortBadge}</span>
               </button>
               <button
                 type="button"
@@ -3990,6 +4553,8 @@ export default function Room3Experience() {
               </button>
             </div>
           </div>
+            </>
+          )}
         </div>
       )}
 
@@ -4093,17 +4658,21 @@ export default function Room3Experience() {
                               transition: 'all 0.2s ease',
                             }}
                             onClick={() => {
-                              handleInspectApparatus(tgt);
-                              playTone(isInspected ? 520 : 660, 'sine', 0.1, 0.2);
+                              if (isInspected) {
+                                playTone(520, 'sine', 0.08, 0.15);
+                                return;
+                              }
+                              handleFocusInspectionTarget(tgt);
+                              playTone(660, 'sine', 0.1, 0.2);
                             }}
-                            title={isInspected ? 'Component verified' : `Click to verify ${label}`}
+                            title={isInspected ? 'Component verified in 3D' : `Locate ${label} on the 3D workbench`}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span style={{ fontSize: '14px' }}>{isInspected ? '✅' : '🔍'}</span>
                               <span style={{ fontSize: '12px', fontWeight: 600, color: isInspected ? '#34d399' : '#e9dfc9' }}>{label}</span>
                             </div>
                             <span style={{ fontSize: '10px', color: isInspected ? '#34d399' : '#d4af37', fontWeight: 700 }}>
-                              {isInspected ? '✓ Inspected' : 'Click to Verify'}
+                              {isInspected ? '✓ Inspected' : 'Locate in 3D →'}
                             </span>
                           </li>
                         );
@@ -4113,7 +4682,7 @@ export default function Room3Experience() {
 
                   {!allInspected ? (
                     <div className="feedback-alert incorrect" style={{ marginTop: '14px' }}>
-                      ⚠️ Physical Inspection Required: Explore the 3D laboratory and approach all apparatus instruments in 3D, or click the items above ({stationProgress.inspected.length} / {INSPECTION_TARGETS[stationId].length} completed).
+                      ⚠️ Physical Inspection Required: Click &ldquo;Locate in 3D&rdquo; or walk up to each instrument in 3D and click the apparatus directly ({stationProgress.inspected.filter((id) => INSPECTION_TARGETS[stationId].includes(id)).length} / {INSPECTION_TARGETS[stationId].length} completed).
                     </div>
                   ) : (
                     <div className="feedback-alert correct" style={{ marginTop: '14px' }}>
@@ -4147,31 +4716,31 @@ export default function Room3Experience() {
                     <b>{stationId === 'circuits' ? 'Resistor Network Assembly & Equivalent Resistance:' : stationId === 'optics' ? 'Geometric Ray Alignment & Snell Interface:' : 'Inertial Reference Frames S & S\' Invariant Coordinates:'}</b>
                     {stationId === 'circuits' && (
                       <p style={{ margin: '6px 0 0' }}>
-                        Three precision metal-film resistors are connected in a continuous series loop: <b>R1 = 100 Ω</b>, <b>R2 = 220 Ω</b>, <b>R3 = 330 Ω</b>.<br />
+                        Three precision metal-film resistors are connected in a continuous series loop: <b className="math-inline">R<sub>1</sub> = 100 Ω</b>, <b className="math-inline">R<sub>2</sub> = 220 Ω</b>, <b className="math-inline">R<sub>3</sub> = 330 Ω</b>.<br />
                         Because there is only one continuous path for charge carriers, the total equivalent resistance is strictly additive:
                         <br />
-                        <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fef08a' }}>
-                          Req = R1 + R2 + R3 = 100 Ω + 220 Ω + 330 Ω = 650.0 Ω
+                        <span className="math-expr" style={{ fontWeight: 700, color: '#fef08a' }}>
+                          R<sub>eq</sub> = R<sub>1</sub> + R<sub>2</sub> + R<sub>3</sub> = 100 Ω + 220 Ω + 330 Ω = 650.0 Ω
                         </span>
                       </p>
                     )}
                     {stationId === 'optics' && (
                       <p style={{ margin: '6px 0 0' }}>
                         Central optical track alignment ensures paraxial rays converge along the principal axis without spherical aberration.
-                        Critical angle interface: <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fef08a' }}>θ_c = arcsin(n2 / n1) ≈ 41.8°</span> (Crown Glass n1 = 1.50 into Air n2 = 1.00).
+                        Critical angle interface: <span className="math-expr" style={{ fontWeight: 700, color: '#fef08a' }}>θ<sub>c</sub> = arcsin(<Frac num={<>n<sub>2</sub></>} den={<>n<sub>1</sub></>} />) ≈ 41.8°</span> (Crown Glass <span className="math-inline">n<sub>1</sub> = 1.50</span> into Air <span className="math-inline">n<sub>2</sub> = 1.00</span>).
                       </p>
                     )}
                     {stationId === 'relativity' && (
                       <p style={{ margin: '6px 0 0' }}>
-                        Inertial Reference Frame S (laboratory rest frame) and Frame S&apos; (particle proper frame) establish invariant rest measurements: <b>L0 = 20.0 m</b>, <b>Δt0 = 10.0 s</b>.
-                        Lorentz transformation ensures the invariant spacetime interval <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fef08a' }}>Δs² = c²Δt² - Δx²</span> holds across all reference frames.
+                        Inertial Reference Frame S (laboratory rest frame) and Frame S&apos; (particle proper frame) establish invariant rest measurements: <b className="math-inline">L<sub>0</sub> = 20.0 m</b>, <b className="math-inline">Δt<sub>0</sub> = 10.0 s</b>.
+                        Lorentz transformation ensures the invariant spacetime interval <span className="math-expr" style={{ fontWeight: 700, color: '#fef08a' }}>Δs<sup>2</sup> = c<sup>2</sup>Δt<sup>2</sup> − Δx<sup>2</sup></span> holds across all reference frames.
                       </p>
                     )}
                   </div>
 
                   <div style={{ marginTop: '16px' }}>
                     <b>Theoretical Prediction Checkpoint:</b>
-                    <p className="prediction-question" style={{ marginTop: '6px' }}>{station.prediction.question}</p>
+                    <p className="prediction-question" style={{ marginTop: '6px' }}><MathText text={station.prediction.question} /></p>
                     <div className="prediction-options">
                       {station.prediction.options.map((opt, i) => (
                         <label key={opt} className={currentPredictionAnswer === i ? 'selected' : ''}>
@@ -4182,7 +4751,7 @@ export default function Room3Experience() {
                             onChange={() => verifyPrediction(i)}
                           />
                           <span>{String.fromCharCode(65 + i)}</span>
-                          <div>{opt}</div>
+                          <div><MathText text={opt} /></div>
                         </label>
                       ))}
                     </div>
@@ -4190,7 +4759,7 @@ export default function Room3Experience() {
 
                   {predictionFeedback && (
                     <div className={`feedback-alert ${predictionStatus}`} style={{ marginTop: '14px' }}>
-                      {predictionFeedback}
+                      <MathText text={predictionFeedback} />
                     </div>
                   )}
 
@@ -4441,14 +5010,14 @@ export default function Room3Experience() {
                     )}
                     {stationId === 'optics' && (
                       <p style={{ margin: '6px 0 0' }}>
-                        Paraxial rays from object distance <b>u</b> refract through the thin converging lens to form a real image at distance <b>v</b> according to the Gaussian lens formula:
-                        <b> 1/f = 1/u + 1/v</b>. For nominal focal length f = 20.0 cm, when u = 40.0 cm (2f), image distance v = 40.0 cm with unit magnification (M = -1.0×).
+                        Paraxial rays from object distance <b>u</b> refract through the thin converging lens to form a real image at distance <b>v</b> according to the Gaussian lens formula:{' '}
+                        <b className="math-expr"><Frac num="1" den="f" /> = <Frac num="1" den="u" /> + <Frac num="1" den="v" /></b>. For nominal focal length <span className="math-inline">f = 20.0 cm</span>, when <span className="math-inline">u = 40.0 cm (2f)</span>, image distance <span className="math-inline">v = 40.0 cm</span> with unit magnification (<span className="math-inline">M = −1.0×</span>).
                       </p>
                     )}
                     {stationId === 'relativity' && (
                       <p style={{ margin: '6px 0 0' }}>
-                        Because the speed of light c is an invariant universal constant, light travels along a longer diagonal path inside a moving clock as viewed from Frame S.
-                        Consequently, the moving clock ticks slower by the Lorentz factor: <b>γ = 1 / √(1 - β²)</b>, yielding dilated time interval: <b>Δt = γ Δt₀</b>.
+                        Because the speed of light <i>c</i> is an invariant universal constant, light travels along a longer diagonal path inside a moving clock as viewed from Frame S.
+                        Consequently, the moving clock ticks slower by the Lorentz factor: <b className="math-expr">γ = <Frac num="1" den={<Sqrt>1 − β<sup>2</sup></Sqrt>} /></b>, yielding dilated time interval: <b className="math-inline">Δt = γ Δt<sub>0</sub></b>.
                       </p>
                     )}
                   </div>
@@ -4502,7 +5071,7 @@ export default function Room3Experience() {
                         </div>
                         <div>
                           <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Lorentz Factor: <b>γ = {(1 / Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2))).toFixed(4)}</b></span><br />
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Proper Time: <b>Δt₀ = 10.0 s</b></span>
+                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Proper Time: <b className="math-inline">Δt<sub>0</sub> = 10.0 s</b></span>
                         </div>
                       </div>
                     </div>
@@ -4597,8 +5166,8 @@ export default function Room3Experience() {
                       <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                           <span style={{ fontSize: '11px', color: '#e9dfc9' }}>THIN LENS GAUSSIAN VERIFICATION</span>
-                          <div style={{ fontSize: '18px', fontFamily: 'monospace', fontWeight: 700, color: '#34d399' }}>
-                            1/f = 1/{optics.objectDistance.toFixed(0)} + 1/{((optics.objectDistance * 20.0) / Math.max(0.1, optics.objectDistance - 20.0)).toFixed(1)} = 0.050 cm⁻¹ (f = 20.0 cm)
+                          <div className="math-expr" style={{ fontSize: '17px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>
+                            <Frac num="1" den="f" /> = <Frac num="1" den={optics.objectDistance.toFixed(0)} /> + <Frac num="1" den={((optics.objectDistance * 20.0) / Math.max(0.1, optics.objectDistance - 20.0)).toFixed(1)} /> = 0.050 cm<sup>−1</sup> (f = 20.0 cm)
                           </div>
                         </div>
                         <div>
@@ -4614,8 +5183,8 @@ export default function Room3Experience() {
                       <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                           <span style={{ fontSize: '11px', color: '#e9dfc9' }}>CONTRACTED LENGTH (FRAME S)</span>
-                          <div style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 700, color: '#fef08a' }}>
-                            L = {(20.0 * Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2))).toFixed(2)} m (Rest L₀ = 20.0 m)
+                          <div className="math-inline" style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 700, color: '#fef08a' }}>
+                            L = {(20.0 * Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2))).toFixed(2)} m (Rest L<sub>0</sub> = 20.0 m)
                           </div>
                         </div>
                         <div>
@@ -4730,7 +5299,7 @@ export default function Room3Experience() {
                             <div style={{ fontSize: '16px', fontWeight: 700, color: '#34d399' }}>{(circuitResult.current * 1000).toFixed(2)} mA</div>
                           </div>
                           <div style={{ padding: '8px 12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '6px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
-                            <span style={{ fontSize: '10px', color: '#e9dfc9' }}>THEORETICAL RESISTANCE Req</span>
+                            <span style={{ fontSize: '10px', color: '#e9dfc9' }}>THEORETICAL RESISTANCE <span className="math-inline">R<sub>eq</sub></span></span>
                             <div style={{ fontSize: '16px', fontWeight: 700, color: '#d4af37' }}>650.0 Ω</div>
                           </div>
                         </div>
@@ -4797,12 +5366,12 @@ export default function Room3Experience() {
                         <tr>
                           {stationId === 'circuits' && (
                             <>
-                              <th>#</th><th>Vs (V)</th><th>Measured V (V)</th><th>Current (mA)</th><th>Current (A)</th><th>R_exp (Ω)</th><th>Req Theor (Ω)</th><th>% Error</th><th>Action</th>
+                              <th>#</th><th>V<sub>s</sub> (V)</th><th>Measured V (V)</th><th>Current (mA)</th><th>Current (A)</th><th>R<sub>exp</sub> (Ω)</th><th>R<sub>eq</sub> Theor (Ω)</th><th>% Error</th><th>Action</th>
                             </>
                           )}
                           {stationId === 'optics' && (
                             <>
-                              <th>#</th><th>Object u (cm)</th><th>Image v (cm)</th><th>1/u (cm⁻¹)</th><th>1/v (cm⁻¹)</th><th>f_exp (cm)</th><th>f_nom (cm)</th><th>% Error</th><th>Action</th>
+                              <th>#</th><th>Object u (cm)</th><th>Image v (cm)</th><th>1/u (cm<sup>−1</sup>)</th><th>1/v (cm<sup>−1</sup>)</th><th>f<sub>exp</sub> (cm)</th><th>f<sub>nom</sub> (cm)</th><th>% Error</th><th>Action</th>
                             </>
                           )}
                           {stationId === 'relativity' && (
@@ -4933,17 +5502,17 @@ export default function Room3Experience() {
                         <tr>
                           {stationId === 'circuits' && (
                             <>
-                              <th>#</th><th>Vs (V)</th><th>Measured V (V)</th><th>Current (mA)</th><th>Current (A)</th><th>R_exp (Ω)</th><th>Power (W)</th><th>R_nom (Ω)</th><th>% Error</th>
+                              <th>#</th><th>V<sub>s</sub> (V)</th><th>Measured V (V)</th><th>Current (mA)</th><th>Current (A)</th><th>R<sub>exp</sub> (Ω)</th><th>Power (W)</th><th>R<sub>nom</sub> (Ω)</th><th>% Error</th>
                             </>
                           )}
                           {stationId === 'optics' && (
                             <>
-                              <th>#</th><th>Object u (cm)</th><th>Image v (cm)</th><th>1/u (cm⁻¹)</th><th>1/v (cm⁻¹)</th><th>f_exp (cm)</th><th>f_nom (cm)</th><th>% Error</th>
+                              <th>#</th><th>Object u (cm)</th><th>Image v (cm)</th><th>1/u (cm<sup>−1</sup>)</th><th>1/v (cm<sup>−1</sup>)</th><th>f<sub>exp</sub> (cm)</th><th>f<sub>nom</sub> (cm)</th><th>% Error</th>
                             </>
                           )}
                           {stationId === 'relativity' && (
                             <>
-                              <th>Run</th><th>β (v/c)</th><th>Velocity v (m/s)</th><th>Lorentz Factor γ</th><th>Proper Time Δτ (ns)</th><th>Dilated Time Δt (ns)</th><th>Proper Length L₀ (m)</th><th>Contracted Length L (m)</th>
+                              <th>Run</th><th>β (v/c)</th><th>Velocity v (m/s)</th><th>Lorentz Factor γ</th><th>Proper Time Δτ (ns)</th><th>Dilated Time Δt (ns)</th><th>Proper Length L<sub>0</sub> (m)</th><th>Contracted Length L (m)</th>
                             </>
                           )}
                         </tr>
@@ -5041,11 +5610,11 @@ export default function Room3Experience() {
                                   {status === 'incorrect' && <span style={{ color: '#f87171', fontSize: '10px', fontWeight: 700 }}>❌ Check Math</span>}
                                   {(!status || status === 'empty') && <span style={{ color: '#94a3b8', fontSize: '10px' }}>⏳ Enter Value</span>}
                                 </div>
-                                <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
-                                  R_{i + 1} = V_{i + 1} / I_{i + 1}
+                                <div className="math-expr" style={{ margin: '4px 0' }}>
+                                  R<sub>{i + 1}</sub> = <Frac num={<>V<sub>{i + 1}</sub></>} den={<>I<sub>{i + 1}</sub></>} />
                                 </div>
-                                <div style={{ color: '#94a3b8' }}>
-                                  = {v.toFixed(2)}V / {i_mA.toFixed(2)}mA
+                                <div className="math-expr" style={{ color: '#94a3b8' }}>
+                                  = <Frac num={`${v.toFixed(2)} V`} den={`${i_mA.toFixed(2)} mA`} />
                                 </div>
                                 <div style={{ fontWeight: 700, color: '#fef08a', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
                                   <span>=</span>
@@ -5073,11 +5642,11 @@ export default function Room3Experience() {
                                   {status === 'incorrect' && <span style={{ color: '#f87171', fontSize: '10px', fontWeight: 700 }}>❌ Check Math</span>}
                                   {(!status || status === 'empty') && <span style={{ color: '#94a3b8', fontSize: '10px' }}>⏳ Enter Value</span>}
                                 </div>
-                                <div style={{ margin: '4px 0', fontFamily: 'monospace' }}>
-                                  f_{i + 1} = (u·v)/(u+v)
+                                <div className="math-expr" style={{ margin: '4px 0' }}>
+                                  f<sub>{i + 1}</sub> = <Frac num="u · v" den="u + v" />
                                 </div>
-                                <div style={{ color: '#94a3b8' }}>
-                                  = ({u}·{v.toFixed(1)})/({u}+{v.toFixed(1)})
+                                <div className="math-expr" style={{ color: '#94a3b8' }}>
+                                  = <Frac num={`${u} · ${v.toFixed(1)}`} den={`${u} + ${v.toFixed(1)}`} />
                                 </div>
                                 <div style={{ fontWeight: 700, color: '#34d399', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
                                   <span>=</span>
@@ -5108,8 +5677,8 @@ export default function Room3Experience() {
                                   {status === 'incorrect' && <span style={{ color: '#f87171', fontSize: '10px', fontWeight: 700 }}>❌ Check Math</span>}
                                   {(!status || status === 'empty') && <span style={{ color: '#94a3b8', fontSize: '10px' }}>⏳ Enter Value</span>}
                                 </div>
-                                <div style={{ margin: '4px 0', fontFamily: 'monospace', color: '#cbd5e1' }}>
-                                  γ = 1/√(1 − {beta.toFixed(2)}²)
+                                <div className="math-expr" style={{ margin: '4px 0', color: '#cbd5e1' }}>
+                                  γ = <Frac num="1" den={<Sqrt>1 − {beta.toFixed(2)}<sup>2</sup></Sqrt>} />
                                 </div>
                                 <div style={{ fontWeight: 700, color: '#38bdf8', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}>
                                   <span>γ =</span>
@@ -5137,30 +5706,30 @@ export default function Room3Experience() {
                           <h5 style={{ margin: '0 0 10px', color: '#f8fafc' }}>Statistical Quantification & Error Metrics:</h5>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
                             <div>
-                              <b>1. Average Experimental Resistance (Rmean):</b>
-                              <div style={{ fontFamily: 'monospace', color: '#fef08a', margin: '4px 0' }}>
-                                Rmean = (R1 + R2 + R3 + R4 + R5) / 5 = {circuitMetrics.mean.toFixed(2)} Ω
+                              <b>1. Average Experimental Resistance (<span className="math-inline">R<sub>mean</sub></span>):</b>
+                              <div className="math-expr" style={{ color: '#fef08a', margin: '4px 0' }}>
+                                R<sub>mean</sub> = <Frac num={<>R<sub>1</sub> + R<sub>2</sub> + R<sub>3</sub> + R<sub>4</sub> + R<sub>5</sub></>} den="5" /> = {circuitMetrics.mean.toFixed(2)} Ω
                               </div>
-                              <small style={{ color: '#94a3b8' }}>
-                                Substituted: ({circuitMetrics.resistances.map((r) => r.toFixed(1)).join(' + ')}) / 5
+                              <small className="math-inline" style={{ color: '#94a3b8' }}>
+                                Substituted: <Frac num={circuitMetrics.resistances.map((r) => r.toFixed(1)).join(' + ')} den="5" />
                               </small>
                             </div>
                             <div>
                               <b>2. Sample Standard Deviation (s):</b>
-                              <div style={{ fontFamily: 'monospace', color: '#fef08a', margin: '4px 0' }}>
-                                s = √[ Σ(Ri - Rmean)² / (5 - 1) ] = {circuitMetrics.stdDev !== null ? circuitMetrics.stdDev.toFixed(3) : '—'} Ω
+                              <div className="math-expr" style={{ color: '#fef08a', margin: '4px 0' }}>
+                                s = <Sqrt><Frac num={<>Σ(R<sub>i</sub> − R<sub>mean</sub>)<sup>2</sup></>} den="5 − 1" /></Sqrt> = {circuitMetrics.stdDev !== null ? circuitMetrics.stdDev.toFixed(3) : '—'} Ω
                               </div>
-                              <small style={{ color: '#94a3b8' }}>
-                                Standard Error of the Mean: SEM = s / √5 = {circuitMetrics.sem !== null ? circuitMetrics.sem.toFixed(3) : '—'} Ω
+                              <small className="math-inline" style={{ color: '#94a3b8' }}>
+                                Standard Error of the Mean: SEM = <Frac num="s" den={<Sqrt>5</Sqrt>} /> = {circuitMetrics.sem !== null ? circuitMetrics.sem.toFixed(3) : '—'} Ω
                               </small>
                             </div>
                             <div>
                               <b>3. Percentage Error vs. Nominal Resistor Specification (330.0 Ω):</b>
-                              <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
-                                Percentage Error = |Rmean - Rnom| / Rnom × 100% = {circuitMetrics.percentError !== null ? circuitMetrics.percentError.toFixed(2) : '—'}%
+                              <div className="math-expr" style={{ color: '#10b981', margin: '4px 0' }}>
+                                Percentage Error = <Frac num={<>|R<sub>mean</sub> − R<sub>nom</sub>|</>} den={<>R<sub>nom</sub></>} /> × 100% = {circuitMetrics.percentError !== null ? circuitMetrics.percentError.toFixed(2) : '—'}%
                               </div>
-                              <small style={{ color: '#94a3b8' }}>
-                                |{circuitMetrics.mean.toFixed(2)} - 330.0| / 330.0 × 100% (Within strict ±2% academic threshold)
+                              <small className="math-inline" style={{ color: '#94a3b8' }}>
+                                <Frac num={`|${circuitMetrics.mean.toFixed(2)} − 330.0|`} den="330.0" /> × 100% (Within strict ±2% academic threshold)
                               </small>
                             </div>
                             <div>
@@ -5168,8 +5737,8 @@ export default function Room3Experience() {
                               <div style={{ fontFamily: 'monospace', color: '#a855f7', margin: '4px 0' }}>
                                 R = 330.0 Ω · 1 Watt Rating (Carbon Film Resistor)
                               </div>
-                              <small style={{ color: '#94a3b8' }}>
-                                Max permissible continuous current: Imax = √(P/R) = √(1.0/330) ≈ 55.0 mA
+                              <small className="math-inline" style={{ color: '#94a3b8' }}>
+                                Max permissible continuous current: I<sub>max</sub> = <Sqrt><Frac num="P" den="R" /></Sqrt> = <Sqrt><Frac num="1.0" den="330" /></Sqrt> ≈ 55.0 mA
                               </small>
                             </div>
                           </div>
@@ -5181,15 +5750,15 @@ export default function Room3Experience() {
                           <h5 style={{ margin: '0 0 10px', color: '#f8fafc' }}>Optics Statistical Quantification:</h5>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
                             <div>
-                              <b>Average Experimental Focal Length (fmean):</b>
-                              <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
-                                fmean = Σ fi / 5 = {opticsMetrics.mean.toFixed(2)} cm
+                              <b>Average Experimental Focal Length (<span className="math-inline">f<sub>mean</sub></span>):</b>
+                              <div className="math-expr" style={{ color: '#10b981', margin: '4px 0' }}>
+                                f<sub>mean</sub> = <Frac num={<>Σ f<sub>i</sub></>} den="5" /> = {opticsMetrics.mean.toFixed(2)} cm
                               </div>
                             </div>
                             <div>
                               <b>Percentage Error vs. Nominal Focal Length (20.0 cm):</b>
-                              <div style={{ fontFamily: 'monospace', color: '#10b981', margin: '4px 0' }}>
-                                Percentage Error = |fmean - 20.0| / 20.0 × 100% = {opticsMetrics.percentError !== null ? opticsMetrics.percentError.toFixed(2) : '—'}%
+                              <div className="math-expr" style={{ color: '#10b981', margin: '4px 0' }}>
+                                Percentage Error = <Frac num={<>|f<sub>mean</sub> − 20.0|</>} den="20.0" /> × 100% = {opticsMetrics.percentError !== null ? opticsMetrics.percentError.toFixed(2) : '—'}%
                               </div>
                             </div>
                           </div>
@@ -5250,11 +5819,13 @@ export default function Room3Experience() {
                       {/* 3. Least-Squares Linear Regression Plot & Substituted Formula */}
                       <div className="section-divider" style={{ margin: '16px 0 10px', borderBottom: '1px solid rgba(212, 175, 55, 0.4)', paddingBottom: '6px' }}>
                         <h5 style={{ margin: 0, color: '#fef08a', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                          {stationId === 'circuits'
-                            ? 'Section C: Least-Squares Linear Regression Analysis (Slope = R_exp ≈ 330 Ω)'
-                            : stationId === 'optics'
-                            ? 'Section C: Thin Lens Linear Regression Analysis (1/v vs. 1/u, Intercept = 1/f ≈ 0.050 cm⁻¹)'
-                            : 'Section C: Relativistic Functional Analysis (Three Relativistic Curves: γ vs. β, Δt/Δτ vs. β, L/L₀ vs. β)'}
+                          {stationId === 'circuits' ? (
+                            <>Section C: Least-Squares Linear Regression Analysis (<span className="math-inline" style={{ textTransform: 'none' }}>Slope = R<sub>exp</sub> ≈ 330 Ω</span>)</>
+                          ) : stationId === 'optics' ? (
+                            <>Section C: Thin Lens Linear Regression Analysis (<span className="math-inline" style={{ textTransform: 'none' }}>1/v vs. 1/u, Intercept = 1/f ≈ 0.050 cm<sup>−1</sup></span>)</>
+                          ) : (
+                            <>Section C: Relativistic Functional Analysis (<span className="math-inline" style={{ textTransform: 'none' }}>γ vs. β, Δt/Δτ vs. β, L/L<sub>0</sub> vs. β</span>)</>
+                          )}
                         </h5>
                       </div>
 
@@ -5267,14 +5838,21 @@ export default function Room3Experience() {
                             <div>Σ I = {regression.sumX.toFixed(5)} A</div>
                             <div>Σ V = {regression.sumY.toFixed(2)} V</div>
                             <div>Σ (I·V) = {regression.sumXY.toFixed(4)} W</div>
-                            <div>Σ (I²) = {regression.sumX2.toFixed(6)} A²</div>
+                            <div>Σ (I<sup>2</sup>) = {regression.sumX2.toFixed(6)} A<sup>2</sup></div>
                           </div>
-                          <div style={{ fontFamily: 'monospace', color: '#fef08a', fontSize: '13px' }}>
-                            Slope m = [ N·Σ(I·V) - (ΣI)(ΣV) ] / [ N·Σ(I²) - (ΣI)² ]<br />
-                            m = [ 5·({regression.sumXY.toFixed(4)}) - ({regression.sumX.toFixed(4)})·({regression.sumY.toFixed(2)}) ] / [ 5·({regression.sumX2.toFixed(6)}) - ({regression.sumX.toFixed(4)})² ] = <b>{regression.slope.toFixed(2)} Ω</b>
+                          <div className="math-expr" style={{ color: '#fef08a', fontSize: '13px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px', margin: '6px 0' }}>
+                            <div>
+                              Slope m = <Frac num="N · Σ(I·V) − (ΣI)(ΣV)" den={<>N · Σ(I<sup>2</sup>) − (ΣI)<sup>2</sup></>} />
+                            </div>
+                            <div>
+                              m = <Frac
+                                num={`5 · (${regression.sumXY.toFixed(4)}) − (${regression.sumX.toFixed(4)}) · (${regression.sumY.toFixed(2)})`}
+                                den={<>5 · ({regression.sumX2.toFixed(6)}) − ({regression.sumX.toFixed(4)})<sup>2</sup></>}
+                              /> = <b>{regression.slope.toFixed(2)} Ω</b>
+                            </div>
                           </div>
                           <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#94a3b8' }}>
-                            Physical Interpretation: The slope <b>m = {regression.slope.toFixed(2)} Ω</b> directly represents the experimental resistance R_exp. With coefficient of determination <b>R² = {regression.rSquared.toFixed(5)}</b>, the empirical dataset conclusively confirms Ohm&apos;s Law (V = I·R) with linear precision.
+                            Physical Interpretation: The slope <b className="math-inline">m = {regression.slope.toFixed(2)} Ω</b> directly represents the experimental resistance <span className="math-inline">R<sub>exp</sub></span>. With coefficient of determination <b className="math-inline">R<sup>2</sup> = {regression.rSquared.toFixed(5)}</b>, the empirical dataset conclusively confirms Ohm&apos;s Law (<span className="math-inline">V = I·R</span>) with linear precision.
                           </p>
                         </div>
                       )}
@@ -5393,34 +5971,34 @@ export default function Room3Experience() {
                           </thead>
                           <tbody>
                             <tr>
-                              <td><b>Equivalent Resistance (Req)</b></td>
-                              <td style={{ color: '#fef08a', fontWeight: 700 }}>650.0 Ω (R1 + R2 + R3)</td>
-                              <td style={{ color: '#38bdf8', fontWeight: 700 }}>56.90 Ω (1 / Σ(1/Rk))</td>
+                              <td><b>Equivalent Resistance (<span className="math-inline">R<sub>eq</sub></span>)</b></td>
+                              <td style={{ color: '#fef08a', fontWeight: 700 }}><span className="math-inline">650.0 Ω (R<sub>1</sub> + R<sub>2</sub> + R<sub>3</sub>)</span></td>
+                              <td style={{ color: '#38bdf8', fontWeight: 700 }}><span className="math-inline">56.90 Ω (<Frac num="1" den={<>Σ(1/R<sub>k</sub>)</>} />)</span></td>
                               <td>Parallel reduces resistance 11.4× below the smallest resistor</td>
                             </tr>
                             <tr>
-                              <td><b>Total Circuit Current (Itot at 6V)</b></td>
+                              <td><b>Total Circuit Current (<span className="math-inline">I<sub>tot</sub></span> at 6 V)</b></td>
                               <td style={{ color: '#d4af37' }}>9.23 mA (0.00923 A)</td>
                               <td style={{ color: '#34d399' }}>105.45 mA (0.10545 A)</td>
-                              <td>Ohm&apos;s Law: Itot = Vs / Req (Parallel draws 11.4× more current)</td>
+                              <td>Ohm&apos;s Law: <span className="math-expr">I<sub>tot</sub> = <Frac num={<>V<sub>s</sub></>} den={<>R<sub>eq</sub></>} /></span> (Parallel draws 11.4× more current)</td>
                             </tr>
                             <tr>
                               <td><b>Current Behavior</b></td>
-                              <td>Identical everywhere (I1 = I2 = I3 = 9.23 mA)</td>
-                              <td>Branch division: I1 = 60.0 mA, I2 = 27.3 mA, I3 = 18.2 mA</td>
-                              <td>Kirchhoff&apos;s Current Law: Itot = I1 + I2 + I3</td>
+                              <td>Identical everywhere (<span className="math-inline">I<sub>1</sub> = I<sub>2</sub> = I<sub>3</sub> = 9.23 mA</span>)</td>
+                              <td>Branch division: <span className="math-inline">I<sub>1</sub> = 60.0 mA, I<sub>2</sub> = 27.3 mA, I<sub>3</sub> = 18.2 mA</span></td>
+                              <td>Kirchhoff&apos;s Current Law: <span className="math-inline">I<sub>tot</sub> = I<sub>1</sub> + I<sub>2</sub> + I<sub>3</sub></span></td>
                             </tr>
                             <tr>
                               <td><b>Voltage Distribution</b></td>
-                              <td>Divides: V1 = 0.92V, V2 = 2.03V, V3 = 3.05V</td>
-                              <td>Identical across all: V1 = V2 = V3 = 6.00 V</td>
-                              <td>Kirchhoff&apos;s Voltage Law: Vs = Σ Vk (Series) vs Equal (Parallel)</td>
+                              <td>Divides: <span className="math-inline">V<sub>1</sub> = 0.92 V, V<sub>2</sub> = 2.03 V, V<sub>3</sub> = 3.05 V</span></td>
+                              <td>Identical across all: <span className="math-inline">V<sub>1</sub> = V<sub>2</sub> = V<sub>3</sub> = 6.00 V</span></td>
+                              <td>Kirchhoff&apos;s Voltage Law: <span className="math-inline">V<sub>s</sub> = Σ V<sub>k</sub></span> (Series) vs Equal (Parallel)</td>
                             </tr>
                             <tr>
                               <td><b>Total Power Dissipated (P = VI)</b></td>
                               <td style={{ color: '#f59e0b' }}>0.0554 W (55.4 mW)</td>
                               <td style={{ color: '#ef4444' }}>0.6327 W (632.7 mW)</td>
-                              <td>P = V² / Req (Parallel dissipates 11.4× more thermal energy)</td>
+                              <td><span className="math-expr">P = <Frac num={<>V<sup>2</sup></>} den={<>R<sub>eq</sub></>} /></span> (Parallel dissipates 11.4× more thermal energy)</td>
                             </tr>
                             <tr>
                               <td><b>Impact of Open-Circuit Failure</b></td>
@@ -5440,20 +6018,21 @@ export default function Room3Experience() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '11px' }}>
                           <div>
                             <b style={{ color: '#fef08a' }}>Q1. Why does equivalent resistance increase when adding resistors in series, but decrease when adding resistors in parallel?</b>
-                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                              In series, each resistor adds obstacle length to the single charge flow path (Req = R1 + R2 + R3). In parallel, each resistor adds an additional alternative pathway (cross-sectional area) for charge to bypass, strictly decreasing total resistance: 1/Req = 1/R1 + 1/R2 + 1/R3 &lt; min(Rk).
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.55 }}>
+                              In series, each resistor adds obstacle length to the single charge flow path (<span className="math-inline">R<sub>eq</sub> = R<sub>1</sub> + R<sub>2</sub> + R<sub>3</sub></span>). In parallel, each resistor adds an additional alternative pathway (cross-sectional area) for charge to bypass, strictly decreasing total resistance:{' '}
+                              <span className="math-expr"><Frac num="1" den={<>R<sub>eq</sub></>} /> = <Frac num="1" den={<>R<sub>1</sub></>} /> + <Frac num="1" den={<>R<sub>2</sub></>} /> + <Frac num="1" den={<>R<sub>3</sub></>} /></span> &lt; min(<span className="math-inline">R<sub>k</sub></span>).
                             </p>
                           </div>
                           <div>
                             <b style={{ color: '#fef08a' }}>Q2. Why does the largest resistor drop the most voltage in series, while the smallest resistor draws the most current in parallel?</b>
-                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                              In series, current I is identical through all components; by V = I·R, voltage drop is directly proportional to resistance (R3 = 330Ω drops 3.05V vs R1 = 100Ω dropping 0.92V). In parallel, voltage V is identical across all branches; by I = V/R, current is inversely proportional to resistance, so the 100Ω branch carries 60.0 mA while the 330Ω branch carries only 18.2 mA.
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.55 }}>
+                              In series, current <i>I</i> is identical through all components; by <span className="math-inline">V = I·R</span>, voltage drop is directly proportional to resistance (<span className="math-inline">R<sub>3</sub> = 330 Ω</span> drops 3.05 V vs <span className="math-inline">R<sub>1</sub> = 100 Ω</span> dropping 0.92 V). In parallel, voltage <i>V</i> is identical across all branches; by <span className="math-expr">I = <Frac num="V" den="R" /></span>, current is inversely proportional to resistance, so the 100 Ω branch carries 60.0 mA while the 330 Ω branch carries only 18.2 mA.
                             </p>
                           </div>
                           <div>
                             <b style={{ color: '#fef08a' }}>Q3. How does total power dissipation compare between series and parallel connections across the same 6 V supply?</b>
-                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                              Total power is P = V² / Req. Because Req is 11.4× smaller in parallel (56.9 Ω vs 650 Ω), the parallel arrangement consumes and dissipates 11.4× more power (0.633 W vs 0.055 W) from the exact same 6 V source.
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.55 }}>
+                              Total power is <span className="math-expr">P = <Frac num={<>V<sup>2</sup></>} den={<>R<sub>eq</sub></>} /></span>. Because <span className="math-inline">R<sub>eq</sub></span> is 11.4× smaller in parallel (56.9 Ω vs 650 Ω), the parallel arrangement consumes and dissipates 11.4× more power (0.633 W vs 0.055 W) from the exact same 6 V source.
                             </p>
                           </div>
                           <div>
@@ -5463,9 +6042,9 @@ export default function Room3Experience() {
                             </p>
                           </div>
                           <div>
-                            <b style={{ color: '#fef08a' }}>Q5. Explain how the slope of the voltage vs. current graph directly proves Ohm&apos;s Law (R = ΔV / ΔI).</b>
-                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                              Ohm&apos;s Law defines linear proportionality between electric potential and current: V = R·I. When plotted with Current on the x-axis and Voltage on the y-axis, the gradient ΔV / ΔI is constant and directly equals the resistance (m ≈ 330.0 Ω with R² ≥ 0.999).
+                            <b style={{ color: '#fef08a' }}>Q5. Explain how the slope of the voltage vs. current graph directly proves Ohm&apos;s Law (<span className="math-expr">R = <Frac num="ΔV" den="ΔI" /></span>).</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.55 }}>
+                              Ohm&apos;s Law defines linear proportionality between electric potential and current: <span className="math-inline">V = R·I</span>. When plotted with Current on the x-axis and Voltage on the y-axis, the gradient <span className="math-expr"><Frac num="ΔV" den="ΔI" /></span> is constant and directly equals the resistance (<span className="math-inline">m ≈ 330.0 Ω</span> with <span className="math-inline">R<sup>2</sup> ≥ 0.999</span>).
                             </p>
                           </div>
                         </div>
@@ -5489,8 +6068,11 @@ export default function Room3Experience() {
                           </div>
                           <div>
                             <b style={{ color: '#fef08a' }}>Q2. Light-Clock Trajectory and Time Dilation: Why does the diagonal zigzag path traced by the photon in the lab frame necessitate time dilation (Δt = γ Δτ)?</b>
-                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                              In the clock&apos;s rest frame S&apos;, the photon travels vertically 2D across the mirror gap. In the laboratory frame S, because the clock is translating horizontally at speed v, the photon must travel along two hypotenuses: 2L = 2√(D² + (vΔt/2)²). Since the speed of light c is invariant, traveling a longer distance at the exact same constant speed c requires a longer elapsed time: cΔt = 2√(D² + (vΔt/2)²), which rearranges algebraically to Δt = (2D/c) / √(1 - v²/c²) = γ Δτ.
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.65 }}>
+                              In the clock&apos;s rest frame S&apos;, the photon travels vertically 2D across the mirror gap. In the laboratory frame S, because the clock is translating horizontally at speed v, the photon must travel along two hypotenuses:{' '}
+                              <span className="math-expr">2L = 2 <Sqrt>D<sup>2</sup> + (<Frac num="v·Δt" den="2" />)<sup>2</sup></Sqrt></span>. Since the speed of light c is invariant, traveling a longer distance at the exact same constant speed c requires a longer elapsed time:{' '}
+                              <span className="math-expr">c Δt = 2 <Sqrt>D<sup>2</sup> + (<Frac num="v·Δt" den="2" />)<sup>2</sup></Sqrt></span>, which rearranges algebraically to{' '}
+                              <span className="math-expr">Δt = <Frac num={<Frac num="2D" den="c" />} den={<Sqrt>1 − <Frac num={<>v<sup>2</sup></>} den={<>c<sup>2</sup></>} /></Sqrt>} /> = γ Δτ</span>.
                             </p>
                           </div>
                           <div>
@@ -5501,26 +6083,26 @@ export default function Room3Experience() {
                           </div>
                           <div>
                             <b style={{ color: '#fef08a' }}>Q4. Longitudinal Length Contraction: Why does length contraction occur exclusively along the direction of relative motion, leaving transverse dimensions invariant?</b>
-                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                              The Lorentz transformation mixes space and time only along the parallel axis of relative motion (x&apos; = γ(x - vt), t&apos; = γ(t - vx/c²)), while perpendicular spatial dimensions remain strictly invariant (y&apos; = y, z&apos; = z). If transverse lengths changed, a moving circular ring passing through a stationary cylinder would either fit or collide depending on which frame is chosen, creating a physical paradox.
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.55 }}>
+                              The Lorentz transformation mixes space and time only along the parallel axis of relative motion (<span className="math-inline">x&apos; = γ(x − vt), t&apos; = γ(t − <Frac num="vx" den={<>c<sup>2</sup></>} />)</span>), while perpendicular spatial dimensions remain strictly invariant (y&apos; = y, z&apos; = z). If transverse lengths changed, a moving circular ring passing through a stationary cylinder would either fit or collide depending on which frame is chosen, creating a physical paradox.
                             </p>
                           </div>
                           <div>
                             <b style={{ color: '#fef08a' }}>Q5. Relativity of Simultaneity: Why are two events that occur simultaneously at different spatial locations in Frame S not simultaneous in Frame S&apos;?</b>
-                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                              From the Lorentz transformation Δt&apos; = γ(Δt - vΔx/c²), if two events are simultaneous in Frame S (Δt = 0) but separated by spatial distance Δx ≠ 0, their temporal interval in Frame S&apos; evaluates to Δt&apos; = -γ v Δx / c² ≠ 0. Simultaneity is relative and frame-dependent for spatially separated events; only events occurring at the exact same point in spacetime maintain invariant simultaneity.
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.55 }}>
+                              From the Lorentz transformation <span className="math-inline">Δt&apos; = γ(Δt − <Frac num="v·Δx" den={<>c<sup>2</sup></>} />)</span>, if two events are simultaneous in Frame S (Δt = 0) but separated by spatial distance Δx ≠ 0, their temporal interval in Frame S&apos; evaluates to <span className="math-inline">Δt&apos; = −<Frac num="γ v Δx" den={<>c<sup>2</sup></>} /> ≠ 0</span>. Simultaneity is relative and frame-dependent for spatially separated events; only events occurring at the exact same point in spacetime maintain invariant simultaneity.
                             </p>
                           </div>
                           <div>
                             <b style={{ color: '#fef08a' }}>Q6. Limiting Behavior as β → 1: Why is it physically impossible for any massive particle to reach or exceed the speed of light (c)?</b>
-                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                              As relative velocity ratio β = v/c approaches 1.0, the term √(1 - β²) approaches zero, causing the Lorentz factor γ to diverge toward infinity (γ → ∞). Consequently, both relativistic momentum p = γ m₀ v and relativistic kinetic energy K = (γ - 1) m₀ c² diverge asymptotically to infinity, requiring infinite work and energy to accelerate a massive body to light speed c.
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.55 }}>
+                              As relative velocity ratio <span className="math-expr">β = <Frac num="v" den="c" /></span> approaches 1.0, the term <Sqrt>1 − β<sup>2</sup></Sqrt> approaches zero, causing the Lorentz factor γ to diverge toward infinity (γ → ∞). Consequently, both relativistic momentum <span className="math-inline">p = γ m<sub>0</sub> v</span> and relativistic kinetic energy <span className="math-inline">K = (γ − 1) m<sub>0</sub> c<sup>2</sup></span> diverge asymptotically to infinity, requiring infinite work and energy to accelerate a massive body to light speed c.
                             </p>
                           </div>
                           <div>
-                            <b style={{ color: '#fef08a' }}>Q7. Modern Mass-Energy Formulation: Explain why E = γ m₀ c² and K = (γ - 1) m₀ c² describe energy growth without invoking the outdated concept of &quot;relativistic mass&quot;.</b>
-                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
-                              Modern relativistic physics defines mass m₀ as an invariant Lorentz scalar (the invariant Minkowski norm of the four-momentum vector p^μ p_μ = m₀² c²). Calling γ m₀ &quot;relativistic mass&quot; causes conceptual confusion with gravitational mass and longitudinal/transverse inertia. It is much clearer and physically consistent to recognize that mass is invariant, while total relativistic energy E = γ m₀ c² and kinetic energy K = (γ - 1) m₀ c² grow nonlinearly with velocity.
+                            <b style={{ color: '#fef08a' }}>Q7. Modern Mass-Energy Formulation: Explain why <span className="math-inline">E = γ m<sub>0</sub> c<sup>2</sup></span> and <span className="math-inline">K = (γ − 1) m<sub>0</sub> c<sup>2</sup></span> describe energy growth without invoking the outdated concept of &quot;relativistic mass&quot;.</b>
+                            <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.55 }}>
+                              Modern relativistic physics defines mass <span className="math-inline">m<sub>0</sub></span> as an invariant Lorentz scalar (the invariant Minkowski norm of the four-momentum vector <span className="math-inline">p<sup>μ</sup> p<sub>μ</sub> = m<sub>0</sub><sup>2</sup> c<sup>2</sup></span>). Calling <span className="math-inline">γ m<sub>0</sub></span> &quot;relativistic mass&quot; causes conceptual confusion with gravitational mass and longitudinal/transverse inertia. It is much clearer and physically consistent to recognize that mass is invariant, while total relativistic energy <span className="math-inline">E = γ m<sub>0</sub> c<sup>2</sup></span> and kinetic energy <span className="math-inline">K = (γ − 1) m<sub>0</sub> c<sup>2</sup></span> grow nonlinearly with velocity.
                             </p>
                           </div>
                         </div>
@@ -5590,7 +6172,7 @@ export default function Room3Experience() {
                       const userChoice = stationProgress.guideAnswers?.[qIdx] ?? -1;
                       return (
                         <div key={q.id} className="guide-question-block" style={{ marginTop: '10px' }}>
-                          <p className="q-title"><b>Q{qIdx + 1}:</b> {q.question}</p>
+                          <p className="q-title"><b>Q{qIdx + 1}:</b> <MathText text={q.question} /></p>
                           <div className="q-options-list">
                             {q.options.map((opt, optIdx) => (
                               <button
@@ -5599,12 +6181,12 @@ export default function Room3Experience() {
                                 className={`q-opt-btn ${userChoice === optIdx ? (optIdx === q.correctIndex ? 'correct' : 'incorrect') : ''}`}
                                 onClick={() => handleGuideAnswer(qIdx, optIdx)}
                               >
-                                {opt}
+                                <MathText text={opt} />
                               </button>
                             ))}
                           </div>
                           {userChoice === q.correctIndex && (
-                            <div className="q-explanation">✓ {q.explanation}</div>
+                            <div className="q-explanation">✓ <MathText text={q.explanation} /></div>
                           )}
                         </div>
                       );

@@ -2,8 +2,9 @@
 
 import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
-import { useEffect, useRef, useState } from 'react';
-import { CharacterController, type CharacterType } from './characterController';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { CHARACTER_META, CharacterController, type CharacterType } from './characterController';
+import { getEffectivePixelRatio, isMobileTouchDevice, subscribeMobileTouch } from './graphicsSettings';
 
 type DoorId = 'room-1' | 'room-2' | 'room-3' | 'uphsd-astro';
 type DoorInfo = {
@@ -77,6 +78,7 @@ export default function CampusHallway() {
   const [activeCharacter, setActiveCharacter] = useState<CharacterType>('female');
   const [joystickKnob, setJoystickKnob] = useState({ x: 0, y: 0 });
   const [isMobileSprint, setIsMobileSprint] = useState(false);
+  const isTouchDevice = useSyncExternalStore(subscribeMobileTouch, isMobileTouchDevice, () => false);
   const [message, setMessage] = useState('Walk toward a door and press E to enter · V view · C character.');
 
   useEffect(() => {
@@ -87,10 +89,16 @@ export default function CampusHallway() {
     scene.background = new THREE.Color(0x050a14);
     scene.fog = new THREE.Fog(0x050a14, 14, 34);
     const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 70);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.7));
+    const mobileTouch = isMobileTouchDevice();
+    const renderer = new THREE.WebGLRenderer({
+      antialias: !mobileTouch || (window.devicePixelRatio || 1) < 2,
+      powerPreference: 'high-performance',
+    });
+    renderer.setPixelRatio(getEffectivePixelRatio(1.7));
     renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = mobileTouch ? THREE.BasicShadowMap : THREE.PCFShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.domElement.style.touchAction = 'none';
     container.appendChild(renderer.domElement);
 
     const textureLoader = new THREE.TextureLoader();
@@ -224,6 +232,9 @@ export default function CampusHallway() {
     const keyLight = new THREE.DirectionalLight(0xffffff, 2.3);
     keyLight.position.set(4, 7, 7);
     keyLight.castShadow = true;
+    if (mobileTouch) {
+      keyLight.shadow.mapSize.set(512, 512);
+    }
     scene.add(keyLight);
     [-8, -2, 4, 10].forEach((z, index) => {
       const fixtureHousing = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.12, 0.7), new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.85, roughness: 0.25 }));
@@ -249,7 +260,13 @@ export default function CampusHallway() {
     const doorGlows: DoorGlowItem[] = [];
 
     // High-resolution textures for the 3D Entrance Door Asset
-    const fbxLoader = new FBXLoader();
+    const doorLoadingManager = new THREE.LoadingManager();
+    doorLoadingManager.setURLModifier((url) =>
+      url.includes('/assets/door/export/Entrance_Door_') && url.toLowerCase().endsWith('.jpg')
+        ? url.replace('/assets/door/export/', '/assets/door/maps/')
+        : url
+    );
+    const fbxLoader = new FBXLoader(doorLoadingManager);
     const mahoganyTex = textureLoader.load('/assets/door/maps/Entrance_Door_the mahogany.jpg');
     mahoganyTex.colorSpace = THREE.SRGBColorSpace;
     mahoganyTex.wrapS = THREE.RepeatWrapping;
@@ -926,6 +943,7 @@ export default function CampusHallway() {
       }
     };
     const requestWalkMode = () => {
+      if (isMobileTouchDevice()) return;
       const lockRequest = renderer.domElement.requestPointerLock();
       // Chromium returns a rejected promise when pointer lock is unavailable
       // (for example in an embedded preview). Keep the hallway playable with
@@ -1096,7 +1114,7 @@ export default function CampusHallway() {
       if (event.code === 'KeyC') {
         const next = character.switchCharacter();
         setActiveCharacter(next);
-        setMessage(next === 'female' ? 'Switched character to Female (Carla). Press C to switch.' : 'Switched character to Male (Eric). Press C to switch.');
+        setMessage(`Switched character to ${CHARACTER_META[next].label}. Press C to switch.`);
       }
     };
     const onKeyUp = (event: KeyboardEvent) => {
@@ -1175,13 +1193,13 @@ export default function CampusHallway() {
       switchCharacter: () => {
         const next = character.switchCharacter();
         setActiveCharacter(next);
-        setMessage(next === 'female' ? 'Active character: Female (Carla). Press C to switch.' : 'Active character: Male (Eric). Press C to switch.');
+        setMessage(`Active character: ${CHARACTER_META[next].label}. Press C to switch.`);
         return next;
       },
       setCharacter: (type: CharacterType) => {
         character.setCharacter(type);
         setActiveCharacter(type);
-        setMessage(type === 'female' ? 'Active character: Female (Carla). Press C to switch.' : 'Active character: Male (Eric). Press C to switch.');
+        setMessage(`Active character: ${CHARACTER_META[type].label}. Press C to switch.`);
       },
     };
     return () => {
@@ -1292,11 +1310,18 @@ export default function CampusHallway() {
           >
             👨 Male (Eric)
           </button>
+          <button
+            type="button"
+            className={`character-pill-btn ${activeCharacter === 'madara' ? 'selected' : ''}`}
+            onClick={() => controls.current?.setCharacter?.('madara')}
+          >
+            👁️ Madara Uchiha
+          </button>
         </div>
         <div className="hallway-status"><i />2 ACTIVE LABS · UPHSD ASTRONOMICAL SOCIETY (COMING SOON)</div>
       </header>
       <section className="hallway-welcome"><span>VIRTUAL CAMPUS · LEVEL 02</span><h1>Laboratory hallway</h1><p>{target ? `Room ${target.number}: ${target.title}` : message}</p></section>
-      {!locked && (
+      {!locked && !isTouchDevice && (
         <button className="hallway-enter" onClick={() => controls.current?.lock()}>
           <b>ENTER WALK MODE</b>
           <span>Click to explore hallway · WASD walk · Mouse look</span>
@@ -1325,6 +1350,15 @@ export default function CampusHallway() {
               <span className="dock-avatar">👨</span>
               <span className="dock-label"><b>Male</b><small>Eric (3D Rigged)</small></span>
               {activeCharacter === 'male' && <span className="dock-badge">ACTIVE</span>}
+            </button>
+            <button
+              type="button"
+              className={`dock-character-btn ${activeCharacter === 'madara' ? 'active' : ''}`}
+              onClick={() => controls.current?.setCharacter?.('madara')}
+            >
+              <span className="dock-avatar">👁️</span>
+              <span className="dock-label"><b>Madara</b><small>Uchiha (Tsukuyomi)</small></span>
+              {activeCharacter === 'madara' && <span className="dock-badge">ACTIVE</span>}
             </button>
           </div>
         </div>
@@ -1411,7 +1445,7 @@ export default function CampusHallway() {
               onClick={() => controls.current?.switchCharacter?.()}
               title="Switch Character (C)"
             >
-              <span>{activeCharacter === 'female' ? '👩 CARLA' : '👨 ERIC'}</span>
+              <span>{CHARACTER_META[activeCharacter].shortBadge}</span>
             </button>
           </div>
         </div>

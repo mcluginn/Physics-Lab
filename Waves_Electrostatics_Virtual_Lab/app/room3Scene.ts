@@ -8,6 +8,8 @@ import {
   type Room3StationId,
   type OscilloscopeSettings,
   type OscilloscopeChannelSource,
+  INITIAL_CIRCUITS,
+  INITIAL_OPTICS,
   INITIAL_RELATIVITY,
   INITIAL_OSCILLOSCOPE,
   CH1_VOLTS_DIV_OPTIONS,
@@ -29,9 +31,24 @@ import {
 } from './circuitSolver';
 import {
   type GraphicsSettings,
-  DEFAULT_GRAPHICS_SETTINGS,
   detectGpuRenderer,
+  getEffectivePixelRatio,
+  isMobileTouchDevice,
+  loadGraphicsSettings,
 } from './graphicsSettings';
+
+export type Room3CloseupFocus =
+  | 'station'
+  | 'board'
+  | 'multimeter'
+  | 'psu'
+  | 'oscilloscope'
+  | 'laser'
+  | 'lens'
+  | 'screen'
+  | 'clock'
+  | 'rod'
+  | 'console';
 
 export type Room3SceneApi = {
   dispose: () => void;
@@ -57,11 +74,18 @@ export type Room3SceneApi = {
   setDmmMode: (mode: MultimeterMode) => void;
   setDmmJack: (jack: MultimeterJack) => void;
   setProbeTerminal: (probe: 'red' | 'black', terminal: TerminalId | null) => void;
+  setActiveProbe?: (probe: 'red' | 'black') => void;
+  getActiveProbe?: () => 'red' | 'black';
   flipProbePolarity: () => void;
   toggleSeriesJumper: () => void;
   resetDmmFuse: () => void;
   getDmmReading: () => MultimeterReading;
-  setCloseupFocus?: (focus: 'station' | 'board' | 'multimeter' | 'psu' | 'oscilloscope') => void;
+  setCloseupFocus?: (focus: Room3CloseupFocus) => void;
+  zoomCloseup?: (deltaFactor: number) => number;
+  resetCloseupCamera?: () => void;
+  getCloseupZoom?: () => number;
+  setLabelsVisible?: (visible: boolean) => void;
+  getLabelsVisible?: () => boolean;
   setCameraYawPitch?: (targetYaw: number, targetPitch?: number) => void;
   setGraphicsSettings: (settings: GraphicsSettings) => void;
   getGraphicsSettings: () => GraphicsSettings;
@@ -84,16 +108,25 @@ export type Room3SceneCallbacks = {
   onEquipmentInteract?: (id: string) => void;
   onCircuitsChange?: (patch: Partial<CircuitSettings>) => void;
   onOscilloscopeChange?: (patch: Partial<OscilloscopeSettings>) => void;
+  onOpticsChange?: (patch: Partial<OpticsSettings>) => void;
+  onRelativityChange?: (patch: Partial<RelativitySettings>) => void;
   onFootstep?: () => void;
   onInteractionChange?: (interaction: EquipmentInteraction | null) => void;
   onPointerLockChange?: (locked: boolean) => void;
   onCameraModeChange?: (mode: 'walk' | 'closeup') => void;
+  onCloseupZoomChange?: (zoomFactor: number) => void;
   onDmmReadingChange?: (reading: MultimeterReading) => void;
-  onProbePlaced?: (probe: 'red' | 'black', terminal: TerminalId) => void;
+  onDmmModeChange?: (mode: MultimeterMode) => void;
+  onDmmJackChange?: (jack: MultimeterJack) => void;
+  onJumperChange?: (closed: boolean) => void;
+  onProbePlaced?: (probe: 'red' | 'black', terminal: TerminalId | null) => void;
+  onActiveProbeChange?: (probe: 'red' | 'black') => void;
   onCloseupHover?: (text: string | null) => void;
   onStationProximityChange?: (station: Room3StationId | null) => void;
   onPerfStatsChange?: (fps: number, frameTimeMs: number) => void;
   onGuidanceIndicator?: (info: { screenX: number; screenY: number; isBehind: boolean; angleDeg: number; distanceM: number } | null) => void;
+  onCharacterChange?: (character: CharacterType) => void;
+  onContextLost?: () => void;
 };
 
 export const ROOM3_EQUIPMENT_DESCRIPTIONS: Record<string, string> = {
@@ -163,13 +196,14 @@ export function createRoom3Scene(
   container: HTMLDivElement,
   callbacks: Room3SceneCallbacks = {}
 ): Room3SceneApi {
+  let isDisposed = false;
   // 1. Scene, Camera, Renderer Setup
   const scene = new THREE.Scene();
   // Deep Celestial Cosmos Atmosphere matching Room 04
   scene.background = new THREE.Color(0x040814);
-  scene.fog = new THREE.Fog(0x040814, 32, 115);
+  scene.fog = new THREE.Fog(0x040814, 48, 280);
 
-  const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 115);
+  const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 360);
   let activeStation: Room3StationId = 'circuits';
   const eyeHeight = 1.70;
   // Student initially stands on the central inlaid brass compass rose medallion, facing north toward the workbenches
@@ -181,6 +215,7 @@ export function createRoom3Scene(
   const analogMovement = new THREE.Vector2();
 
   let isPaused = false;
+  let cameraMode: 'walk' | 'closeup' = 'walk';
   let doorOpen = false;
   let doorAnimAngle = 0;
   let doorTargetAngle = 0;
@@ -190,6 +225,7 @@ export function createRoom3Scene(
   let rightExitLeaf: THREE.Mesh | null = null;
 
   // Character Controller - Default Third-Person Character Camera for Immersive Exploration (matching Room 04)
+  let applyInfiniteTsukuyomiState: ((active: boolean) => void) | null = null;
   const character = new CharacterController({
     scene,
     floorY: ROOM2_CONFIG.room.floorY,
@@ -198,32 +234,77 @@ export function createRoom3Scene(
     defaultCharacter: 'female',
     allowThirdPerson: true,
     defaultThirdPerson: true,
+    onCharacterChanged: (type) => {
+      applyInfiniteTsukuyomiState?.(type === 'madara');
+      callbacks.onCharacterChange?.(type);
+    },
   });
+
+  // Walk-mode 3rd-person distance (~4.40m wide full-body default; scroll-wheel adjusts 2.20m - 6.50m)
+  let walkExtraPullback = 2.25;
+  const walkPullbackVec = new THREE.Vector3();
+  const applyWalkCameraPullback = () => {
+    if (!character.isThirdPerson || cameraMode === 'closeup') return;
+    const cosPitch = Math.cos(pitch);
+    walkPullbackVec.set(
+      -Math.sin(yaw) * cosPitch,
+      Math.sin(pitch),
+      -Math.cos(yaw) * cosPitch
+    );
+    camera.position.addScaledVector(walkPullbackVec, -walkExtraPullback);
+    camera.position.y += 0.08 + Math.min(0.26, walkExtraPullback * 0.09);
+    const halfRoomW = ROOM2_CONFIG.room.width / 2 - 0.35;
+    const roomFrontZ = -ROOM2_CONFIG.room.backZ - 0.35;
+    const roomBackZ = ROOM2_CONFIG.room.backZ + 0.35;
+    camera.position.x = THREE.MathUtils.clamp(camera.position.x, -halfRoomW, halfRoomW);
+    camera.position.z = THREE.MathUtils.clamp(camera.position.z, roomBackZ, roomFrontZ);
+    camera.position.y = THREE.MathUtils.clamp(camera.position.y, 0.45, ROOM2_CONFIG.room.height + 1.8);
+  };
 
   const updateCamera = () => {
     character.updateCamera(camera, playerPosition, yaw, pitch);
+    applyWalkCameraPullback();
   };
   updateCamera();
 
   const sconceLights: THREE.PointLight[] = [];
   const downlights: THREE.PointLight[] = [];
-  let currentGraphicsSettings: GraphicsSettings = { ...DEFAULT_GRAPHICS_SETTINGS };
+  const mobileTouch = isMobileTouchDevice();
+  let currentGraphicsSettings: GraphicsSettings = loadGraphicsSettings();
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({
+    antialias: !mobileTouch || (currentGraphicsSettings.antialiasing && (window.devicePixelRatio || 1) < 2),
+    powerPreference: 'high-performance',
+  });
   renderer.setSize(container.clientWidth, container.clientHeight, false);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, currentGraphicsSettings.resolutionScale));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.setPixelRatio(getEffectivePixelRatio(currentGraphicsSettings.resolutionScale));
+  renderer.shadowMap.enabled = currentGraphicsSettings.shadows !== 'off';
+  renderer.shadowMap.type = currentGraphicsSettings.shadows === 'low' || mobileTouch
+    ? THREE.BasicShadowMap
+    : THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.domElement.style.background = '#040814';
+  renderer.domElement.style.touchAction = 'none';
   container.appendChild(renderer.domElement);
+
+  const handleContextLost = (event: Event) => {
+    event.preventDefault();
+    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    if (!isDisposed) callbacks.onContextLost?.();
+  };
+  const handleContextRestored = () => {
+    if (!isDisposed) renderer.render(scene, camera);
+  };
+  renderer.domElement.addEventListener('webglcontextlost', handleContextLost);
+  renderer.domElement.addEventListener('webglcontextrestored', handleContextRestored);
 
   const applyGraphicsSettings = (newSettings: GraphicsSettings) => {
     currentGraphicsSettings = { ...newSettings };
 
     // 1. Resolution / Pixel Ratio
-    const pixelRatio = Math.min(window.devicePixelRatio, currentGraphicsSettings.resolutionScale);
+    const pixelRatio = getEffectivePixelRatio(currentGraphicsSettings.resolutionScale);
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(container.clientWidth, container.clientHeight, false);
 
@@ -241,7 +322,7 @@ export function createRoom3Scene(
         renderer.shadowMap.type = THREE.PCFShadowMap;
         keyLight.shadow.mapSize.set(1024, 1024);
       } else {
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.type = THREE.PCFShadowMap;
         keyLight.shadow.mapSize.set(2048, 2048);
       }
       keyLight.shadow.bias = -0.0005;
@@ -272,30 +353,9 @@ export function createRoom3Scene(
   };
 
   // Simulation parameters
-  let currentCircuits: CircuitSettings = {
-    mode: 'dc',
-    topology: 'series',
-    vs: 24.0,
-    freq: 60.0,
-    r1: 100.0,
-    r2: 220.0,
-    r3: 330.0,
-    inductance: 150.0,
-    capacitance: 47.0,
-  };
+  let currentCircuits: CircuitSettings = { ...INITIAL_CIRCUITS };
 
-  let currentOptics: OpticsSettings = {
-    subMode: 'refraction',
-    wavelength: 532,
-    n1: 1.00,
-    n2: 1.52,
-    theta1: 30.0,
-    focalLength: 20.0,
-    objectDistance: 40.0,
-    slitWidth: 0.08,
-    slitSeparation: 0.25,
-    screenDistance: 2.00,
-  };
+  let currentOptics: OpticsSettings = { ...INITIAL_OPTICS };
 
   let currentRelativity: RelativitySettings = { ...INITIAL_RELATIVITY };
 
@@ -303,8 +363,12 @@ export function createRoom3Scene(
   // 2. Texture & Asset Loading
   // -------------------------------------------------------------
   const loadingManager = new THREE.LoadingManager();
-  loadingManager.onProgress = (_url, loaded, total) => callbacks.onAssetProgress?.(loaded, total);
-  loadingManager.onLoad = () => callbacks.onAssetsReady?.();
+  loadingManager.onProgress = (_url, loaded, total) => {
+    if (!isDisposed) callbacks.onAssetProgress?.(loaded, total);
+  };
+  loadingManager.onLoad = () => {
+    if (!isDisposed) callbacks.onAssetsReady?.();
+  };
 
   const textureLoader = new THREE.TextureLoader(loadingManager);
 
@@ -558,7 +622,163 @@ export function createRoom3Scene(
     return texture;
   };
 
-  // Master Physics III Whiteboard Texture
+  // Mathematical Typesetter & Handwritten Marker Engine for Room 03 Boards
+  type MathNode =
+    | { kind: 'text'; text: string; italic?: boolean; bold?: boolean }
+    | { kind: 'sub'; base: MathNode[]; sub: MathNode[] }
+    | { kind: 'sup'; base: MathNode[]; sup: MathNode[] }
+    | { kind: 'frac'; num: MathNode[]; den: MathNode[] }
+    | { kind: 'sqrt'; inner: MathNode[] };
+
+  const mt = (text: string, italic = false, bold = false): MathNode => ({
+    kind: 'text',
+    text,
+    italic,
+    bold,
+  });
+  const msub = (base: string | MathNode[], sub: string | MathNode[], baseItalic = true): MathNode => ({
+    kind: 'sub',
+    base: typeof base === 'string' ? [mt(base, baseItalic)] : base,
+    sub: typeof sub === 'string' ? [mt(sub, false)] : sub,
+  });
+  const msup = (base: string | MathNode[], sup: string | MathNode[], baseItalic = true): MathNode => ({
+    kind: 'sup',
+    base: typeof base === 'string' ? [mt(base, baseItalic)] : base,
+    sup: typeof sup === 'string' ? [mt(sup, false)] : sup,
+  });
+  const mfrac = (num: MathNode[], den: MathNode[]): MathNode => ({ kind: 'frac', num, den });
+  const msqrt = (inner: MathNode[]): MathNode => ({ kind: 'sqrt', inner });
+
+  interface MathMetrics {
+    width: number;
+    ascent: number;
+    descent: number;
+  }
+
+  const measureMath = (
+    ctx: CanvasRenderingContext2D,
+    nodes: MathNode[],
+    fontSize: number,
+    fontFamily: string
+  ): MathMetrics => {
+    let width = 0;
+    let ascent = fontSize * 0.72;
+    let descent = fontSize * 0.22;
+
+    nodes.forEach((node) => {
+      if (node.kind === 'text') {
+        ctx.font = `${node.italic ? 'italic ' : ''}${node.bold ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
+        width += ctx.measureText(node.text).width;
+      } else if (node.kind === 'sub') {
+        const baseM = measureMath(ctx, node.base, fontSize, fontFamily);
+        const subM = measureMath(ctx, node.sub, Math.round(fontSize * 0.65), fontFamily);
+        width += baseM.width + subM.width + 1;
+        ascent = Math.max(ascent, baseM.ascent);
+        descent = Math.max(descent, baseM.descent, subM.descent + fontSize * 0.24);
+      } else if (node.kind === 'sup') {
+        const baseM = measureMath(ctx, node.base, fontSize, fontFamily);
+        const supM = measureMath(ctx, node.sup, Math.round(fontSize * 0.65), fontFamily);
+        width += baseM.width + supM.width + 1;
+        ascent = Math.max(ascent, baseM.ascent, supM.ascent + fontSize * 0.34);
+        descent = Math.max(descent, baseM.descent);
+      } else if (node.kind === 'frac') {
+        const fSize = Math.round(fontSize * 0.78);
+        const numM = measureMath(ctx, node.num, fSize, fontFamily);
+        const denM = measureMath(ctx, node.den, fSize, fontFamily);
+        const barW = Math.max(numM.width, denM.width) + 12;
+        const axisY = fontSize * 0.28;
+        width += barW + 4;
+        ascent = Math.max(ascent, axisY + 5 + numM.ascent + numM.descent);
+        descent = Math.max(descent, 6 + denM.ascent + denM.descent - axisY);
+      } else if (node.kind === 'sqrt') {
+        const innerM = measureMath(ctx, node.inner, fontSize, fontFamily);
+        const hookW = Math.max(12, fontSize * 0.44);
+        width += hookW + innerM.width + 10;
+        ascent = Math.max(ascent, innerM.ascent + 8);
+        descent = Math.max(descent, innerM.descent);
+      }
+    });
+
+    return { width, ascent, descent };
+  };
+
+  const drawMathNodes = (
+    ctx: CanvasRenderingContext2D,
+    nodes: MathNode[],
+    x: number,
+    y: number,
+    fontSize: number,
+    color: string,
+    fontFamily: string,
+    lineWidth = 2.2
+  ): number => {
+    let cursorX = x;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+
+    nodes.forEach((node) => {
+      if (node.kind === 'text') {
+        ctx.font = `${node.italic ? 'italic ' : ''}${node.bold ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
+        ctx.fillStyle = color;
+        ctx.fillText(node.text, cursorX, y);
+        cursorX += ctx.measureText(node.text).width;
+      } else if (node.kind === 'sub') {
+        cursorX = drawMathNodes(ctx, node.base, cursorX, y, fontSize, color, fontFamily, lineWidth);
+        const subSize = Math.round(fontSize * 0.65);
+        cursorX = drawMathNodes(ctx, node.sub, cursorX, y + fontSize * 0.24, subSize, color, fontFamily, lineWidth * 0.8);
+        cursorX += 1;
+      } else if (node.kind === 'sup') {
+        cursorX = drawMathNodes(ctx, node.base, cursorX, y, fontSize, color, fontFamily, lineWidth);
+        const supSize = Math.round(fontSize * 0.65);
+        cursorX = drawMathNodes(ctx, node.sup, cursorX, y - fontSize * 0.34, supSize, color, fontFamily, lineWidth * 0.8);
+        cursorX += 1;
+      } else if (node.kind === 'frac') {
+        const fSize = Math.round(fontSize * 0.78);
+        const numM = measureMath(ctx, node.num, fSize, fontFamily);
+        const denM = measureMath(ctx, node.den, fSize, fontFamily);
+        const barW = Math.max(numM.width, denM.width) + 12;
+        const barY = y - fontSize * 0.28;
+        const numBaseline = barY - 5 - numM.descent;
+        const denBaseline = barY + 6 + denM.ascent;
+
+        drawMathNodes(ctx, node.num, cursorX + 2 + (barW - numM.width) / 2, numBaseline, fSize, color, fontFamily, lineWidth * 0.85);
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1.8, lineWidth);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(cursorX + 2, barY);
+        ctx.quadraticCurveTo(cursorX + 2 + barW * 0.5, barY - 0.8, cursorX + 2 + barW, barY + 0.4);
+        ctx.stroke();
+        ctx.restore();
+        drawMathNodes(ctx, node.den, cursorX + 2 + (barW - denM.width) / 2, denBaseline, fSize, color, fontFamily, lineWidth * 0.85);
+        cursorX += barW + 4;
+      } else if (node.kind === 'sqrt') {
+        const innerM = measureMath(ctx, node.inner, fontSize, fontFamily);
+        const hookW = Math.max(12, fontSize * 0.44);
+        const topBarY = y - innerM.ascent - 4;
+        const botY = y + innerM.descent * 0.65;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1.8, lineWidth);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(cursorX + 1, y - innerM.ascent * 0.34);
+        ctx.lineTo(cursorX + hookW * 0.45, botY);
+        ctx.lineTo(cursorX + hookW, topBarY);
+        ctx.lineTo(cursorX + hookW + innerM.width + 8, topBarY + 0.5);
+        ctx.stroke();
+        ctx.restore();
+        drawMathNodes(ctx, node.inner, cursorX + hookW + 3, y, fontSize, color, fontFamily, lineWidth);
+        cursorX += hookW + innerM.width + 10;
+      }
+    });
+
+    return cursorX;
+  };
+
+  // Authentic Handwritten Physics III Whiteboard Texture (Dry-Erase Marker Style + Real Stacked Equations)
   const createRoom3WhiteboardTexture = (): THREE.CanvasTexture => {
     const canvas = document.createElement('canvas');
     canvas.width = 2048;
@@ -566,232 +786,503 @@ export function createRoom3Scene(
     const ctx = canvas.getContext('2d');
     if (!ctx) return new THREE.CanvasTexture(canvas);
 
-    // Porcelain surface
+    const HAND_FONT = '"Segoe Print", "Segoe Script", "Bradley Hand", "Comic Sans MS", cursive';
+    const MATH_FONT = '"Segoe Print", "Segoe Script", Georgia, serif';
+
+    // Warm porcelain dry-erase surface with faint erased smudges
     const bgGrad = ctx.createLinearGradient(0, 0, 0, 1024);
-    bgGrad.addColorStop(0, '#fbfcfe');
-    bgGrad.addColorStop(0.5, '#f4f6f9');
-    bgGrad.addColorStop(1, '#edf1f5');
+    bgGrad.addColorStop(0, '#fcfcf8');
+    bgGrad.addColorStop(0.55, '#f6f7f2');
+    bgGrad.addColorStop(1, '#eef0ea');
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, 2048, 1024);
 
-    // Ghosted erased chalk lines for authentic realism
-    ctx.fillStyle = 'rgba(100, 120, 140, 0.03)';
-    for (let i = 0; i < 35; i++) {
-      ctx.fillRect(40 + (i * 53) % 1900, 80 + (i * 29) % 850, 110, 16);
+    // Subtle horizontal wiped dry-erase smudge trails
+    ctx.fillStyle = 'rgba(71, 85, 105, 0.025)';
+    for (let i = 0; i < 42; i++) {
+      ctx.beginPath();
+      ctx.ellipse(
+        100 + (i * 173) % 1840,
+        90 + (i * 89) % 860,
+        65 + (i % 4) * 24,
+        10 + (i % 3) * 4,
+        -0.06,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
     }
 
-    // Top Header Banner
+    // Freehand Marker Stroke Helpers
+    const drawHandLine = (
+      x1: number,
+      y1: number,
+      x2: number,
+      y2: number,
+      color: string,
+      lw = 2.6,
+      bow = 1.8,
+      dashed = false
+    ) => {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lw;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (dashed) ctx.setLineDash([10, 8]);
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.max(1, Math.hypot(dx, dy));
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.quadraticCurveTo(mx - (dy / len) * bow, my + (dx / len) * bow, x2, y2);
+      ctx.stroke();
+      ctx.restore();
+    };
+
+    const drawHandArrow = (x1: number, y1: number, x2: number, y2: number, color: string, lw = 3.2, bow = 1.5) => {
+      drawHandLine(x1, y1, x2, y2, color, lw, bow);
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const headLen = 14;
+      drawHandLine(x2, y2, x2 - headLen * Math.cos(angle - 0.42), y2 - headLen * Math.sin(angle - 0.42), color, lw, 0.5);
+      drawHandLine(x2, y2, x2 - headLen * Math.cos(angle + 0.46), y2 - headLen * Math.sin(angle + 0.46), color, lw, -0.5);
+    };
+
+    const drawHandLoop = (x: number, y: number, w: number, h: number, color: string, lw = 2.4) => {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lw;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x + 12, y);
+      ctx.quadraticCurveTo(x + w * 0.5, y - 4, x + w - 10, y + 2);
+      ctx.quadraticCurveTo(x + w + 5, y + h * 0.5, x + w - 8, y + h);
+      ctx.quadraticCurveTo(x + w * 0.5, y + h + 4, x + 10, y + h - 2);
+      ctx.quadraticCurveTo(x - 5, y + h * 0.5, x + 14, y + 3);
+      ctx.stroke();
+      ctx.restore();
+    };
+
+    // Handwritten Lecture Board Header
     ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 36px "Segoe UI", -apple-system, sans-serif';
-    ctx.fillText('EXPERIMENTAL PHYSICS III: ELECTRICITY, OPTICS & SPECIAL RELATIVITY', 55, 65);
-    ctx.fillStyle = '#64748b';
-    ctx.font = '600 20px "Segoe UI", sans-serif';
-    ctx.fillText('LABORATORY 03 · GOVERNING EQUATIONS & THEORETICAL DERIVATIONS', 55, 100);
+    ctx.font = `bold 34px ${HAND_FONT}`;
+    ctx.fillText('Experimental Physics III: Electricity, Optics & Special Relativity', 52, 62);
+    ctx.fillStyle = '#475569';
+    ctx.font = `19px ${HAND_FONT}`;
+    ctx.fillText('Lab 03 — Governing Equations, Sketches & Derivations', 54, 98);
+    drawHandLine(52, 114, 1990, 117, '#334155', 2.4, 2.5);
+    drawHandLine(54, 120, 620, 119, '#1d4ed8', 1.8, -1.5);
 
-    ctx.strokeStyle = '#cbd5e1';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(50, 120);
-    ctx.lineTo(1998, 120);
-    ctx.stroke();
+    // Handwritten margin reminder top-right
+    ctx.save();
+    ctx.translate(1690, 56);
+    ctx.rotate(-0.035);
+    ctx.fillStyle = '#dc2626';
+    ctx.font = `bold 18px ${HAND_FONT}`;
+    ctx.fillText('* Verify units & sign rules!', 0, 0);
+    ctx.restore();
 
-    // Column Dividers
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(690, 135);
-    ctx.lineTo(690, 960);
-    ctx.moveTo(1350, 135);
-    ctx.lineTo(1350, 960);
-    ctx.stroke();
+    // Hand-drawn vertical column separators
+    drawHandLine(688, 134, 686, 950, '#94a3b8', 2.2, 2.5, true);
+    drawHandLine(1348, 134, 1351, 950, '#94a3b8', 2.2, -2.5, true);
 
-    // --- COLUMN 1: DC & AC ELECTRICAL CIRCUITS ---
-    ctx.fillStyle = '#0284c7';
-    ctx.font = 'bold 26px "Segoe UI", sans-serif';
-    ctx.fillText('1. DC & AC ELECTRICAL CIRCUITS', 55, 165);
+    // =============================================================
+    // COLUMN 1: DC & AC ELECTRICAL CIRCUITS (Blue Ink + Red Accents)
+    // =============================================================
+    ctx.fillStyle = '#1d4ed8';
+    ctx.font = `bold 25px ${HAND_FONT}`;
+    ctx.fillText('1. DC & AC Electrical Circuits', 52, 162);
+    drawHandLine(52, 170, 445, 172, '#1d4ed8', 2.2, 1.5);
 
     ctx.fillStyle = '#1e293b';
-    ctx.font = '20px "Segoe UI", sans-serif';
-    ctx.fillText("Ohm's Law & Kirchhoff's Rules:", 55, 210);
-    ctx.fillStyle = '#0284c7';
-    ctx.font = 'bold 28px Georgia, serif';
-    ctx.fillText('I = Vs / Req        Σ I_in = Σ I_out', 75, 250);
+    ctx.font = `18px ${HAND_FONT}`;
+    ctx.fillText("Ohm's Law & Kirchhoff's Rules:", 52, 204);
+
+    // I = Vs / Req  &  Sum I_in = Sum I_out
+    drawMathNodes(
+      ctx,
+      [
+        mt('I = ', true),
+        mfrac([msub('V', 's')], [msub('R', 'eq')]),
+        mt('        Σ '),
+        msub('I', 'in'),
+        mt(' = Σ '),
+        msub('I', 'out'),
+      ],
+      68,
+      258,
+      25,
+      '#1e40af',
+      MATH_FONT
+    );
+    drawHandLoop(56, 215, 195, 70, 'rgba(220, 38, 38, 0.55)', 2.0);
+
+    // Series, Parallel & Power
+    drawMathNodes(
+      ctx,
+      [mt('Series:  ', false), msub('R', 'eq'), mt(' = '), msub('R', '1'), mt(' + '), msub('R', '2'), mt(' + '), msub('R', '3')],
+      64,
+      316,
+      19,
+      '#334155',
+      MATH_FONT
+    );
+    drawMathNodes(
+      ctx,
+      [
+        mt('Parallel:  ', false),
+        mfrac([mt('1')], [msub('R', 'eq')]),
+        mt(' = '),
+        mfrac([mt('1')], [msub('R', '1')]),
+        mt(' + '),
+        mfrac([mt('1')], [msub('R', '2')]),
+        mt(' + '),
+        mfrac([mt('1')], [msub('R', '3')]),
+      ],
+      64,
+      374,
+      19,
+      '#334155',
+      MATH_FONT
+    );
+    drawMathNodes(
+      ctx,
+      [mt('Power:  ', false), mt('P = ', true), msup('I', '2'), mt('·'), msub('R', 'eq'), mt(' = '), msub('V', 's'), mt('·I   [W]', true)],
+      64,
+      432,
+      19,
+      '#334155',
+      MATH_FONT
+    );
+
+    // AC RLC Impedance
+    ctx.fillStyle = '#1e293b';
+    ctx.font = `18px ${HAND_FONT}`;
+    ctx.fillText('AC Sinusoidal RLC Phasor Impedance:', 52, 478);
+
+    drawMathNodes(
+      ctx,
+      [
+        mt('Z = ', true),
+        msqrt([msup([msub('R', 'eq')], '2'), mt(' + ('), msub('X', 'L'), mt(' − '), msub('X', 'C'), mt(')'), msup('', '2')]),
+      ],
+      64,
+      534,
+      21,
+      '#1d4ed8',
+      MATH_FONT
+    );
+    drawMathNodes(
+      ctx,
+      [mt('tan φ = '), mfrac([msub('X', 'L'), mt(' − '), msub('X', 'C')], [msub('R', 'eq')])],
+      405,
+      534,
+      20,
+      '#1d4ed8',
+      MATH_FONT
+    );
+
+    drawMathNodes(
+      ctx,
+      [
+        msub('X', 'L'),
+        mt(' = 2πfL     '),
+        msub('X', 'C'),
+        mt(' = '),
+        mfrac([mt('1')], [mt('2πfC')]),
+      ],
+      64,
+      596,
+      19,
+      '#334155',
+      MATH_FONT
+    );
+
+    drawMathNodes(
+      ctx,
+      [
+        msub('f', '0'),
+        mt(' = '),
+        mfrac([mt('1')], [mt('2π'), msqrt([mt('LC', true)])]),
+        mt('    (φ = 0°,  cos φ = 1)'),
+      ],
+      64,
+      658,
+      19,
+      '#334155',
+      MATH_FONT
+    );
+
+    // Hand-sketched RLC Phasor Diagram directly on the board
+    drawHandLine(95, 865, 420, 865, '#1d4ed8', 3.4, 1.5); // horizontal axis guide
+    drawHandArrow(95, 865, 385, 865, '#1d4ed8', 3.6, 1.2); // VR
+    drawHandArrow(385, 865, 385, 735, '#047857', 3.4, -1.2); // VL - VC
+    drawHandArrow(95, 865, 385, 735, '#dc2626', 3.6, -2.0); // Vs resultant
+    // Right angle corner square
+    drawHandLine(368, 865, 368, 848, '#475569', 2.0, 0);
+    drawHandLine(368, 848, 385, 848, '#475569', 2.0, 0);
+    // Phase arc phi
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(95, 865, 58, -0.42, 0);
+    ctx.stroke();
+    ctx.fillStyle = '#dc2626';
+    ctx.font = `italic bold 19px ${MATH_FONT}`;
+    ctx.fillText('φ', 160, 855);
+
+    drawMathNodes(ctx, [msub('V', 'R'), mt('  (in phase w/ I)')], 165, 898, 17, '#1e40af', HAND_FONT);
+    drawMathNodes(ctx, [msub('V', 'L'), mt(' − '), msub('V', 'C')], 402, 804, 18, '#047857', HAND_FONT);
+    drawMathNodes(ctx, [msub('V', 's'), mt('  (Total Phasor)')], 162, 775, 18, '#b91c1c', HAND_FONT);
 
     ctx.fillStyle = '#475569';
-    ctx.font = '18px "Segoe UI", sans-serif';
-    ctx.fillText('Series: Req = R1 + R2 + R3', 75, 285);
-    ctx.fillText('Parallel: 1/Req = 1/R1 + 1/R2 + 1/R3', 75, 315);
-    ctx.fillText('Real Power: P = I²·Req = Vs·I  [W]', 75, 345);
+    ctx.font = `italic 15px ${HAND_FONT}`;
+    ctx.fillText('note: check phase on scope!', 410, 916);
+
+    // =============================================================
+    // COLUMN 2: GEOMETRIC & PHYSICAL OPTICS (Emerald Ink)
+    // =============================================================
+    ctx.fillStyle = '#047857';
+    ctx.font = `bold 25px ${HAND_FONT}`;
+    ctx.fillText('2. Geometric & Physical Optics', 712, 162);
+    drawHandLine(712, 170, 1140, 172, '#047857', 2.2, -1.5);
 
     ctx.fillStyle = '#1e293b';
-    ctx.font = '20px "Segoe UI", sans-serif';
-    ctx.fillText('AC Sinusoidal RLC Phasor Impedance:', 55, 395);
-    ctx.fillStyle = '#0284c7';
-    ctx.font = 'bold 24px Georgia, serif';
-    ctx.fillText('Z = √(Req² + (XL - XC)²)      tan φ = (XL - XC) / Req', 75, 435);
-    ctx.fillStyle = '#475569';
-    ctx.font = '18px "Segoe UI", sans-serif';
-    ctx.fillText('XL = 2π f L   |   XC = 1 / (2π f C)', 75, 470);
-    ctx.fillText('Resonance: f0 = 1 / (2π √(L C))   (φ = 0°, cos φ = 1.0)', 75, 500);
+    ctx.font = `18px ${HAND_FONT}`;
+    ctx.fillText("Snell's Law & Total Internal Reflection:", 712, 204);
 
-    // Phasor Diagram Graphic Box
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(55, 530, 600, 210);
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(56, 531, 598, 208);
+    drawMathNodes(
+      ctx,
+      [msub('n', '1'), mt(' · sin '), msub('θ', '1'), mt('  =  '), msub('n', '2'), mt(' · sin '), msub('θ', '2')],
+      732,
+      254,
+      25,
+      '#065f46',
+      MATH_FONT
+    );
+    drawHandLoop(718, 220, 355, 54, 'rgba(4, 120, 87, 0.45)', 2.0);
 
-    // Phasor Vector Lines
+    drawMathNodes(
+      ctx,
+      [
+        mt('Critical Angle:  sin '),
+        msub('θ', 'c'),
+        mt(' = '),
+        mfrac([msub('n', '2')], [msub('n', '1')]),
+        mt('    ('),
+        msub('n', '1'),
+        mt(' > '),
+        msub('n', '2'),
+        mt(')'),
+      ],
+      726,
+      316,
+      19,
+      '#334155',
+      MATH_FONT
+    );
+    drawMathNodes(
+      ctx,
+      [mt('Total Internal Reflection occurs when  '), msub('θ', '1'), mt(' > '), msub('θ', 'c')],
+      726,
+      372,
+      18,
+      '#b45309',
+      HAND_FONT
+    );
+
+    ctx.fillStyle = '#1e293b';
+    ctx.font = `18px ${HAND_FONT}`;
+    ctx.fillText("Thin Lens Formula & Young's Double Slit:", 712, 424);
+
+    drawMathNodes(
+      ctx,
+      [
+        mfrac([mt('1')], [mt('f', true)]),
+        mt(' = '),
+        mfrac([mt('1')], [msub('d', 'o')]),
+        mt(' + '),
+        mfrac([mt('1')], [msub('d', 'i')]),
+        mt('        M = −', true),
+        mfrac([msub('d', 'i')], [msub('d', 'o')]),
+      ],
+      732,
+      488,
+      21,
+      '#047857',
+      MATH_FONT
+    );
+
+    drawMathNodes(
+      ctx,
+      [mt('Δy = '), mfrac([mt('λ · L')], [mt('d', true)]), mt('      (fringe spacing)')],
+      732,
+      556,
+      21,
+      '#047857',
+      MATH_FONT
+    );
+
+    // Hand-sketched Semicircular Prism Ray Trace Sketch directly on board
+    const pCx = 1020;
+    const pCy = 775;
+    const pR = 110;
+    ctx.save();
+    ctx.fillStyle = 'rgba(14, 165, 233, 0.12)';
     ctx.strokeStyle = '#0284c7';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3.0;
     ctx.beginPath();
-    ctx.moveTo(120, 640);
-    ctx.lineTo(360, 640); // VR (horizontal)
-    ctx.stroke();
-    ctx.fillStyle = '#0284c7';
-    ctx.font = 'bold 16px "Segoe UI", sans-serif';
-    ctx.fillText('V_R (in phase with I)', 200, 665);
-
-    ctx.strokeStyle = '#10b981';
-    ctx.beginPath();
-    ctx.moveTo(360, 640);
-    ctx.lineTo(360, 560); // VL - VC (vertical)
-    ctx.stroke();
-    ctx.fillStyle = '#10b981';
-    ctx.fillText('V_L - V_C', 375, 600);
-
-    ctx.strokeStyle = '#eab308';
-    ctx.beginPath();
-    ctx.moveTo(120, 640);
-    ctx.lineTo(360, 560); // Vs total
-    ctx.stroke();
-    ctx.fillStyle = '#ca8a04';
-    ctx.font = 'bold 18px Georgia, serif';
-    ctx.fillText('V_s (Total Phasor)', 180, 580);
-
-    // --- COLUMN 2: GEOMETRIC & PHYSICAL OPTICS ---
-    ctx.fillStyle = '#059669';
-    ctx.font = 'bold 26px "Segoe UI", sans-serif';
-    ctx.fillText('2. GEOMETRIC & PHYSICAL OPTICS', 715, 165);
-
-    ctx.fillStyle = '#1e293b';
-    ctx.font = '20px "Segoe UI", sans-serif';
-    ctx.fillText("Snell's Law of Refraction & TIR:", 715, 210);
-    ctx.fillStyle = '#059669';
-    ctx.font = 'bold 28px Georgia, serif';
-    ctx.fillText('n1 · sin θ1 = n2 · sin θ2', 735, 250);
-
-    ctx.fillStyle = '#475569';
-    ctx.font = '18px "Segoe UI", sans-serif';
-    ctx.fillText('Critical Angle: sin θc = n2 / n1  (n1 > n2)', 735, 285);
-    ctx.fillText('Total Internal Reflection occurs when θ1 > θc', 735, 315);
-
-    ctx.fillStyle = '#1e293b';
-    ctx.font = '20px "Segoe UI", sans-serif';
-    ctx.fillText('Thin Lens Formula & Young\'s Double Slit:', 715, 365);
-    ctx.fillStyle = '#059669';
-    ctx.font = 'bold 24px Georgia, serif';
-    ctx.fillText('1/f = 1/do + 1/di      M = -di / do', 735, 405);
-    ctx.fillText('Δy = (λ · L) / d       (Fringe Spacing)', 735, 445);
-
-    // Optics Ray Diagram Box
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(715, 475, 600, 265);
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(716, 476, 598, 263);
-
-    // Draw Semicircular prism and laser ray
-    ctx.fillStyle = '#e0f2fe';
-    ctx.beginPath();
-    ctx.arc(1015, 610, 80, -Math.PI / 2, Math.PI / 2, true);
+    ctx.arc(pCx, pCy, pR, -Math.PI / 2, Math.PI / 2, true);
+    ctx.lineTo(pCx, pCy - pR);
+    ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = '#0284c7';
-    ctx.lineWidth = 2;
     ctx.stroke();
+    ctx.restore();
 
-    // Incident ray
-    ctx.strokeStyle = '#10b981';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(850, 520);
-    ctx.lineTo(1015, 610);
-    ctx.lineTo(1180, 610); // Refracted ray
-    ctx.stroke();
-    ctx.fillStyle = '#059669';
-    ctx.font = 'bold 16px "Segoe UI", sans-serif';
-    ctx.fillText('Incident θ1', 860, 560);
-    ctx.fillText('Refracted θ2', 1100, 635);
+    // Dashed surface normal horizontal line
+    drawHandLine(820, pCy, 1245, pCy, '#64748b', 2.0, 0, true);
+    // Incident & Refracted rays
+    drawHandArrow(815, pCy - 102, pCx, pCy, '#dc2626', 3.4, -1.5);
+    drawHandArrow(pCx, pCy, 1230, pCy + 64, '#059669', 3.4, 1.5);
+    // Reflected faint TIR ray
+    drawHandLine(pCx, pCy, 855, pCy + 82, 'rgba(220, 38, 38, 0.45)', 2.0, 1.0, true);
 
-    // --- COLUMN 3: SPECIAL THEORY OF RELATIVITY ---
-    ctx.fillStyle = '#7c3aed';
-    ctx.font = 'bold 26px "Segoe UI", sans-serif';
-    ctx.fillText('3. SPECIAL THEORY OF RELATIVITY', 1375, 165);
+    drawMathNodes(ctx, [mt('Incident '), msub('θ', '1')], 802, pCy - 58, 17, '#dc2626', HAND_FONT);
+    drawMathNodes(ctx, [mt('Refracted '), msub('θ', '2')], 1108, pCy + 88, 17, '#047857', HAND_FONT);
+    ctx.fillStyle = '#0284c7';
+    ctx.font = `italic 15px ${HAND_FONT}`;
+    ctx.fillText('glass (n₂)', pCx - 96, pCy + 76);
+
+    // =============================================================
+    // COLUMN 3: SPECIAL THEORY OF RELATIVITY (Violet Ink)
+    // =============================================================
+    ctx.fillStyle = '#6d28d9';
+    ctx.font = `bold 25px ${HAND_FONT}`;
+    ctx.fillText('3. Special Theory of Relativity', 1372, 162);
+    drawHandLine(1372, 170, 1810, 172, '#6d28d9', 2.2, 1.5);
 
     ctx.fillStyle = '#1e293b';
-    ctx.font = '20px "Segoe UI", sans-serif';
-    ctx.fillText('Einstein\'s Postulates & Lorentz Factor:', 1375, 210);
-    ctx.fillStyle = '#7c3aed';
-    ctx.font = 'bold 28px Georgia, serif';
-    ctx.fillText('γ = 1 / √(1 - β²)       β = v / c', 1395, 250);
+    ctx.font = `18px ${HAND_FONT}`;
+    ctx.fillText("Einstein's Postulates & Lorentz Factor:", 1372, 204);
 
-    ctx.fillStyle = '#475569';
-    ctx.font = '18px "Segoe UI", sans-serif';
-    ctx.fillText('Time Dilation: Δt = γ · Δt0', 1395, 285);
-    ctx.fillText('Length Contraction: L = L0 / γ  (along axis of motion)', 1395, 315);
-    ctx.fillText('Relativistic Momentum: p = γ · m0 · v', 1395, 345);
+    drawMathNodes(
+      ctx,
+      [
+        mt('γ = '),
+        mfrac([mt('1')], [msqrt([mt('1 − '), msup('β', '2')])]),
+        mt('        β = '),
+        mfrac([mt('v', true)], [mt('c', true)]),
+      ],
+      1392,
+      266,
+      23,
+      '#6d28d9',
+      MATH_FONT
+    );
+    drawHandLoop(1378, 224, 240, 74, 'rgba(220, 38, 38, 0.5)', 2.0);
+
+    drawMathNodes(
+      ctx,
+      [mt('Time Dilation:  Δt = γ · '), msub('Δt', '0')],
+      1386,
+      332,
+      19,
+      '#334155',
+      MATH_FONT
+    );
+    drawMathNodes(
+      ctx,
+      [mt('Length Contraction:  L = '), mfrac([msub('L', '0')], [mt('γ')]), mt('   (motion axis)')],
+      1386,
+      392,
+      19,
+      '#334155',
+      MATH_FONT
+    );
+    drawMathNodes(
+      ctx,
+      [mt('Momentum:  p = γ · '), msub('m', '0'), mt(' · v')],
+      1386,
+      448,
+      19,
+      '#334155',
+      MATH_FONT
+    );
 
     ctx.fillStyle = '#1e293b';
-    ctx.font = '20px "Segoe UI", sans-serif';
-    ctx.fillText('Mass-Energy Equivalence:', 1375, 395);
-    ctx.fillStyle = '#7c3aed';
-    ctx.font = 'bold 26px Georgia, serif';
-    ctx.fillText('E = γ · m0 · c² = E0 + K', 1395, 435);
-    ctx.fillStyle = '#475569';
-    ctx.font = '18px "Segoe UI", sans-serif';
-    ctx.fillText('Rest Energy: E0 = m0 · c²', 1395, 470);
-    ctx.fillText('Kinetic Energy: K = (γ - 1) · m0 · c²', 1395, 500);
+    ctx.font = `18px ${HAND_FONT}`;
+    ctx.fillText('Mass–Energy Equivalence:', 1372, 494);
 
-    // Relativity Light Clock Graphic Box
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(1375, 530, 600, 210);
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(1376, 531, 598, 208);
+    drawMathNodes(
+      ctx,
+      [mt('E = γ · '), msub('m', '0'), mt(' · '), msup('c', '2'), mt(' = '), msub('E', '0'), mt(' + K')],
+      1392,
+      540,
+      23,
+      '#7c3aed',
+      MATH_FONT
+    );
+    drawHandLine(1390, 550, 1745, 551, '#7c3aed', 2.0, -1.0);
 
-    // Frame S' vertical light clock vs Frame S diagonal light path
-    ctx.strokeStyle = '#64748b';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(1420, 560, 100, 10); // Mirror 1
-    ctx.strokeRect(1420, 680, 100, 10); // Mirror 2
-    ctx.strokeStyle = '#f59e0b';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(1470, 680);
-    ctx.lineTo(1470, 570);
-    ctx.stroke();
-    ctx.fillStyle = '#475569';
-    ctx.font = 'bold 15px "Segoe UI", sans-serif';
-    ctx.fillText("Proper Frame S': Δt0 = 2d / c", 1395, 715);
+    drawMathNodes(
+      ctx,
+      [
+        msub('E', '0'),
+        mt(' = '),
+        msub('m', '0'),
+        msup('c', '2'),
+        mt('        K = (γ − 1)'),
+        msub('m', '0'),
+        msup('c', '2'),
+      ],
+      1392,
+      592,
+      19,
+      '#334155',
+      MATH_FONT
+    );
 
-    ctx.strokeStyle = '#64748b';
-    ctx.strokeRect(1650, 560, 100, 10);
-    ctx.strokeRect(1780, 680, 100, 10);
-    ctx.strokeStyle = '#7c3aed';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(1650, 680);
-    ctx.lineTo(1700, 570);
-    ctx.lineTo(1830, 680);
-    ctx.stroke();
-    ctx.fillStyle = '#7c3aed';
-    ctx.font = 'bold 15px "Segoe UI", sans-serif';
-    ctx.fillText("Lab Frame S: Diagonal Path Δt = γ·Δt0", 1630, 715);
+    // Hand-sketched Rest Frame S' vs Lab Frame S Light Clock Diagram
+    // Rest clock mirrors (left)
+    drawHandLine(1425, 675, 1545, 675, '#475569', 4.0, 0.5);
+    drawHandLine(1425, 835, 1545, 835, '#475569', 4.0, -0.5);
+    drawHandArrow(1485, 835, 1485, 682, '#d97706', 3.4, 1.0);
+    drawMathNodes(
+      ctx,
+      [mt("Rest Frame S':  "), msub('Δt', '0'), mt(' = '), mfrac([mt('2d')], [mt('c')])],
+      1392,
+      892,
+      17,
+      '#b45309',
+      HAND_FONT
+    );
 
-    // Footer note
-    ctx.fillStyle = '#1e293b';
-    ctx.font = 'italic 16px Georgia, serif';
-    ctx.fillText('★ Keep laser safety interlocks engaged during beam propagation. High-voltage power supplies isolated.', 55, 995);
+    // Moving clock zigzag photon path (right)
+    drawHandLine(1690, 675, 1810, 675, '#475569', 4.0, 0.5);
+    drawHandLine(1820, 835, 1940, 835, '#475569', 4.0, -0.5);
+    drawHandArrow(1660, 835, 1750, 680, '#7c3aed', 3.4, -1.2);
+    drawHandArrow(1750, 680, 1878, 830, '#7c3aed', 3.4, 1.2);
+    drawHandArrow(1830, 675, 1925, 675, '#0284c7', 2.6, 0.6);
+    ctx.fillStyle = '#0284c7';
+    ctx.font = `italic bold 17px ${MATH_FONT}`;
+    ctx.fillText('v', 1934, 681);
+
+    drawMathNodes(
+      ctx,
+      [mt('Lab Frame S:  Δt = γ·'), msub('Δt', '0')],
+      1662,
+      892,
+      17,
+      '#6d28d9',
+      HAND_FONT
+    );
+
+    // Handwritten bottom safety note
+    ctx.fillStyle = '#dc2626';
+    ctx.font = `italic bold 17px ${HAND_FONT}`;
+    ctx.fillText('* Keep laser safety interlocks ON during beam runs. Switch HV power OFF before rewiring!', 56, 992);
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -815,6 +1306,7 @@ export function createRoom3Scene(
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
     if (!ctx) return new THREE.CanvasTexture(canvas);
+    const POSTER_MATH = 'Georgia, "Times New Roman", serif';
 
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, 768, 512);
@@ -835,45 +1327,71 @@ export function createRoom3Scene(
     ctx.stroke();
 
     ctx.fillStyle = '#1e293b';
-    ctx.fillRect(32, 110, 336, 170);
+    ctx.fillRect(32, 110, 336, 174);
     ctx.strokeStyle = '#475569';
-    ctx.strokeRect(32, 110, 336, 170);
+    ctx.strokeRect(32, 110, 336, 174);
     ctx.fillStyle = '#f8fafc';
-    ctx.font = 'bold 18px "Segoe UI", sans-serif';
-    ctx.fillText('Series-Parallel RLC Relations', 52, 142);
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 22px Georgia, serif';
-    ctx.fillText('Z = √(Req² + (XL - XC)²)', 52, 182);
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '14px "Segoe UI", sans-serif';
-    ctx.fillText('Resonance: XL = XC  (Z_min = Req)', 52, 220);
-    ctx.fillText('Power Factor: cos φ = Req / Z', 52, 245);
+    ctx.font = 'bold 17px "Segoe UI", sans-serif';
+    ctx.fillText('Series-Parallel RLC Relations', 50, 140);
+    drawMathNodes(
+      ctx,
+      [mt('Z = ', true), msqrt([msup([msub('R', 'eq')], '2'), mt(' + ('), msub('X', 'L'), mt(' − '), msub('X', 'C'), mt(')'), msup('', '2')])],
+      50,
+      184,
+      19,
+      '#38bdf8',
+      POSTER_MATH
+    );
+    drawMathNodes(
+      ctx,
+      [mt('Resonance: '), msub('X', 'L'), mt(' = '), msub('X', 'C'), mt('   ('), msub('Z', 'min'), mt(' = '), msub('R', 'eq'), mt(')')],
+      50,
+      226,
+      14,
+      '#cbd5e1',
+      POSTER_MATH
+    );
+    drawMathNodes(
+      ctx,
+      [mt('Power Factor:  cos φ = '), mfrac([msub('R', 'eq')], [mt('Z', true)])],
+      50,
+      260,
+      14,
+      '#cbd5e1',
+      POSTER_MATH
+    );
 
     ctx.fillStyle = '#1e293b';
-    ctx.fillRect(400, 110, 336, 170);
+    ctx.fillRect(400, 110, 336, 174);
     ctx.strokeStyle = '#475569';
-    ctx.strokeRect(400, 110, 336, 170);
+    ctx.strokeRect(400, 110, 336, 174);
     ctx.fillStyle = '#f8fafc';
-    ctx.font = 'bold 18px "Segoe UI", sans-serif';
-    ctx.fillText('Quality Factor & Bandwidth', 420, 142);
-    ctx.fillStyle = '#10b981';
-    ctx.font = 'bold 22px Georgia, serif';
-    ctx.fillText('Q = (1/R) · √(L/C)   BW = f0 / Q', 420, 182);
+    ctx.font = 'bold 17px "Segoe UI", sans-serif';
+    ctx.fillText('Quality Factor & Bandwidth', 418, 140);
+    drawMathNodes(
+      ctx,
+      [mt('Q = ', true), mfrac([mt('1')], [mt('R', true)]), msqrt([mfrac([mt('L', true)], [mt('C', true)])]), mt('    BW = '), mfrac([msub('f', '0')], [mt('Q', true)])],
+      418,
+      188,
+      18,
+      '#10b981',
+      POSTER_MATH
+    );
     ctx.fillStyle = '#94a3b8';
     ctx.font = '14px "Segoe UI", sans-serif';
-    ctx.fillText('Higher Q yields sharp resonance peak', 420, 220);
-    ctx.fillText('Selectivity criterion in RF filters', 420, 245);
+    ctx.fillText('Higher Q yields sharp resonance peak', 418, 232);
+    ctx.fillText('Selectivity criterion in RF filters', 418, 258);
 
     ctx.fillStyle = '#090d16';
-    ctx.fillRect(32, 300, 704, 180);
+    ctx.fillRect(32, 304, 704, 176);
     ctx.strokeStyle = '#334155';
-    ctx.strokeRect(32, 300, 704, 180);
+    ctx.strokeRect(32, 304, 704, 176);
 
     ctx.strokeStyle = '#eab308';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     for (let px = 40; px <= 730; px += 2) {
-      const y = 390 - Math.sin((px - 40) * 0.035) * 55;
+      const y = 392 - Math.sin((px - 40) * 0.035) * 55;
       if (px === 40) ctx.moveTo(px, y);
       else ctx.lineTo(px, y);
     }
@@ -883,7 +1401,7 @@ export function createRoom3Scene(
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     for (let px = 40; px <= 730; px += 2) {
-      const y = 390 - Math.sin((px - 40) * 0.035 - 0.75) * 45;
+      const y = 392 - Math.sin((px - 40) * 0.035 - 0.75) * 45;
       if (px === 40) ctx.moveTo(px, y);
       else ctx.lineTo(px, y);
     }
@@ -891,9 +1409,9 @@ export function createRoom3Scene(
 
     ctx.fillStyle = '#eab308';
     ctx.font = 'bold 15px "Segoe UI", sans-serif';
-    ctx.fillText('Voltage V(t)', 55, 330);
+    ctx.fillText('Voltage V(t)', 55, 334);
     ctx.fillStyle = '#38bdf8';
-    ctx.fillText('Current I(t) [Lagging inductive phase]', 180, 330);
+    ctx.fillText('Current I(t) [Lagging inductive phase]', 180, 334);
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -910,6 +1428,7 @@ export function createRoom3Scene(
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
     if (!ctx) return new THREE.CanvasTexture(canvas);
+    const POSTER_MATH = 'Georgia, "Times New Roman", serif';
 
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, 768, 512);
@@ -930,64 +1449,74 @@ export function createRoom3Scene(
     ctx.stroke();
 
     ctx.fillStyle = '#1e293b';
-    ctx.fillRect(32, 110, 336, 170);
+    ctx.fillRect(32, 110, 336, 174);
     ctx.strokeStyle = '#475569';
-    ctx.strokeRect(32, 110, 336, 170);
+    ctx.strokeRect(32, 110, 336, 174);
     ctx.fillStyle = '#f8fafc';
-    ctx.font = 'bold 18px "Segoe UI", sans-serif';
-    ctx.fillText('Invariant Spacetime Interval', 52, 142);
-    ctx.fillStyle = '#a855f7';
-    ctx.font = 'bold 22px Georgia, serif';
-    ctx.fillText('Δs² = c²Δt² - Δx²', 52, 182);
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '14px "Segoe UI", sans-serif';
-    ctx.fillText('Δs² > 0: Timelike (Causally linked)', 52, 220);
-    ctx.fillText('Δs² = 0: Lightlike (Photon worldline)', 52, 245);
+    ctx.font = 'bold 17px "Segoe UI", sans-serif';
+    ctx.fillText('Invariant Spacetime Interval', 50, 140);
+    drawMathNodes(
+      ctx,
+      [msup('Δs', '2'), mt(' = '), msup('c', '2'), msup('Δt', '2'), mt(' − '), msup('Δx', '2')],
+      50,
+      186,
+      21,
+      '#c084fc',
+      POSTER_MATH
+    );
+    drawMathNodes(ctx, [msup('Δs', '2'), mt(' > 0: Timelike (Causally linked)')], 50, 226, 14, '#cbd5e1', POSTER_MATH);
+    drawMathNodes(ctx, [msup('Δs', '2'), mt(' = 0: Lightlike (Photon worldline)')], 50, 254, 14, '#cbd5e1', POSTER_MATH);
 
     ctx.fillStyle = '#1e293b';
-    ctx.fillRect(400, 110, 336, 170);
+    ctx.fillRect(400, 110, 336, 174);
     ctx.strokeStyle = '#475569';
-    ctx.strokeRect(400, 110, 336, 170);
+    ctx.strokeRect(400, 110, 336, 174);
     ctx.fillStyle = '#f8fafc';
-    ctx.font = 'bold 18px "Segoe UI", sans-serif';
-    ctx.fillText('Relativistic Longitudinal Doppler', 420, 142);
-    ctx.fillStyle = '#10b981';
-    ctx.font = 'bold 22px Georgia, serif';
-    ctx.fillText('f_obs = f_s · √((1 - β) / (1 + β))', 420, 182);
+    ctx.font = 'bold 17px "Segoe UI", sans-serif';
+    ctx.fillText('Relativistic Longitudinal Doppler', 418, 140);
+    drawMathNodes(
+      ctx,
+      [msub('f', 'obs'), mt(' = '), msub('f', 's'), mt(' '), msqrt([mfrac([mt('1 − β')], [mt('1 + β')])])],
+      418,
+      192,
+      19,
+      '#10b981',
+      POSTER_MATH
+    );
     ctx.fillStyle = '#94a3b8';
     ctx.font = '14px "Segoe UI", sans-serif';
-    ctx.fillText('Receding source: Redshift (z > 0)', 420, 220);
-    ctx.fillText('Approaching source: Blueshift (z < 0)', 420, 245);
+    ctx.fillText('Receding source: Redshift (z > 0)', 418, 232);
+    ctx.fillText('Approaching source: Blueshift (z < 0)', 418, 258);
 
     ctx.fillStyle = '#090d16';
-    ctx.fillRect(32, 300, 704, 180);
+    ctx.fillRect(32, 304, 704, 176);
     ctx.strokeStyle = '#334155';
-    ctx.strokeRect(32, 300, 704, 180);
+    ctx.strokeRect(32, 304, 704, 176);
 
     ctx.strokeStyle = '#64748b';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(384, 310);
+    ctx.moveTo(384, 314);
     ctx.lineTo(384, 470);
-    ctx.moveTo(150, 390);
-    ctx.lineTo(618, 390);
+    ctx.moveTo(150, 392);
+    ctx.lineTo(618, 392);
     ctx.stroke();
 
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(304, 470);
-    ctx.lineTo(464, 310);
-    ctx.moveTo(304, 310);
+    ctx.lineTo(464, 314);
+    ctx.moveTo(304, 314);
     ctx.lineTo(464, 470);
     ctx.stroke();
 
     ctx.fillStyle = '#f59e0b';
     ctx.font = 'bold 14px "Segoe UI", sans-serif';
-    ctx.fillText('Light Cone (v = c)', 475, 330);
+    ctx.fillText('Light Cone (v = c)', 475, 334);
     ctx.fillStyle = '#a855f7';
-    ctx.fillText('ct (Time Axis)', 392, 325);
-    ctx.fillText('x (Spatial Axis)', 625, 395);
+    ctx.fillText('ct (Time Axis)', 392, 329);
+    ctx.fillText('x (Spatial Axis)', 625, 397);
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -1010,9 +1539,10 @@ export function createRoom3Scene(
 
   const keyLight = new THREE.DirectionalLight(0xfffaed, 1.85);
   keyLight.position.set(5, 10, 7);
-  keyLight.castShadow = true;
-  keyLight.shadow.mapSize.width = 2048;
-  keyLight.shadow.mapSize.height = 2048;
+  keyLight.castShadow = currentGraphicsSettings.shadows !== 'off';
+  const initShadowSize = currentGraphicsSettings.shadows === 'low' ? 512 : currentGraphicsSettings.shadows === 'medium' ? 1024 : 2048;
+  keyLight.shadow.mapSize.width = initShadowSize;
+  keyLight.shadow.mapSize.height = initShadowSize;
   keyLight.shadow.camera.left = -15;
   keyLight.shadow.camera.right = 15;
   keyLight.shadow.camera.top = 15;
@@ -1059,28 +1589,28 @@ export function createRoom3Scene(
   guidanceMarker.name = 'GuidanceMarker';
   guidanceMarker.renderOrder = 9999;
 
-  const guidanceArrow = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.26, 20), guidanceMaterial);
-  guidanceArrow.rotation.z = Math.PI; // Cone pointing down
-  guidanceArrow.position.y = 0.13;
+  const guidanceArrow = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.24, 24), guidanceMaterial);
+  guidanceArrow.rotation.z = Math.PI; // Cone tip points straight down toward target
+  guidanceArrow.position.y = 0.14; // Tip sits at local y = 0.02 right above surface ring
   guidanceArrow.renderOrder = 9999;
 
-  const guidanceShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.18, 16), guidanceMaterial);
-  guidanceShaft.position.y = 0.35;
+  const guidanceShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.16, 16), guidanceMaterial);
+  guidanceShaft.position.y = 0.34;
   guidanceShaft.renderOrder = 9999;
 
-  const guidanceRing = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.018, 12, 36), guidanceRingMaterial);
+  const guidanceRing = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.016, 14, 40), guidanceRingMaterial);
   guidanceRing.rotation.x = Math.PI / 2;
-  guidanceRing.position.y = 0;
+  guidanceRing.position.y = 0.004;
   guidanceRing.renderOrder = 9999;
 
-  const guidanceInnerRing = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.012, 12, 28), guidanceRingMaterial);
+  const guidanceInnerRing = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.012, 14, 32), guidanceRingMaterial);
   guidanceInnerRing.rotation.x = Math.PI / 2;
-  guidanceInnerRing.position.y = 0;
+  guidanceInnerRing.position.y = 0.004;
   guidanceInnerRing.renderOrder = 9999;
 
   const guidanceLineGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0.02, 0),
     new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(0, -0.32, 0),
   ]);
   const guidanceBeam = new THREE.Line(guidanceLineGeom, guidanceBeamMaterial);
   guidanceBeam.renderOrder = 9999;
@@ -1469,7 +1999,7 @@ export function createRoom3Scene(
     return new THREE.CanvasTexture(canvas);
   };
 
-  const starCount = 2800;
+  const starCount = 4500;
   const starGeo = new THREE.BufferGeometry();
   const starPos = new Float32Array(starCount * 3);
   const starColors = new Float32Array(starCount * 3);
@@ -1484,29 +2014,29 @@ export function createRoom3Scene(
     new THREE.Color(0xe9d5ff), // violet starlight
   ];
 
+  // Moon target direction in deep space at (16.0, 84.0, -28.0) (~90m away) -> tight disc exclusion cone
+  const moonDir = new THREE.Vector3(16.0, 84.0, -28.0).normalize();
+
   for (let i = 0; i < starCount; i++) {
-    // Distribute stars on a distant celestial sphere dome (R = 75m to 130m)
-    // Elevation above lab horizon (0.02 to 0.44 * PI)
+    // Distribute 65% of stars across the overhead zenith dome strictly behind the Moon (r = 140..210m),
+    // and 35% near the horizon vistas visible through the wall windows
     const theta = Math.random() * Math.PI * 2;
-    const elevation = Math.random() * (Math.PI * 0.43) + 0.02;
-    const r = 75 + Math.random() * 55;
+    const isOverhead = i < starCount * 0.65;
+    const elevation = isOverhead
+      ? Math.PI * 0.14 + Math.pow(Math.random(), 0.72) * (Math.PI * 0.355)
+      : Math.random() * (Math.PI * 0.22) + 0.02;
+    const r = 140 + Math.random() * 70;
 
     let sx = r * Math.cos(elevation) * Math.cos(theta);
-    let sy = Math.max(1.2, r * Math.sin(elevation));
+    let sy = Math.max(2.5, r * Math.sin(elevation));
     let sz = r * Math.cos(elevation) * Math.sin(theta);
 
-    // Broad airtight exclusion cone for Moon backdrop behind East Window
-    // Moon is at (23.0, 3.0, -4.5). Divert any star in this entire East window vista to the open West sky
-    if (sx > 0 && sz <= 8.0 && sy <= 40.0) {
-      sx = -Math.abs(sx);
-    }
+    // Tight exclusion cone right behind the overhead Supermoon disc & inner corona
     const dist = Math.sqrt(sx * sx + sy * sy + sz * sz);
-    const uX = sx / dist;
-    const uY = sy / dist;
-    const uZ = sz / dist;
-    const dotMoon = uX * 0.973 + uY * 0.127 - uZ * 0.190;
-    if (dotMoon > 0.85) {
-      sx = -Math.abs(sx);
+    const dotMoon = (sx * moonDir.x + sy * moonDir.y + sz * moonDir.z) / dist;
+    if (dotMoon > 0.962) {
+      sx = -sx;
+      sz = -sz;
     }
 
     starPos[i * 3 + 0] = sx;
@@ -1523,11 +2053,11 @@ export function createRoom3Scene(
 
   const starGlowTex = createStarGlowTexture();
   const starMaterial = new THREE.PointsMaterial({
-    size: 0.65,
+    size: 1.15,
     map: starGlowTex,
     vertexColors: true,
     transparent: true,
-    opacity: 0.92,
+    opacity: 0.95,
     blending: THREE.AdditiveBlending,
     depthTest: true,
     depthWrite: false,
@@ -1536,33 +2066,74 @@ export function createRoom3Scene(
   const starPoints = new THREE.Points(starGeo, starMaterial);
   scene.add(starPoints);
 
-  // --- Landmark Twinkling Stars with 4-Point Diffraction Spikes ---
+  // Soft Milky Way & Nebula Glow Band arcing in deep space behind the Moon (r = 145..175m)
+  const nebulaCanvas = document.createElement('canvas');
+  nebulaCanvas.width = 256;
+  nebulaCanvas.height = 256;
+  const nebCtx = nebulaCanvas.getContext('2d');
+  if (nebCtx) {
+    const grad = nebCtx.createRadialGradient(128, 128, 4, 128, 128, 126);
+    grad.addColorStop(0.0, 'rgba(255, 255, 255, 0.72)');
+    grad.addColorStop(0.32, 'rgba(186, 230, 253, 0.34)');
+    grad.addColorStop(0.65, 'rgba(129, 140, 248, 0.11)');
+    grad.addColorStop(1.0, 'rgba(15, 23, 42, 0.0)');
+    nebCtx.fillStyle = grad;
+    nebCtx.fillRect(0, 0, 256, 256);
+  }
+  const nebulaTex = new THREE.CanvasTexture(nebulaCanvas);
+
+  const nebulaClouds: Array<{ x: number; y: number; z: number; sx: number; sy: number; color: number; opacity: number }> = [
+    { x: -72.0, y: 122.0, z: 32.0, sx: 130, sy: 74, color: 0x38bdf8, opacity: 0.22 },
+    { x: -40.0, y: 136.0, z: 12.0, sx: 125, sy: 82, color: 0x818cf8, opacity: 0.20 },
+    { x: -10.0, y: 145.0, z: 22.0, sx: 135, sy: 78, color: 0xa78bfa, opacity: 0.19 },
+    { x: 30.0, y: 140.0, z: 42.0, sx: 125, sy: 75, color: 0x60a5fa, opacity: 0.21 },
+    { x: -52.0, y: 128.0, z: -36.0, sx: 115, sy: 70, color: 0x0ea5e9, opacity: 0.18 },
+    { x: 60.0, y: 126.0, z: 18.0, sx: 118, sy: 70, color: 0xc084fc, opacity: 0.17 },
+  ];
+  nebulaClouds.forEach((c) => {
+    const nebMat = new THREE.SpriteMaterial({
+      map: nebulaTex,
+      color: c.color,
+      transparent: true,
+      opacity: c.opacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false,
+    });
+    const nebSprite = new THREE.Sprite(nebMat);
+    nebSprite.position.set(c.x, c.y, c.z);
+    nebSprite.scale.set(c.sx, c.sy, 1);
+    scene.add(nebSprite);
+  });
+
+  // --- Landmark Twinkling Stars with Crisp Pinpoint 4-Point Diffraction Spikes ---
   const createDiffractionSpikeTexture = () => {
     const canvas = document.createElement('canvas');
     canvas.width = 128;
     canvas.height = 128;
     const ctx = canvas.getContext('2d')!;
     const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
-    grad.addColorStop(0.18, 'rgba(255, 255, 255, 0.92)');
-    grad.addColorStop(0.5, 'rgba(186, 230, 253, 0.45)');
-    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    grad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+    grad.addColorStop(0.07, 'rgba(255, 255, 255, 0.88)');
+    grad.addColorStop(0.19, 'rgba(186, 230, 253, 0.22)');
+    grad.addColorStop(0.45, 'rgba(56, 189, 248, 0.04)');
+    grad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 128, 128);
 
-    const hGrad = ctx.createLinearGradient(0, 64, 128, 64);
+    const hGrad = ctx.createLinearGradient(6, 64, 122, 64);
     hGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
-    hGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.95)');
+    hGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.92)');
     hGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
     ctx.fillStyle = hGrad;
-    ctx.fillRect(0, 62, 128, 4);
+    ctx.fillRect(6, 63, 116, 2);
 
-    const vGrad = ctx.createLinearGradient(64, 0, 64, 128);
+    const vGrad = ctx.createLinearGradient(64, 6, 64, 122);
     vGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
-    vGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.95)');
+    vGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.92)');
     vGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
     ctx.fillStyle = vGrad;
-    ctx.fillRect(62, 0, 4, 128);
+    ctx.fillRect(63, 6, 2, 116);
 
     return new THREE.CanvasTexture(canvas);
   };
@@ -1577,19 +2148,32 @@ export function createRoom3Scene(
   const diffractionTex = createDiffractionSpikeTexture();
 
   const landmarkDefs = [
-    // Outside West Windows & North Clerestory (Crystal clear vistas completely away from Moon at East Window)
-    { name: 'Betelgeuse', x: -50.0, y: 8.0, z: 8.0, color: 0xfba571, scale: 2.6, speed: 2.4, phase: 1.2 },
-    { name: 'Aldebaran', x: -46.0, y: 6.2, z: 12.5, color: 0xfde047, scale: 2.4, speed: 2.8, phase: 5.3 },
-    { name: 'Capella', x: -52.0, y: 11.5, z: -10.5, color: 0xfef08a, scale: 2.3, speed: 2.2, phase: 2.7 },
-    { name: 'Procyon', x: -48.0, y: 7.2, z: 9.2, color: 0xa5f3fc, scale: 2.4, speed: 3.0, phase: 4.1 },
-    { name: 'Sirius', x: -48.0, y: 7.0, z: -4.5, color: 0x93c5fd, scale: 2.8, speed: 3.2, phase: 0.1 },
-    { name: 'Rigel', x: -50.0, y: 8.2, z: -1.0, color: 0x67e8f9, scale: 2.6, speed: 3.7, phase: 2.4 },
-    { name: 'Vega', x: -52.0, y: 10.0, z: 0.0, color: 0xa5f3fc, scale: 2.7, speed: 3.0, phase: 4.8 },
-    { name: 'Arcturus', x: -46.0, y: 6.5, z: 5.0, color: 0xfb923c, scale: 2.4, speed: 2.6, phase: 1.8 },
-    { name: 'Spica', x: -54.0, y: 11.5, z: -2.8, color: 0x93c5fd, scale: 2.3, speed: 3.3, phase: 3.1 },
-    { name: 'Altair', x: -48.0, y: 7.6, z: 2.5, color: 0xffffff, scale: 2.4, speed: 2.9, phase: 0.8 },
+    // Outside West Windows & North Clerestory (Crisp distant optical beacons)
+    { name: 'Betelgeuse', x: -125.0, y: 20.0, z: 20.0, color: 0xfba571, scale: 3.4, speed: 2.4, phase: 1.2 },
+    { name: 'Aldebaran', x: -115.0, y: 15.5, z: 31.0, color: 0xfde047, scale: 3.0, speed: 2.8, phase: 5.3 },
+    { name: 'Capella', x: -130.0, y: 28.5, z: -26.0, color: 0xfef08a, scale: 3.0, speed: 2.2, phase: 2.7 },
+    { name: 'Procyon', x: -120.0, y: 18.0, z: 23.0, color: 0xa5f3fc, scale: 3.0, speed: 3.0, phase: 4.1 },
+    { name: 'Sirius', x: -120.0, y: 17.5, z: -11.0, color: 0x93c5fd, scale: 3.8, speed: 3.2, phase: 0.1 },
+    { name: 'Rigel', x: -125.0, y: 20.5, z: -2.5, color: 0x67e8f9, scale: 3.4, speed: 3.7, phase: 2.4 },
+    { name: 'Vega', x: -130.0, y: 25.0, z: 0.0, color: 0xa5f3fc, scale: 3.5, speed: 3.0, phase: 4.8 },
+    { name: 'Arcturus', x: -115.0, y: 16.2, z: 12.5, color: 0xfb923c, scale: 3.1, speed: 2.6, phase: 1.8 },
+    { name: 'Spica', x: -135.0, y: 28.5, z: -7.0, color: 0x93c5fd, scale: 3.0, speed: 3.3, phase: 3.1 },
+    { name: 'Altair', x: -120.0, y: 19.0, z: 6.2, color: 0xffffff, scale: 3.1, speed: 2.9, phase: 0.8 },
     // North Clerestory Vista
-    { name: 'Polaris', x: 0.0, y: 16.0, z: -55.0, color: 0xffffff, scale: 2.8, speed: 2.1, phase: 3.5 },
+    { name: 'Polaris', x: 0.0, y: 38.0, z: -132.0, color: 0xffffff, scale: 3.8, speed: 2.1, phase: 3.5 },
+    // 12 Overhead Zenith Optical Pinpoint Stars behind the Moon in deep space (r = 128..150m)
+    { name: 'Deneb', x: -46.0, y: 132.0, z: -20.0, color: 0xffffff, scale: 3.6, speed: 2.6, phase: 0.5 },
+    { name: 'Denebola', x: 52.0, y: 128.0, z: 18.0, color: 0xa5f3fc, scale: 3.0, speed: 3.1, phase: 2.1 },
+    { name: 'Alnilam', x: -24.0, y: 142.0, z: 10.0, color: 0x93c5fd, scale: 3.2, speed: 3.4, phase: 1.4 },
+    { name: 'Mintaka', x: -15.0, y: 144.0, z: 18.0, color: 0x67e8f9, scale: 3.0, speed: 2.9, phase: 3.9 },
+    { name: 'Alnitak', x: -34.0, y: 140.0, z: 2.0, color: 0xa5f3fc, scale: 3.0, speed: 3.2, phase: 5.1 },
+    { name: 'Castor', x: -12.0, y: 136.0, z: -46.0, color: 0xfef08a, scale: 2.9, speed: 2.5, phase: 4.4 },
+    { name: 'Pollux', x: 4.0, y: 134.0, z: -56.0, color: 0xfba571, scale: 3.1, speed: 2.3, phase: 1.9 },
+    { name: 'Bellatrix', x: -62.0, y: 122.0, z: 26.0, color: 0x93c5fd, scale: 3.1, speed: 3.5, phase: 2.8 },
+    { name: 'Regulus', x: 44.0, y: 136.0, z: 6.0, color: 0xe0f2fe, scale: 3.3, speed: 2.7, phase: 0.9 },
+    { name: 'Antares', x: -28.0, y: 126.0, z: 48.0, color: 0xfb923c, scale: 3.4, speed: 2.4, phase: 3.3 },
+    { name: 'Alphecca', x: 10.0, y: 145.0, z: 30.0, color: 0xe9d5ff, scale: 2.9, speed: 3.0, phase: 5.8 },
+    { name: 'Fomalhaut', x: 64.0, y: 122.0, z: 42.0, color: 0xffffff, scale: 3.3, speed: 2.8, phase: 1.6 },
   ];
 
   landmarkDefs.forEach((def) => {
@@ -1631,12 +2215,12 @@ export function createRoom3Scene(
   });
 
   const moonGroup = new THREE.Group();
-  moonGroup.position.set(23.0, 3.0, -4.5);
-  moonGroup.rotation.y = -Math.PI / 3;
+  moonGroup.position.set(16.0, 84.0, -28.0);
+  moonGroup.rotation.set(0.18, -Math.PI / 4, 0.08);
   scene.add(moonGroup);
 
   let moonMesh: THREE.Object3D = new THREE.Mesh(
-    new THREE.SphereGeometry(2.1, 64, 64),
+    new THREE.SphereGeometry(20.5, 64, 64),
     moonMaterial
   );
   moonMesh.renderOrder = 0;
@@ -1655,7 +2239,7 @@ export function createRoom3Scene(
           m.receiveShadow = false;
         }
       });
-      obj.scale.set(1.20, 1.20, 1.20);
+      obj.scale.set(11.8, 11.8, 11.8);
       moonGroup.remove(moonMesh);
       moonMesh = obj;
       moonGroup.add(obj);
@@ -1682,8 +2266,205 @@ export function createRoom3Scene(
     return new THREE.CanvasTexture(canvas);
   };
 
+  // Infinite Tsukuyomi (Rinne Sharingan Moon) spherical-projection texture & oriented 3D lunar sphere
+  const createInfiniteTsukuyomiTexture = () => {
+    const W = 1024;
+    const H = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d')!;
+    const img = ctx.createImageData(W, H);
+    const data = img.data;
+
+    const ringRadii = [0.34, 0.59, 0.84];
+    const ringHalfW = 0.015;
+    const pupilRadius = 0.132;
+    const headRadius = 0.056;
+    const tailLen = 0.42;
+
+    // Deterministic lunar craters across front hemisphere for realistic surface relief under crimson glaze
+    const craters = [
+      { x: -0.35, y: 0.22, r: 0.18, d: 0.18 },
+      { x: 0.28, y: -0.26, r: 0.22, d: 0.16 },
+      { x: -0.18, y: -0.45, r: 0.15, d: 0.15 },
+      { x: 0.42, y: 0.18, r: 0.14, d: 0.14 },
+      { x: -0.52, y: -0.12, r: 0.20, d: 0.16 },
+      { x: 0.10, y: 0.48, r: 0.16, d: 0.13 },
+      { x: -0.08, y: -0.15, r: 0.10, d: 0.10 },
+      { x: 0.22, y: 0.32, r: 0.09, d: 0.10 },
+      { x: -0.28, y: 0.04, r: 0.08, d: 0.09 },
+      { x: 0.50, y: -0.35, r: 0.19, d: 0.15 },
+      { x: -0.42, y: 0.44, r: 0.17, d: 0.14 },
+      { x: 0.02, y: -0.58, r: 0.21, d: 0.15 },
+    ];
+
+    const ringTargets: Array<{ r: number; ang: number; dir: number }> = [];
+    ringRadii.forEach((rr, idx) => {
+      const offset = idx * (Math.PI / 3);
+      for (let t = 0; t < 3; t++) {
+        ringTargets.push({ r: rr, ang: offset + t * ((Math.PI * 2) / 3), dir: 1 });
+      }
+    });
+
+    const smoothstep = (e0: number, e1: number, x: number) => {
+      const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+      return t * t * (3 - 2 * t);
+    };
+
+    for (let py = 0; py < H; py++) {
+      const theta = ((py + 0.5) / H) * Math.PI;
+      const sinT = Math.sin(theta);
+      const ny = Math.cos(theta);
+      for (let px = 0; px < W; px++) {
+        const idx4 = (py * W + px) * 4;
+        const phi = ((px + 0.5) / W) * Math.PI * 2;
+        const nx = -Math.cos(phi) * sinT;
+        const nz = Math.sin(phi) * sinT;
+
+        if (nx <= -0.08) {
+          data[idx4] = 48;
+          data[idx4 + 1] = 6;
+          data[idx4 + 2] = 12;
+          data[idx4 + 3] = 255;
+          continue;
+        }
+
+        const ang = Math.acos(Math.max(-1, Math.min(1, nx)));
+        const rNorm = ang / (Math.PI * 0.44);
+        const rx = -nz;
+        const ry = ny;
+        const az = Math.atan2(ry, rx);
+
+        // Multi-scale lunar maria & crater relief mapped cleanly onto sphere coordinates
+        const tx = Math.sin(ang) * Math.cos(az);
+        const ty = Math.sin(ang) * Math.sin(az);
+        const maria =
+          0.86 +
+          0.14 * Math.sin(tx * 5.2 + ty * 3.1) * Math.cos(ty * 4.7 - tx * 2.3) +
+          0.07 * Math.sin(tx * 13.0 - ty * 11.0);
+
+        let craterMod = 1.0;
+        for (let c = 0; c < craters.length; c++) {
+          const cr = craters[c];
+          const dx = tx - cr.x;
+          const dy = ty - cr.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < cr.r) {
+            const q = dist / cr.r;
+            // Bright raised rim near q=0.88, darker floor interior
+            craterMod -= cr.d * (1 - q * q) * 0.85;
+            if (q > 0.72) craterMod += cr.d * 0.45 * Math.sin(((q - 0.72) / 0.28) * Math.PI);
+          }
+        }
+
+        // Vivid scarlet center fading to deeper crimson near lunar limb
+        const limbShade = Math.max(0.45, Math.pow(Math.max(0.05, nx), 0.35));
+        const radialGlow = 1.08 - 0.28 * Math.min(1, rNorm);
+        let rCol = 238 * radialGlow * limbShade * maria * craterMod;
+        let gCol = 24 * radialGlow * limbShade * maria * craterMod;
+        let bCol = 36 * radialGlow * limbShade * maria * craterMod;
+
+        // Compute Rinne Sharingan black ink mask (pupil, 3 rings, 9 curved tomoe)
+        let ink = 1.0 - smoothstep(pupilRadius - 0.008, pupilRadius + 0.008, rNorm);
+
+        for (let ri = 0; ri < ringRadii.length; ri++) {
+          const dr = Math.abs(rNorm - ringRadii[ri]);
+          const ringInk = 1.0 - smoothstep(ringHalfW - 0.006, ringHalfW + 0.006, dr);
+          ink = Math.max(ink, ringInk);
+        }
+
+        if (rNorm > 0.20 && rNorm < 0.98) {
+          for (let ti = 0; ti < ringTargets.length; ti++) {
+            const tm = ringTargets[ti];
+            const hx = tm.r * Math.cos(tm.ang);
+            const hy = tm.r * Math.sin(tm.ang);
+            const pxAng = rNorm * Math.cos(az);
+            const pyAng = rNorm * Math.sin(az);
+            const dHead = Math.hypot(pxAng - hx, pyAng - hy);
+            ink = Math.max(ink, 1.0 - smoothstep(headRadius - 0.007, headRadius + 0.007, dHead));
+
+            // Curved comma tail trailing along the concentric circle
+            let dt = tm.ang - az;
+            while (dt < -Math.PI) dt += Math.PI * 2;
+            while (dt > Math.PI) dt -= Math.PI * 2;
+            if (dt > 0 && dt < tailLen) {
+              const p = dt / tailLen;
+              const rCurve = tm.r + 0.022 * Math.sin(p * Math.PI * 0.72);
+              const halfThick = headRadius * Math.pow(1 - p, 1.45);
+              const dTail = Math.abs(rNorm - rCurve);
+              ink = Math.max(ink, 1.0 - smoothstep(halfThick - 0.006, halfThick + 0.006, dTail));
+            }
+          }
+        }
+
+        const inkKeep = 1.0 - Math.min(1, ink) * 0.94;
+        data[idx4] = Math.max(8, Math.min(255, Math.round(rCol * inkKeep)));
+        data[idx4 + 1] = Math.max(4, Math.min(255, Math.round(gCol * inkKeep)));
+        data[idx4 + 2] = Math.max(8, Math.min(255, Math.round(bCol * inkKeep)));
+        data[idx4 + 3] = 255;
+      }
+    }
+
+    ctx.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    return tex;
+  };
+
+  const tsukuyomiTex = createInfiniteTsukuyomiTexture();
+  const tsukuyomiMaterial = new THREE.MeshStandardMaterial({
+    map: tsukuyomiTex,
+    bumpMap: moonBumpMap,
+    bumpScale: 0.06,
+    roughness: 0.82,
+    metalness: 0.05,
+    emissive: new THREE.Color(0xff1e2d),
+    emissiveMap: tsukuyomiTex,
+    emissiveIntensity: 0.85,
+    fog: false,
+  });
+
+  // Oriented directly at the observatory interior so the Rinne Sharingan iris stares straight down cleanly
+  const tsukuyomiMoonGroup = new THREE.Group();
+  tsukuyomiMoonGroup.position.copy(moonGroup.position);
+  tsukuyomiMoonGroup.lookAt(0, 1.7, 0);
+  tsukuyomiMoonGroup.visible = false;
+  scene.add(tsukuyomiMoonGroup);
+
+  const tsukuyomiSpinGroup = new THREE.Group();
+  tsukuyomiMoonGroup.add(tsukuyomiSpinGroup);
+
+  const tsukuyomiSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(20.6, 64, 64),
+    tsukuyomiMaterial
+  );
+  // Rotate sphere +X center (u=0.5, v=0.5) onto lookAt +Z axis
+  tsukuyomiSphere.rotation.y = -Math.PI / 2;
+  tsukuyomiSphere.renderOrder = 0;
+  tsukuyomiSpinGroup.add(tsukuyomiSphere);
+
+  const createTsukuyomiCoronaTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d')!;
+    const grad = ctx.createRadialGradient(128, 128, 20, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(255, 64, 72, 0.58)');
+    grad.addColorStop(0.35, 'rgba(220, 38, 38, 0.30)');
+    grad.addColorStop(0.70, 'rgba(153, 27, 27, 0.10)');
+    grad.addColorStop(1, 'rgba(127, 29, 29, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
+    return new THREE.CanvasTexture(canvas);
+  };
+
+  const normalMoonCoronaTex = createMoonCoronaTexture();
+  const tsukuyomiCoronaTex = createTsukuyomiCoronaTexture();
+
   const moonCoronaMat = new THREE.SpriteMaterial({
-    map: createMoonCoronaTexture(),
+    map: normalMoonCoronaTex,
     color: 0xffffff,
     blending: THREE.AdditiveBlending,
     transparent: true,
@@ -1691,13 +2472,13 @@ export function createRoom3Scene(
     fog: false,
   });
   const moonCorona = new THREE.Sprite(moonCoronaMat);
-  moonCorona.position.set(23.0, 3.0, -4.6);
-  moonCorona.scale.set(7.5, 7.5, 1.0);
+  moonCorona.position.set(16.4, 85.0, -28.6);
+  moonCorona.scale.set(88.0, 88.0, 1.0);
   scene.add(moonCorona);
 
-  // Dedicated Moonlight streaming through the windows into the lab
-  const moonPointLight = new THREE.PointLight(0xdbeafe, 2.4, 35, 1.2);
-  moonPointLight.position.set(22.0, 3.2, -4.0);
+  // Dedicated Moonlight streaming down through the glass dome into the lab
+  const moonPointLight = new THREE.PointLight(0xdbeafe, 2.6, 52, 1.1);
+  moonPointLight.position.set(5.0, 12.0, -4.5);
   scene.add(moonPointLight);
 
   // Structural Columns in Corners with Mahogany & Brass Moldings
@@ -1720,91 +2501,272 @@ export function createRoom3Scene(
     scene.add(colCap);
   });
 
-  // 4. Architectural Coffered Ceiling (Deep Burgundy Base + Mahogany Beams + Brass Trims)
+  // 4. Curved 3D Paraboloid Conservatory Dome Ceiling (y(x,z) rising +2.6m from 4.2m walls to 6.8m apex)
   const ceilingGroup = new THREE.Group();
   scene.add(ceilingGroup);
 
-  const ceilingBase = new THREE.Mesh(
-    new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 0.12, ROOM2_CONFIG.room.depth),
-    new THREE.MeshStandardMaterial({
-      color: 0x281018, // Deep burgundy coffer field
-      roughness: 0.88,
-      metalness: 0.06,
-    })
-  );
-  ceilingBase.position.y = ROOM2_CONFIG.room.height;
-  ceilingGroup.add(ceilingBase);
+  const domeBaseH = ROOM2_CONFIG.room.height; // 4.2m wall cornice elevation
+  const domePeakRise = 2.6; // +2.6m medium-high atrium -> 6.8m apex at (0, 0)
+  const domeHalfX = roomHalfWidth; // 10.8m
+  const domeHalfZ = ROOM2_CONFIG.room.depth / 2; // 7.4m
 
-  // Longitudinal coffer beams (along Z)
-  [-7.2, -3.6, 0, 3.6, 7.2].forEach((bx) => {
-    const beam = new THREE.Mesh(
-      new THREE.BoxGeometry(0.26, 0.28, ROOM2_CONFIG.room.depth),
+  const paraboloidY = (px: number, pz: number) => {
+    const ux = Math.min(1, Math.abs(px) / domeHalfX);
+    const uz = Math.min(1, Math.abs(pz) / domeHalfZ);
+    return domeBaseH + domePeakRise * (1 - ux * ux) * (1 - uz * uz);
+  };
+
+  const paraboloidNormal = (px: number, pz: number) => {
+    const ux = Math.max(-1, Math.min(1, px / domeHalfX));
+    const uz = Math.max(-1, Math.min(1, pz / domeHalfZ));
+    const dydx = -2 * domePeakRise * (px / (domeHalfX * domeHalfX)) * (1 - uz * uz);
+    const dydz = -2 * domePeakRise * (1 - ux * ux) * (pz / (domeHalfZ * domeHalfZ));
+    return new THREE.Vector3(-dydx, 1, -dydz).normalize();
+  };
+
+  // Continuous curved 3D paraboloid glass dome skin (36 x 28 smooth quads, depthWrite: false)
+  const glassSegX = 36;
+  const glassSegZ = 28;
+  const glassVerts: number[] = [];
+  const glassIndices: number[] = [];
+  const spanX = domeHalfX - 0.16;
+  const spanZ = domeHalfZ - 0.16;
+  for (let iz = 0; iz <= glassSegZ; iz++) {
+    const tz = -spanZ + (2 * spanZ * iz) / glassSegZ;
+    for (let ix = 0; ix <= glassSegX; ix++) {
+      const tx = -spanX + (2 * spanX * ix) / glassSegX;
+      glassVerts.push(tx, paraboloidY(tx, tz) + 0.015, tz);
+    }
+  }
+  for (let iz = 0; iz < glassSegZ; iz++) {
+    for (let ix = 0; ix < glassSegX; ix++) {
+      const row0 = iz * (glassSegX + 1) + ix;
+      const row1 = (iz + 1) * (glassSegX + 1) + ix;
+      glassIndices.push(row0, row1, row0 + 1);
+      glassIndices.push(row0 + 1, row1, row1 + 1);
+    }
+  }
+  const paraboloidGlassGeo = new THREE.BufferGeometry();
+  paraboloidGlassGeo.setAttribute('position', new THREE.Float32BufferAttribute(glassVerts, 3));
+  paraboloidGlassGeo.setIndex(glassIndices);
+  paraboloidGlassGeo.computeVertexNormals();
+
+  const skylightGlassMat = new THREE.MeshStandardMaterial({
+    color: 0xdbeafe,
+    transparent: true,
+    opacity: 0.055,
+    roughness: 0.07,
+    metalness: 0.18,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const skylightGlass = new THREE.Mesh(paraboloidGlassGeo, skylightGlassMat);
+  skylightGlass.renderOrder = 2;
+  ceilingGroup.add(skylightGlass);
+
+  // Toggle Infinite Tsukuyomi lunar state & atmospheric moonlight when Madara Uchiha is active
+  applyInfiniteTsukuyomiState = (active: boolean) => {
+    moonGroup.visible = !active;
+    tsukuyomiMoonGroup.visible = active;
+    if (active) {
+      moonCoronaMat.map = tsukuyomiCoronaTex;
+      moonCoronaMat.needsUpdate = true;
+      moonCorona.scale.set(98.0, 98.0, 1.0);
+      celestialMoonlight.color.setHex(0xff4d5a);
+      celestialMoonlight.intensity = 2.05;
+      moonPointLight.color.setHex(0xf87171);
+      moonPointLight.intensity = 2.85;
+      skylightGlassMat.color.setHex(0xfecaca);
+      skylightGlassMat.opacity = 0.075;
+    } else {
+      moonCoronaMat.map = normalMoonCoronaTex;
+      moonCoronaMat.needsUpdate = true;
+      moonCorona.scale.set(88.0, 88.0, 1.0);
+      celestialMoonlight.color.setHex(0x7dd3fc);
+      celestialMoonlight.intensity = 1.85;
+      moonPointLight.color.setHex(0xdbeafe);
+      moonPointLight.intensity = 2.6;
+      skylightGlassMat.color.setHex(0xdbeafe);
+      skylightGlassMat.opacity = 0.055;
+    }
+  };
+  applyInfiniteTsukuyomiState(character.activeCharacter === 'madara');
+
+  // Perimeter mahogany skylight cornice & antique brass trim ring sealing seamlessly along all 4 walls
+  const corniceDepth = 0.42;
+  const corniceConfigs: Array<{ w: number; d: number; x: number; z: number }> = [
+    { w: ROOM2_CONFIG.room.width, d: corniceDepth, x: 0, z: ROOM2_CONFIG.room.backZ + corniceDepth / 2 },
+    { w: ROOM2_CONFIG.room.width, d: corniceDepth, x: 0, z: frontZ - corniceDepth / 2 },
+    { w: corniceDepth, d: domeHalfZ * 2 - corniceDepth * 2, x: -domeHalfX + corniceDepth / 2, z: 0 },
+    { w: corniceDepth, d: domeHalfZ * 2 - corniceDepth * 2, x: domeHalfX - corniceDepth / 2, z: 0 },
+  ];
+  corniceConfigs.forEach((c) => {
+    const cornice = new THREE.Mesh(
+      new THREE.BoxGeometry(c.w, 0.28, c.d),
       mahoganyDeskMaterial
     );
-    beam.position.set(bx, ROOM2_CONFIG.room.height - 0.14, 0);
-    ceilingGroup.add(beam);
+    cornice.position.set(c.x, domeBaseH - 0.14, c.z);
+    ceilingGroup.add(cornice);
 
-    const trim = new THREE.Mesh(
-      new THREE.BoxGeometry(0.30, 0.04, ROOM2_CONFIG.room.depth),
+    const corniceTrim = new THREE.Mesh(
+      new THREE.BoxGeometry(c.w + 0.04, 0.04, c.d + 0.04),
       brassTrimMaterial
     );
-    trim.position.set(bx, ROOM2_CONFIG.room.height - 0.28, 0);
-    ceilingGroup.add(trim);
+    corniceTrim.position.set(c.x, domeBaseH - 0.28, c.z);
+    ceilingGroup.add(corniceTrim);
   });
 
-  // Cross coffer beams (along X)
-  [-5.2, -2.0, 1.5, 5.0].forEach((bz) => {
-    const beam = new THREE.Mesh(
-      new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 0.28, 0.26),
-      mahoganyDeskMaterial
-    );
-    beam.position.set(0, ROOM2_CONFIG.room.height - 0.14, bz);
-    ceilingGroup.add(beam);
+  // Seamless continuous rectangular-section curved rib builder along paraboloid paths
+  const createParabolicRibMesh = (
+    curvePoints: THREE.Vector3[],
+    width: number,
+    height: number,
+    normalOffset: number,
+    mat: THREE.Material
+  ) => {
+    const verts: number[] = [];
+    const idx: number[] = [];
+    const nPts = curvePoints.length;
+    const hw = width / 2;
+    const hh = height / 2;
 
-    const trim = new THREE.Mesh(
-      new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 0.04, 0.30),
-      brassTrimMaterial
-    );
-    trim.position.set(0, ROOM2_CONFIG.room.height - 0.28, bz);
-    ceilingGroup.add(trim);
+    for (let i = 0; i < nPts; i++) {
+      const p = curvePoints[i];
+      const pPrev = curvePoints[Math.max(0, i - 1)];
+      const pNext = curvePoints[Math.min(nPts - 1, i + 1)];
+      const tangent = new THREE.Vector3().subVectors(pNext, pPrev).normalize();
+      const surfUp = paraboloidNormal(p.x, p.z);
+      const side = new THREE.Vector3().crossVectors(tangent, surfUp).normalize();
+      const norm = new THREE.Vector3().crossVectors(side, tangent).normalize();
+      const center = p.clone().addScaledVector(norm, normalOffset);
+
+      const corners = [
+        center.clone().addScaledVector(side, -hw).addScaledVector(norm, -hh), // BL
+        center.clone().addScaledVector(side, hw).addScaledVector(norm, -hh),  // BR
+        center.clone().addScaledVector(side, hw).addScaledVector(norm, hh),   // TR
+        center.clone().addScaledVector(side, -hw).addScaledVector(norm, hh),  // TL
+      ];
+      corners.forEach((c) => verts.push(c.x, c.y, c.z));
+
+      if (i < nPts - 1) {
+        const a = i * 4;
+        const b = (i + 1) * 4;
+        for (let k = 0; k < 4; k++) {
+          const kn = (k + 1) % 4;
+          idx.push(a + k, b + k, a + kn);
+          idx.push(a + kn, b + k, b + kn);
+        }
+      }
+    }
+    // End caps
+    idx.push(0, 1, 2, 0, 2, 3);
+    const e = (nPts - 1) * 4;
+    idx.push(e, e + 2, e + 1, e, e + 3, e + 2);
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, mat);
+  };
+
+  const sampleParabolicRibZ = (rx: number, segs = 28) => {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= segs; i++) {
+      const rz = -domeHalfZ + (2 * domeHalfZ * i) / segs;
+      pts.push(new THREE.Vector3(rx, paraboloidY(rx, rz), rz));
+    }
+    return pts;
+  };
+
+  const sampleParabolicRibX = (rz: number, segs = 36) => {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= segs; i++) {
+      const rx = -domeHalfX + (2 * domeHalfX * i) / segs;
+      pts.push(new THREE.Vector3(rx, paraboloidY(rx, rz), rz));
+    }
+    return pts;
+  };
+
+  // Primary Curved Mahogany Parabolic Arch Ribs + Non-Intersecting Brass Soffit Strips
+  [-7.2, -3.6, 0.0, 3.6, 7.2].forEach((bx) => {
+    const pts = sampleParabolicRibZ(bx);
+    ceilingGroup.add(createParabolicRibMesh(pts, 0.22, 0.19, -0.105, mahoganyDeskMaterial));
+    ceilingGroup.add(createParabolicRibMesh(pts, 0.26, 0.032, -0.210, brassTrimMaterial));
   });
 
-  // Recessed warm architectural downlight bezels in coffer bays (matching Room 04)
-  const ceilingLightPositions: [number, number, number][] = [
-    [-5.4, ROOM2_CONFIG.room.height - 0.08, -3.6],
-    [-5.4, ROOM2_CONFIG.room.height - 0.08, 0.0],
-    [-5.4, ROOM2_CONFIG.room.height - 0.08, 3.2],
-    [0.0, ROOM2_CONFIG.room.height - 0.08, -3.6],
-    [0.0, ROOM2_CONFIG.room.height - 0.08, 0.0],
-    [0.0, ROOM2_CONFIG.room.height - 0.08, 3.2],
-    [5.4, ROOM2_CONFIG.room.height - 0.08, -3.6],
-    [5.4, ROOM2_CONFIG.room.height - 0.08, 0.0],
-    [5.4, ROOM2_CONFIG.room.height - 0.08, 3.2],
+  [-4.9, -2.45, 0.0, 2.45, 4.9].forEach((bz) => {
+    const pts = sampleParabolicRibX(bz);
+    ceilingGroup.add(createParabolicRibMesh(pts, 0.22, 0.19, -0.112, mahoganyDeskMaterial));
+    ceilingGroup.add(createParabolicRibMesh(pts, 0.26, 0.032, -0.222, brassTrimMaterial));
+  });
+
+  // Slender Intermediate Curved Antique Brass Glazing Mullions (strictly layered below glass)
+  [-9.0, -5.4, -1.8, 1.8, 5.4, 9.0].forEach((gx) => {
+    const pts = sampleParabolicRibZ(gx);
+    ceilingGroup.add(createParabolicRibMesh(pts, 0.040, 0.036, -0.018, brassTrimMaterial));
+  });
+  [-6.15, -3.68, -1.22, 1.22, 3.68, 6.15].forEach((gz) => {
+    const pts = sampleParabolicRibX(gz);
+    ceilingGroup.add(createParabolicRibMesh(pts, 0.040, 0.036, -0.024, brassTrimMaterial));
+  });
+
+  // Compact Brass Perimeter Cornice Spot Sconces (leaves the entire curved skylight view unobstructed)
+  const perimeterSpotConfigs: Array<{ x: number; z: number; aimX: number; aimZ: number }> = [
+    { x: -7.2, z: ROOM2_CONFIG.room.backZ + 0.36, aimX: -6.0, aimZ: -1.5 },
+    { x: 0.0, z: ROOM2_CONFIG.room.backZ + 0.36, aimX: 0.0, aimZ: -1.5 },
+    { x: 7.2, z: ROOM2_CONFIG.room.backZ + 0.36, aimX: 6.0, aimZ: -1.5 },
+    { x: -7.2, z: frontZ - 0.36, aimX: -6.0, aimZ: 1.5 },
+    { x: 0.0, z: frontZ - 0.36, aimX: 0.0, aimZ: 1.5 },
+    { x: 7.2, z: frontZ - 0.36, aimX: 6.0, aimZ: 1.5 },
+    { x: -domeHalfX + 0.36, z: -2.25, aimX: -4.5, aimZ: -1.2 },
+    { x: -domeHalfX + 0.36, z: 2.25, aimX: -4.5, aimZ: 1.2 },
+    { x: domeHalfX - 0.36, z: -2.25, aimX: 4.5, aimZ: -1.2 },
+    { x: domeHalfX - 0.36, z: 2.25, aimX: 4.5, aimZ: 1.2 },
   ];
 
-  ceilingLightPositions.forEach(([lx, ly, lz]) => {
-    const fixture = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.24, 0.24, 0.06, 24),
+  const corniceBulbMat = new THREE.MeshStandardMaterial({
+    color: 0xfffbeb,
+    emissive: 0xffedd5,
+    emissiveIntensity: 1.45,
+    roughness: 0.25,
+  });
+
+  perimeterSpotConfigs.forEach((cfg) => {
+    const sconceSpot = new THREE.Group();
+    sconceSpot.position.set(cfg.x, domeBaseH - 0.26, cfg.z);
+    sconceSpot.lookAt(cfg.aimX, 1.2, cfg.aimZ);
+
+    const basePlate = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.065, 0.03, 16),
       brassTrimMaterial
     );
-    fixture.position.set(lx, ly, lz);
-    ceilingGroup.add(fixture);
+    basePlate.rotation.x = Math.PI / 2;
+    sconceSpot.add(basePlate);
 
-    const bulb = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.18, 0.18, 0.02, 24),
-      new THREE.MeshStandardMaterial({
-        color: 0xfffbeb,
-        emissive: 0xffe8ba,
-        emissiveIntensity: 2.0,
-      })
+    const barrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.042, 0.052, 0.13, 16),
+      brassTrimMaterial
     );
-    bulb.position.set(lx, ly - 0.035, lz);
-    ceilingGroup.add(bulb);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.z = 0.06;
+    sconceSpot.add(barrel);
 
-    const downlight = new THREE.PointLight(0xffecd1, 1.45, 11, 1.8);
-    downlight.position.set(lx, ly - 0.15, lz);
-    scene.add(downlight);
-    downlights.push(downlight);
+    const lens = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.036, 0.036, 0.015, 16),
+      corniceBulbMat
+    );
+    lens.rotation.x = Math.PI / 2;
+    lens.position.z = 0.125;
+    sconceSpot.add(lens);
+
+    ceilingGroup.add(sconceSpot);
+
+    const perimeterLight = new THREE.PointLight(0xffecd1, 1.35, 14, 1.6);
+    const inDir = new THREE.Vector3(cfg.aimX - cfg.x, -1.6, cfg.aimZ - cfg.z).normalize();
+    perimeterLight.position.set(cfg.x, domeBaseH - 0.32, cfg.z).addScaledVector(inDir, 0.45);
+    scene.add(perimeterLight);
+    downlights.push(perimeterLight);
   });
 
   // -------------------------------------------------------------
@@ -1812,6 +2774,26 @@ export function createRoom3Scene(
   // -------------------------------------------------------------
   const interactableObjects: THREE.Object3D[] = [];
   const objectToInteractionMap = new Map<THREE.Object3D, EquipmentInteraction>();
+  const interactionToObjectMap = new Map<string, THREE.Object3D>();
+
+  const isObjectVisibleInChain = (obj: THREE.Object3D | null): boolean => {
+    let cur: THREE.Object3D | null = obj;
+    while (cur) {
+      if (!cur.visible) return false;
+      cur = cur.parent;
+    }
+    return true;
+  };
+
+  const guardInteractableRaycast = (mesh: THREE.Object3D) => {
+    if (mesh.userData.__visibilityRayGuard) return;
+    mesh.userData.__visibilityRayGuard = true;
+    const origRaycast = mesh.raycast.bind(mesh);
+    mesh.raycast = (rc: THREE.Raycaster, intersects: THREE.Intersection[]) => {
+      if (!isObjectVisibleInChain(mesh)) return;
+      origRaycast(rc, intersects);
+    };
+  };
 
   const registerInteractable = (
     objects: THREE.Object3D | THREE.Object3D[],
@@ -1821,12 +2803,19 @@ export function createRoom3Scene(
     targets.forEach((obj) => {
       obj.userData.interactionId = interaction.id;
       obj.userData.equipmentInteraction = interaction;
+      interactionToObjectMap.set(interaction.id, obj);
       if (!interactableObjects.includes(obj)) interactableObjects.push(obj);
       objectToInteractionMap.set(obj, interaction);
+      if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.Points) {
+        guardInteractableRaycast(obj);
+      }
       obj.traverse((child) => {
+        // Preserve static hidden meshes (e.g., masked GLB sub-carriers) out of raycast list
+        if (child !== obj && !isObjectVisibleInChain(child)) return;
         child.userData.interactionId = interaction.id;
         child.userData.equipmentInteraction = interaction;
         if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.Points) {
+          guardInteractableRaycast(child);
           if (!interactableObjects.includes(child)) interactableObjects.push(child);
           objectToInteractionMap.set(child, interaction);
         }
@@ -1981,6 +2970,8 @@ export function createRoom3Scene(
   // -------------------------------------------------------------
   // 10. Heavy Scientific Workbenches (addBench matching Room 02)
   // -------------------------------------------------------------
+  const esdMatTextures: THREE.CanvasTexture[] = [];
+
   function addBench(x: number, color: number) {
     const group = new THREE.Group();
     group.position.set(x, 0, 0);
@@ -1994,6 +2985,103 @@ export function createRoom3Scene(
     top.receiveShadow = true;
     top.castShadow = true;
     group.add(top);
+
+    // 1b. Procedural Slate-Navy ESD Anti-Static Bench Mat with Station Accent Border & Brass Bezel
+    const topSurfaceY = ROOM2_CONFIG.table.topHeight + ROOM2_CONFIG.table.thickness / 2;
+    const matW = ROOM2_CONFIG.table.width - 0.16;
+    const matD = ROOM2_CONFIG.table.depth - 0.18;
+    const accentHex = `#${color.toString(16).padStart(6, '0')}`;
+
+    const esdCanvas = document.createElement('canvas');
+    esdCanvas.width = 1024;
+    esdCanvas.height = 512;
+    const esdCtx = esdCanvas.getContext('2d');
+    if (esdCtx) {
+      esdCtx.fillStyle = '#0f172a';
+      esdCtx.fillRect(0, 0, 1024, 512);
+
+      // Fine slate-navy ESD grid
+      esdCtx.strokeStyle = 'rgba(148, 163, 184, 0.08)';
+      esdCtx.lineWidth = 1;
+      for (let gx = 32; gx < 1024; gx += 32) {
+        esdCtx.beginPath();
+        esdCtx.moveTo(gx, 16);
+        esdCtx.lineTo(gx, 496);
+        esdCtx.stroke();
+      }
+      for (let gy = 32; gy < 512; gy += 32) {
+        esdCtx.beginPath();
+        esdCtx.moveTo(16, gy);
+        esdCtx.lineTo(1008, gy);
+        esdCtx.stroke();
+      }
+
+      // Station accent perimeter rule
+      esdCtx.strokeStyle = accentHex;
+      esdCtx.globalAlpha = 0.52;
+      esdCtx.lineWidth = 3;
+      esdCtx.strokeRect(14, 14, 996, 484);
+      esdCtx.globalAlpha = 0.18;
+      esdCtx.lineWidth = 1.5;
+      esdCtx.strokeRect(24, 24, 976, 464);
+      esdCtx.globalAlpha = 1.0;
+
+      // Subtle corner ESD grounding micro-stencil
+      esdCtx.fillStyle = 'rgba(148, 163, 184, 0.35)';
+      esdCtx.font = 'bold 12px monospace';
+      esdCtx.fillText('ESD DISSIPATIVE SURFACE · 10^6 - 10^9 OHM · GROUNDED', 36, 478);
+    }
+    const esdMatTex = new THREE.CanvasTexture(esdCanvas);
+    esdMatTex.anisotropy = 4;
+    esdMatTextures.push(esdMatTex);
+
+    const esdMatMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(matW, 0.0024, matD),
+      new THREE.MeshStandardMaterial({
+        map: esdMatTex,
+        roughness: 0.78,
+        metalness: 0.08,
+      })
+    );
+    esdMatMesh.position.y = topSurfaceY + 0.0012;
+    esdMatMesh.receiveShadow = true;
+    group.add(esdMatMesh);
+
+    // Slim antique brass bezel strips framing the ESD mat
+    const bezelH = 0.0045;
+    const bezelT = 0.012;
+    const bezelConfigs: Array<{ w: number; d: number; px: number; pz: number }> = [
+      { w: matW + bezelT * 2, d: bezelT, px: 0, pz: -matD / 2 - bezelT / 2 },
+      { w: matW + bezelT * 2, d: bezelT, px: 0, pz: matD / 2 + bezelT / 2 },
+      { w: bezelT, d: matD, px: -matW / 2 - bezelT / 2, pz: 0 },
+      { w: bezelT, d: matD, px: matW / 2 + bezelT / 2, pz: 0 },
+    ];
+    bezelConfigs.forEach((b) => {
+      const bezel = new THREE.Mesh(
+        new THREE.BoxGeometry(b.w, bezelH, b.d),
+        brassTrimMaterial
+      );
+      bezel.position.set(b.px, topSurfaceY + bezelH / 2, b.pz);
+      group.add(bezel);
+    });
+
+    // Brass grounding snap studs at ESD mat corners
+    const studGeo = new THREE.CylinderGeometry(0.012, 0.014, 0.006, 16);
+    [
+      [-matW / 2 + 0.045, -matD / 2 + 0.045],
+      [matW / 2 - 0.045, -matD / 2 + 0.045],
+      [-matW / 2 + 0.045, matD / 2 - 0.045],
+      [matW / 2 - 0.045, matD / 2 - 0.045],
+    ].forEach(([sx, sz]) => {
+      const stud = new THREE.Mesh(studGeo, brassTrimMaterial);
+      stud.position.set(sx, topSurfaceY + 0.004, sz);
+      group.add(stud);
+    });
+
+    // Dedicated warm-white overhead benchtop task light for instrument crispness under open skylight
+    const benchTaskLight = new THREE.PointLight(0xfff7ed, 1.5, 4.2, 1.5);
+    benchTaskLight.position.set(0, ROOM2_CONFIG.table.topHeight + 1.45, 0.12);
+    group.add(benchTaskLight);
 
     // 2. Continuous Antique Brass Edge Trim Molding around Benchtop
     const brassEdge = new THREE.Mesh(
@@ -2170,13 +3258,15 @@ export function createRoom3Scene(
   relativityPosterGroup.add(relativityFace);
   scene.add(relativityPosterGroup);
 
+  const BENCH_MAT_TOP_Y = 0.9324;
+
   // Clipboard Documentation Registry
   const createClipboard = (stationId: Room3StationId, x: number, z: number, id: string, name: string) => {
     const board = new THREE.Mesh(
       new THREE.BoxGeometry(0.28, 0.02, 0.36),
       new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.6 })
     );
-    board.position.set(x, 0.94, z);
+    board.position.set(x, BENCH_MAT_TOP_Y + 0.01, z);
 
     const paper = new THREE.Mesh(
       new THREE.BoxGeometry(0.24, 0.005, 0.3),
@@ -2211,14 +3301,94 @@ export function createRoom3Scene(
 
   const gltfLoader = new GLTFLoader(loadingManager);
 
+  const toStandardMaterial = (mat: THREE.Material): THREE.Material => {
+    const phys = mat as THREE.MeshPhysicalMaterial;
+    const isPhysicalOrTransmissive =
+      phys.isMeshPhysicalMaterial || (typeof phys.transmission === 'number' && phys.transmission > 0);
+    if (!isPhysicalOrTransmissive) return mat;
+
+    const isGlass = typeof phys.transmission === 'number' && phys.transmission > 0;
+    const replacement = new THREE.MeshStandardMaterial({
+      name: phys.name,
+      color: phys.color.clone(),
+      map: phys.map,
+      normalMap: phys.normalMap,
+      roughnessMap: phys.roughnessMap,
+      metalnessMap: phys.metalnessMap,
+      aoMap: phys.aoMap,
+      emissive: phys.emissive.clone(),
+      emissiveMap: phys.emissiveMap,
+      emissiveIntensity: phys.emissiveIntensity,
+      roughness: isGlass ? Math.min(0.12, phys.roughness ?? 0.08) : phys.roughness,
+      metalness: isGlass ? 0.08 : phys.metalness,
+      transparent: isGlass ? true : phys.transparent,
+      opacity: isGlass ? Math.min(0.45, Math.max(0.24, phys.opacity || 0.36)) : phys.opacity,
+      depthWrite: isGlass ? false : phys.depthWrite,
+      side: phys.side,
+      alphaTest: phys.alphaTest,
+      vertexColors: phys.vertexColors,
+    });
+    phys.dispose();
+    return replacement;
+  };
+
+  const sanitizeGltfMaterials = (root: THREE.Object3D) => {
+    root.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        if (Array.isArray(mesh.material)) {
+          mesh.material = mesh.material.map(toStandardMaterial);
+        } else if (mesh.material) {
+          mesh.material = toStandardMaterial(mesh.material);
+        }
+      }
+    });
+  };
+
+  const loadSanitizedGlb = (url: string, onReady: (model: THREE.Group) => void, label: string) => {
+    gltfLoader.load(
+      url,
+      (gltf) => {
+        if (isDisposed) return;
+        sanitizeGltfMaterials(gltf.scene);
+        onReady(gltf.scene);
+      },
+      undefined,
+      (err) => {
+        if (!isDisposed) console.warn(`${label} GLB load note:`, err);
+      }
+    );
+  };
+
   // -------------------------------------------------------------
   // 12. Station 01 3D Apparatus: Circuits Bench (x = -6.0m)
   // -------------------------------------------------------------
   const circuitsBenchX = STATION_X.circuits;
 
+  const pendingInstrumentAnchors: Partial<Parameters<Multimeter3D['setInstrumentAnchors']>[0]> = {};
+  let multimeter3dRef: Multimeter3D | null = null;
+  const syncStation1Anchors = (patch: Partial<Parameters<Multimeter3D['setInstrumentAnchors']>[0]>) => {
+    Object.assign(pendingInstrumentAnchors, patch);
+    multimeter3dRef?.setInstrumentAnchors(patch);
+  };
+
+  // Attach crisp tactile pointer bar onto a front-facing GLB rotary knob (+Z axis)
+  const attachKnobTickPointer = (knobObj: THREE.Object3D, radius: number, zFront: number, color = 0x38bdf8) => {
+    if (knobObj.getObjectByName('Knob_Tick_Pointer')) return;
+    const pointer = new THREE.Mesh(
+      new THREE.BoxGeometry(Math.max(0.0024, radius * 0.16), radius * 0.68, 0.0022),
+      new THREE.MeshBasicMaterial({ color })
+    );
+    pointer.name = 'Knob_Tick_Pointer';
+    pointer.position.set(0, radius * 0.36, zFront + 0.0008);
+    knobObj.add(pointer);
+  };
+
   // 1. DC Power Supply / AC Function Generator Unit (Positioned on the rear-left instrument row)
   const psuGroup = new THREE.Group();
-  psuGroup.position.set(circuitsBenchX - 0.65, 0.94, -0.48);
+  psuGroup.position.set(circuitsBenchX - 0.65, BENCH_MAT_TOP_Y, -0.48);
   psuGroup.rotation.y = 0.08;
 
   const psuHousing = new THREE.Mesh(
@@ -2281,21 +3451,55 @@ export function createRoom3Scene(
   gndPostMesh.position.set(0.03, 0.04, 0.175);
   psuGroup.add(gndPostMesh);
 
+  const psuSwitchAnchor = new THREE.Object3D();
+  psuSwitchAnchor.name = 'PSU_Power_Switch_Anchor';
+  // Positioned flush on upper-right bezel corner of dc_power_supply.glb (away from left binding posts)
+  psuSwitchAnchor.position.set(0.145, 0.145, 0.198);
+  psuGroup.add(psuSwitchAnchor);
+
+  const psuLedBezel = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.009, 0.010, 0.005, 16),
+    brassTrimMaterial
+  );
+  psuLedBezel.rotation.x = Math.PI / 2;
+  psuLedBezel.position.set(0, 0, 0);
+  psuSwitchAnchor.add(psuLedBezel);
+
+  const psuLedMat = new THREE.MeshStandardMaterial({
+    color: 0xf59e0b,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 1.2,
+    roughness: 0.2,
+    metalness: 0.1,
+  });
+  const psuStatusLed = new THREE.Mesh(
+    new THREE.SphereGeometry(0.0065, 16, 16),
+    psuLedMat
+  );
+  psuStatusLed.position.set(0, 0, 0.003);
+  psuSwitchAnchor.add(psuStatusLed);
+
   let psuVoltKnobMesh: THREE.Object3D | null = voltKnob;
-  let psuSwitchMesh: THREE.Object3D | null = powerSwitchMesh;
+  let psuSwitchMesh: THREE.Object3D | null = psuSwitchAnchor;
 
   const updatePsuKnobRotation = (vs: number) => {
     if (!psuVoltKnobMesh) return;
     const clampedVs = Math.max(0, Math.min(30, vs));
-    // map 0V - 30V to angle -135 deg to +135 deg
+    // map 0V - 30V clockwise from -135 deg to +135 deg on +Z face
     const angle = -Math.PI * 0.75 + (clampedVs / 30) * Math.PI * 1.5;
-    psuVoltKnobMesh.rotation.z = angle;
     if (psuVoltKnobMesh === voltKnob) {
       voltKnob.rotation.y = angle;
+    } else {
+      psuVoltKnobMesh.rotation.z = -angle;
     }
   };
 
   const updatePsuTexture = (vs: number, freq: number, isAc: boolean, powerOn = currentCircuits.powerOn !== false) => {
+    const ledHex = powerOn ? 0x10b981 : 0xf59e0b;
+    psuLedMat.color.setHex(ledHex);
+    psuLedMat.emissive.setHex(ledHex);
+    psuLedMat.emissiveIntensity = powerOn ? 2.4 : 1.0;
+
     psuCtx.fillStyle = '#050811';
     psuCtx.fillRect(0, 0, 512, 256);
 
@@ -2339,19 +3543,26 @@ export function createRoom3Scene(
   };
 
   // Load High-Fidelity DC Power Supply GLB Model (replaces procedural housing, display & knobs)
-  gltfLoader.load('/assets/room-3/electrical/dc_power_supply.glb', (gltf) => {
-    const model = gltf.scene;
+  loadSanitizedGlb('/assets/room-3/electrical/dc_power_supply.glb', (model) => {
     model.name = 'DC_PSU_GLB';
     model.scale.setScalar(1.30);
     model.position.set(0, 0, 0);
     model.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
         if (child.name === 'DC_PSU_Digital_Display') {
           (child as THREE.Mesh).material = new THREE.MeshBasicMaterial({ map: psuTexture });
+          registerInteractable(child, {
+            id: 'circuits-power-switch',
+            stationId: 'circuits',
+            category: 'POWER & EXCITATION',
+            name: 'DC Regulated Power Supply',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-power-switch'],
+            action: 'Toggle Main Power Switch',
+            readout: `Output: ${currentCircuits.vs.toFixed(1)} V · Power: ${currentCircuits.powerOn !== false ? 'ON' : 'OFF'}`,
+          });
         } else if (child.name === 'Knob_Voltage_Adjust') {
           psuVoltKnobMesh = child;
+          attachKnobTickPointer(child, 0.014, 0.008, 0x38bdf8);
           child.userData.hoverTooltip = `Voltage Regulator Knob: ${currentCircuits.vs.toFixed(1)} V (Click to step / Scroll to tune)`;
           registerInteractable(child, {
             id: 'circuits-voltage-knob',
@@ -2359,11 +3570,22 @@ export function createRoom3Scene(
             category: 'POTENTIOMETER',
             name: 'DC Power Supply Voltage Knob',
             description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-voltage-knob'],
-            action: 'Turn Voltage Knob (+2V / Scroll)',
+            action: 'Turn Voltage Knob (Step / Scroll)',
             readout: `Vs = ${currentCircuits.vs.toFixed(1)} V`,
           });
-        } else if (child.name === 'Agilent_DC_Power_Supply') {
-          psuSwitchMesh = child;
+        } else if (child.name === 'Knob_Current_Limit') {
+          attachKnobTickPointer(child, 0.014, 0.008, 0xf59e0b);
+          child.rotation.z = -Math.PI * 0.35;
+          registerInteractable(child, {
+            id: 'circuits-power-switch',
+            stationId: 'circuits',
+            category: 'POWER & EXCITATION',
+            name: 'DC Regulated Power Supply',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-power-switch'],
+            action: 'Toggle Main Power Switch',
+            readout: `Output: ${currentCircuits.vs.toFixed(1)} V · Power: ${currentCircuits.powerOn !== false ? 'ON' : 'OFF'}`,
+          });
+        } else {
           registerInteractable(child, {
             id: 'circuits-power-switch',
             stationId: 'circuits',
@@ -2376,14 +3598,29 @@ export function createRoom3Scene(
         }
       }
     });
-    // Hide procedural fallback meshes to prevent double-rendering / clipping
+    // Hide all procedural fallback meshes (including binding posts) to prevent double-rendering
     psuHousing.visible = false;
     psuDisplay.visible = false;
     powerSwitchMesh.visible = false;
     voltKnob.visible = false;
+    redPostMesh.visible = false;
+    blackPostMesh.visible = false;
+    gndPostMesh.visible = false;
     psuGroup.add(model);
+    psuGroup.updateMatrixWorld(true);
+    const glbRedPost = model.getObjectByName('Post_Positive_Red');
+    const glbBlackPost = model.getObjectByName('Post_Negative_Black');
+    if (glbRedPost && glbBlackPost) {
+      const redPos = new THREE.Vector3();
+      const blackPos = new THREE.Vector3();
+      glbRedPost.getWorldPosition(redPos);
+      glbBlackPost.getWorldPosition(blackPos);
+      syncStation1Anchors({ psuRedPost: redPos, psuBlackPost: blackPos, psuRotY: psuGroup.rotation.y });
+    }
+    psuSwitchMesh = psuSwitchAnchor;
+    interactionToObjectMap.set('circuits-power-switch', psuSwitchAnchor);
     updatePsuKnobRotation(currentCircuits.vs);
-  }, undefined, (err) => console.warn('DC PSU GLB load note:', err));
+  }, 'DC PSU');
 
   updatePsuTexture(currentCircuits.vs, currentCircuits.freq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
 
@@ -2396,8 +3633,9 @@ export function createRoom3Scene(
     name: 'Master Power Supply Switch',
     description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-power-switch'],
     action: 'Toggle Circuit Power',
-    readout: `State: Energized · Vs = ${currentCircuits.vs.toFixed(1)} V`,
+    readout: `State: ${currentCircuits.powerOn !== false ? 'Energized' : 'Standby (OFF)'} · Vs = ${currentCircuits.vs.toFixed(1)} V`,
   });
+  interactionToObjectMap.set('circuits-power-switch', psuSwitchAnchor);
 
   registerInteractable(voltKnob, {
     id: 'circuits-voltage-knob',
@@ -2415,9 +3653,11 @@ export function createRoom3Scene(
   let oscCh1KnobMesh: THREE.Object3D | null = null;
   let oscCh2KnobMesh: THREE.Object3D | null = null;
   let oscTriggerKnobMesh: THREE.Object3D | null = null;
+  let oscCh1InputMesh: THREE.Object3D | null = null;
+  let oscCh2InputMesh: THREE.Object3D | null = null;
 
   const oscGroup = new THREE.Group();
-  oscGroup.position.set(circuitsBenchX - 0.05, 0.94, -0.52);
+  oscGroup.position.set(circuitsBenchX - 0.05, BENCH_MAT_TOP_Y, -0.52);
 
   const oscHousing = new THREE.Mesh(
     new THREE.BoxGeometry(0.44, 0.24, 0.30),
@@ -2442,20 +3682,20 @@ export function createRoom3Scene(
     if (oscTimeKnobMesh) {
       const idx = TIME_DIV_OPTIONS.indexOf(currentOscilloscope.timePerDivMs);
       const angle = -Math.PI * 0.75 + (Math.max(0, idx) / (TIME_DIV_OPTIONS.length - 1)) * Math.PI * 1.5;
-      oscTimeKnobMesh.rotation.z = angle;
+      oscTimeKnobMesh.rotation.z = -angle;
     }
     if (oscCh1KnobMesh) {
       const idx = CH1_VOLTS_DIV_OPTIONS.indexOf(currentOscilloscope.ch1VoltsPerDiv);
       const angle = -Math.PI * 0.75 + (Math.max(0, idx) / (CH1_VOLTS_DIV_OPTIONS.length - 1)) * Math.PI * 1.5;
-      oscCh1KnobMesh.rotation.z = angle;
+      oscCh1KnobMesh.rotation.z = -angle;
     }
     if (oscCh2KnobMesh) {
       const idx = CH2_VOLTS_DIV_OPTIONS.indexOf(currentOscilloscope.ch2VoltsPerDiv);
       const angle = -Math.PI * 0.75 + (Math.max(0, idx) / (CH2_VOLTS_DIV_OPTIONS.length - 1)) * Math.PI * 1.5;
-      oscCh2KnobMesh.rotation.z = angle;
+      oscCh2KnobMesh.rotation.z = -angle;
     }
     if (oscTriggerKnobMesh) {
-      oscTriggerKnobMesh.rotation.z = currentOscilloscope.runState === 'run' ? 0 : Math.PI * 0.5;
+      oscTriggerKnobMesh.rotation.z = currentOscilloscope.runState === 'run' ? 0 : -Math.PI * 0.5;
     }
   };
 
@@ -2663,22 +3903,19 @@ export function createRoom3Scene(
 
     oscTexture.needsUpdate = true;
   };
-  updateOscilloscope(0);
 
   // Load High-Fidelity Tektronix Oscilloscope GLB Model (properly scaled to bench instrument proportions)
-  gltfLoader.load('/assets/room-3/electrical/oscilloscope.glb', (gltf) => {
-    const model = gltf.scene;
+  loadSanitizedGlb('/assets/room-3/electrical/oscilloscope.glb', (model) => {
     model.name = 'Oscilloscope_GLB';
     model.scale.setScalar(1.15);
     model.position.set(0, 0, 0);
     model.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
         if (child.name === 'Oscilloscope_Screen_Display') {
           (child as THREE.Mesh).material = new THREE.MeshBasicMaterial({ map: oscTexture });
         } else if (child.name === 'Knob_TimeDiv') {
           oscTimeKnobMesh = child;
+          attachKnobTickPointer(child, 0.016, 0.009, 0xeab308);
           child.userData.hoverTooltip = `Oscilloscope Timebase: ${currentOscilloscope.timePerDivMs} ms/div (Click to step / Scroll)`;
           registerInteractable(child, {
             id: 'circuits-osc-time-knob',
@@ -2691,6 +3928,7 @@ export function createRoom3Scene(
           });
         } else if (child.name === 'Knob_VoltsDiv_Ch1') {
           oscCh1KnobMesh = child;
+          attachKnobTickPointer(child, 0.016, 0.009, 0xfacc15);
           child.userData.hoverTooltip = `CH1 Scale: ${currentOscilloscope.ch1VoltsPerDiv} V/div (Click to step / Scroll)`;
           registerInteractable(child, {
             id: 'circuits-osc-ch1-knob',
@@ -2703,6 +3941,7 @@ export function createRoom3Scene(
           });
         } else if (child.name === 'Knob_VoltsDiv_Ch2') {
           oscCh2KnobMesh = child;
+          attachKnobTickPointer(child, 0.016, 0.009, 0x38bdf8);
           child.userData.hoverTooltip = `CH2 Scale: ${currentOscilloscope.ch2VoltsPerDiv} mA/div (Click to step / Scroll)`;
           registerInteractable(child, {
             id: 'circuits-osc-ch2-knob',
@@ -2715,6 +3954,7 @@ export function createRoom3Scene(
           });
         } else if (child.name === 'Knob_Trigger') {
           oscTriggerKnobMesh = child;
+          attachKnobTickPointer(child, 0.016, 0.009, 0x34d399);
           child.userData.hoverTooltip = `Trigger / Run-Stop: ${currentOscilloscope.runState.toUpperCase()}`;
           registerInteractable(child, {
             id: 'circuits-osc-trigger-knob',
@@ -2726,6 +3966,7 @@ export function createRoom3Scene(
             readout: `State: ${currentOscilloscope.runState.toUpperCase()}`,
           });
         } else if (child.name === 'BNC_Input_CH1') {
+          oscCh1InputMesh = child;
           child.userData.hoverTooltip = `CH1 Input: Connected to ${currentOscilloscope.ch1Source.toUpperCase()}`;
           registerInteractable(child, {
             id: 'circuits-osc-ch1-input',
@@ -2737,6 +3978,7 @@ export function createRoom3Scene(
             readout: `Probe on: ${currentOscilloscope.ch1Source.toUpperCase()}`,
           });
         } else if (child.name === 'BNC_Input_CH2') {
+          oscCh2InputMesh = child;
           child.userData.hoverTooltip = `CH2 Input: Connected to ${currentOscilloscope.ch2Source.toUpperCase()}`;
           registerInteractable(child, {
             id: 'circuits-osc-ch2-input',
@@ -2764,8 +4006,16 @@ export function createRoom3Scene(
     oscHousing.visible = false;
     oscScreen.visible = false;
     oscGroup.add(model);
+    oscGroup.updateMatrixWorld(true);
+    if (oscCh1InputMesh && oscCh2InputMesh) {
+      const ch1Pos = new THREE.Vector3();
+      const ch2Pos = new THREE.Vector3();
+      oscCh1InputMesh.getWorldPosition(ch1Pos);
+      oscCh2InputMesh.getWorldPosition(ch2Pos);
+      syncStation1Anchors({ oscCh1Bnc: ch1Pos, oscCh2Bnc: ch2Pos });
+    }
     updateOscKnobRotations();
-  }, undefined, (err) => console.warn('Oscilloscope GLB load note:', err));
+  }, 'Oscilloscope');
 
   scene.add(oscGroup);
 
@@ -2781,7 +4031,7 @@ export function createRoom3Scene(
 
   // 4. Rigol DDS Arbitrary Function Generator Unit (Positioned on the rear-right instrument row)
   const fgenGroup = new THREE.Group();
-  fgenGroup.position.set(circuitsBenchX + 0.65, 0.94, -0.48);
+  fgenGroup.position.set(circuitsBenchX + 0.65, BENCH_MAT_TOP_Y, -0.48);
   fgenGroup.rotation.y = -0.08;
 
   const fgenCanvas = document.createElement('canvas');
@@ -2790,58 +4040,139 @@ export function createRoom3Scene(
   const fgenCtx = fgenCanvas.getContext('2d')!;
   const fgenTexture = new THREE.CanvasTexture(fgenCanvas);
 
+  let fgenFreqDialMesh: THREE.Object3D | null = null;
+  let fgenMainBncMesh: THREE.Object3D | null = null;
+  const fgenWaveformBtnMeshes: THREE.Mesh[] = [];
+
+  const updateFgenControlsVisual = () => {
+    if (fgenFreqDialMesh) {
+      const clampedF = THREE.MathUtils.clamp(currentCircuits.freq, 10, 1000);
+      const angle = -Math.PI * 0.75 + ((clampedF - 10) / 990) * Math.PI * 1.5;
+      fgenFreqDialMesh.rotation.z = -angle;
+    }
+    const activeBtnIdx = currentCircuits.mode === 'ac' ? 0 : 3; // Btn_0 = SINE AC, Btn_3 = DC LEVEL
+    fgenWaveformBtnMeshes.forEach((btn, idx) => {
+      const mat = btn.material as THREE.MeshStandardMaterial;
+      if (mat && 'emissive' in mat) {
+        const isActive = idx === activeBtnIdx && currentCircuits.powerOn !== false;
+        mat.emissive.setHex(isActive ? (idx === 0 ? 0x38bdf8 : 0xf59e0b) : 0x000000);
+        mat.emissiveIntensity = isActive ? 0.9 : 0;
+      }
+    });
+  };
+
   const updateFgenDisplay = () => {
     fgenCtx.fillStyle = '#0a192f';
     fgenCtx.fillRect(0, 0, 512, 256);
+
+    const isOn = currentCircuits.powerOn !== false;
+    const isAc = currentCircuits.mode === 'ac';
 
     fgenCtx.font = 'bold 24px monospace';
     fgenCtx.fillStyle = '#38bdf8';
     fgenCtx.fillText('RIGOL DG1022 DDS ARB GENERATOR', 20, 38);
 
     fgenCtx.font = 'bold 16px monospace';
-    fgenCtx.fillStyle = '#10b981';
-    fgenCtx.fillText('CH1: 50Ω HIGH-Z · OUTPUT [ON]', 20, 68);
+    fgenCtx.fillStyle = isOn ? '#10b981' : '#ef4444';
+    fgenCtx.fillText(`CH1: 50Ω HIGH-Z · OUTPUT [${isOn ? 'ON' : 'OFF'}]`, 20, 68);
 
     fgenCtx.font = 'bold 54px monospace';
-    fgenCtx.fillStyle = '#eab308';
-    fgenCtx.fillText(`${currentCircuits.freq.toFixed(1)} Hz`, 20, 140);
+    fgenCtx.fillStyle = isOn ? '#eab308' : '#475569';
+    fgenCtx.fillText(isAc ? `${currentCircuits.freq.toFixed(1)} Hz` : '0.0 Hz (DC)', 20, 140);
 
     fgenCtx.font = 'bold 24px monospace';
-    fgenCtx.fillStyle = '#38bdf8';
-    fgenCtx.fillText(`WAVE: ${currentCircuits.mode === 'ac' ? 'SINE ~' : 'DC LEVEL'}`, 20, 195);
+    fgenCtx.fillStyle = isAc ? '#38bdf8' : '#f59e0b';
+    fgenCtx.fillText(`WAVE: ${isAc ? 'SINE ~ AC' : 'DC CONSTANT'}`, 20, 195);
     fgenCtx.font = 'bold 18px monospace';
     fgenCtx.fillStyle = '#94a3b8';
-    fgenCtx.fillText(`AMPL: ${currentCircuits.vs.toFixed(1)} Vpp · OFFSET: 0.00 V`, 20, 235);
+    fgenCtx.fillText(`AMPL: ${currentCircuits.vs.toFixed(1)} V · OFFSET: 0.00 V`, 20, 235);
 
     fgenTexture.needsUpdate = true;
+    updateFgenControlsVisual();
   };
   updateFgenDisplay();
 
-  gltfLoader.load('/assets/room-3/electrical/function_generator.glb', (gltf) => {
-    const model = gltf.scene;
+  loadSanitizedGlb('/assets/room-3/electrical/function_generator.glb', (model) => {
     model.name = 'FunctionGenerator_GLB';
     model.scale.setScalar(1.30);
     model.position.set(0, 0, 0);
     model.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-        if (child.name === 'FunctionGen_LCD_Screen') {
-          (child as THREE.Mesh).material = new THREE.MeshBasicMaterial({ map: fgenTexture });
+        const mesh = child as THREE.Mesh;
+        if (mesh.name === 'FunctionGen_LCD_Screen') {
+          mesh.material = new THREE.MeshBasicMaterial({ map: fgenTexture });
+          registerInteractable(mesh, {
+            id: 'circuits-function-generator',
+            stationId: 'circuits',
+            category: 'EXCITATION SOURCE',
+            name: 'Rigol DDS Arbitrary Function Generator',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-power-switch'],
+            action: 'Toggle Main Power Output',
+            readout: `Freq: ${currentCircuits.freq.toFixed(0)} Hz · Mode: ${currentCircuits.mode.toUpperCase()}`,
+          });
+        } else if (mesh.name === 'Dial_Frequency') {
+          fgenFreqDialMesh = mesh;
+          attachKnobTickPointer(mesh, 0.018, 0.0085, 0x38bdf8);
+          mesh.userData.hoverTooltip = `FGen Frequency Dial: ${currentCircuits.freq.toFixed(0)} Hz · Click to step / Scroll ±10 Hz`;
+          registerInteractable(mesh, {
+            id: 'circuits-fgen-freq-knob',
+            stationId: 'circuits',
+            category: 'FREQUENCY SYNTHESIZER',
+            name: 'Function Generator Frequency Dial',
+            description: 'Tunes AC sinusoidal frequency (10 – 1000 Hz) driving capacitive & inductive reactances.',
+            action: 'Click: Step Hz · Scroll: ±10 Hz',
+            readout: `${currentCircuits.freq.toFixed(0)} Hz`,
+          });
+        } else if (mesh.name.startsWith('Btn_Waveform_')) {
+          // Clone button material individually so emissive state highlights active button independently
+          if (!Array.isArray(mesh.material)) {
+            mesh.material = mesh.material.clone();
+          }
+          fgenWaveformBtnMeshes.push(mesh);
+          mesh.userData.hoverTooltip = `Waveform Selector (${currentCircuits.mode.toUpperCase()}) · Click to switch AC Sine <-> DC Level`;
+          registerInteractable(mesh, {
+            id: 'circuits-fgen-mode-btn',
+            stationId: 'circuits',
+            category: 'WAVEFORM SELECT',
+            name: 'Function Generator AC / DC Selector',
+            description: 'Switches excitation source between DC steady bias and AC sinusoidal sweep.',
+            action: 'Click: Toggle AC / DC Mode',
+            readout: `Active: ${currentCircuits.mode === 'ac' ? 'AC Sine' : 'DC Level'}`,
+          });
+        } else if (mesh.name === 'BNC_Main_Output') {
+          fgenMainBncMesh = mesh;
+          mesh.userData.hoverTooltip = `CH1 Main BNC Output (50 Ω) · Routed to breadboard`;
+          registerInteractable(mesh, {
+            id: 'circuits-fgen-mode-btn',
+            stationId: 'circuits',
+            category: 'BNC OUTPUT',
+            name: 'Function Generator Main BNC Output',
+            description: '50-ohm coaxial excitation port feeding AC/DC test signals to the breadboard.',
+            action: 'Click: Toggle AC / DC Output Mode',
+            readout: `50Ω Port · ${currentCircuits.mode.toUpperCase()} (${currentCircuits.freq.toFixed(0)} Hz)`,
+          });
+        } else {
+          registerInteractable(mesh, {
+            id: 'circuits-function-generator',
+            stationId: 'circuits',
+            category: 'EXCITATION SOURCE',
+            name: 'Rigol DDS Arbitrary Function Generator',
+            description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-power-switch'],
+            action: 'Toggle Main Power Output',
+            readout: `Supply: ${currentCircuits.vs.toFixed(1)} V · Mode: ${currentCircuits.mode.toUpperCase()}`,
+          });
         }
       }
     });
     fgenGroup.add(model);
-    registerInteractable(model, {
-      id: 'circuits-power-switch',
-      stationId: 'circuits',
-      category: 'EXCITATION SOURCE',
-      name: 'Rigol DDS Arbitrary Function Generator & Power Supply',
-      description: ROOM3_EQUIPMENT_DESCRIPTIONS['circuits-power-switch'],
-      action: 'Toggle Main Power Switch & Waveform',
-      readout: `Supply: ${currentCircuits.vs.toFixed(1)} V · Mode: ${currentCircuits.mode.toUpperCase()}`,
-    });
-  }, undefined, (err) => console.warn('Function Gen GLB load note:', err));
+    fgenGroup.updateMatrixWorld(true);
+    if (fgenMainBncMesh) {
+      const fgenBncPos = new THREE.Vector3();
+      fgenMainBncMesh.getWorldPosition(fgenBncPos);
+      syncStation1Anchors({ fgenMainBnc: fgenBncPos, fgenRotY: fgenGroup.rotation.y });
+    }
+    updateFgenControlsVisual();
+  }, 'Function Gen');
   scene.add(fgenGroup);
 
   // 5. Functional Fluke True-RMS Digital Multimeter with Dynamic LCD & 3D Probes
@@ -2853,6 +4184,18 @@ export function createRoom3Scene(
       callbacks.onProbePlaced?.(probe, term);
       playTone(520, 'sine', 0.08, 0.15);
     },
+    onActiveProbeChange: (probe) => {
+      callbacks.onActiveProbeChange?.(probe);
+    },
+    onModeChange: (mode) => {
+      callbacks.onDmmModeChange?.(mode);
+    },
+    onJackChange: (jack) => {
+      callbacks.onDmmJackChange?.(jack);
+    },
+    onJumperChange: (closed) => {
+      callbacks.onJumperChange?.(closed);
+    },
     onFuseTripped: () => {
       playTone(220, 'sawtooth', 0.4, 0.25);
     },
@@ -2861,6 +4204,9 @@ export function createRoom3Scene(
     },
   });
   scene.add(multimeter3d.root);
+  multimeter3dRef = multimeter3d;
+  multimeter3d.setInstrumentAnchors(pendingInstrumentAnchors);
+  updateOscilloscope(0);
 
   registerInteractable(multimeter3d.meterGroup || multimeter3d.root, {
     id: 'circuits-multimeter',
@@ -2886,14 +4232,48 @@ export function createRoom3Scene(
   // 13. Station 02 3D Apparatus: Optics Bench (x = 0.0m)
   // -------------------------------------------------------------
   const opticsBenchX = STATION_X.optics;
+  // Extruded rail sits at Y ∈ [0.000, +0.054] and end feet extend to -0.012 at scale 1.2
+  const OPTICS_RAIL_TOP_Y = 0.054;
+  const OPTICS_BEAM_Y = 0.18;
+
+  // Shared factory for sliding anodized optical rail carriages clamped cleanly at y = OPTICS_RAIL_TOP_Y
+  const buildOpticsCarriage = (postHeight: number): THREE.Group => {
+    const carriage = new THREE.Group();
+    const saddleMat = material(0x1e293b, { metalness: 0.85, roughness: 0.28 });
+    const postMat = material(0xcbd5e1, { metalness: 0.92, roughness: 0.18 });
+    const thumbMat = material(0xd97706, { metalness: 0.85, roughness: 0.25 });
+
+    // Clamping saddle straddling the dovetail rail top
+    const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.022, 0.125), saddleMat);
+    saddle.position.y = -postHeight;
+    carriage.add(saddle);
+
+    // Side locking flange + brass thumbscrew knob on front (+Z)
+    const lockScrew = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.018, 12), thumbMat);
+    lockScrew.rotation.x = Math.PI / 2;
+    lockScrew.position.set(0, -postHeight, 0.072);
+    carriage.add(lockScrew);
+
+    if (postHeight > 0.02) {
+      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.018, 0.018, 16), saddleMat);
+      collar.position.y = -postHeight + 0.018;
+      carriage.add(collar);
+
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.0095, 0.0095, postHeight - 0.018, 16), postMat);
+      post.position.y = -postHeight * 0.5 + 0.009;
+      carriage.add(post);
+    }
+    return carriage;
+  };
 
   const railGroup = new THREE.Group();
-  railGroup.position.set(opticsBenchX, 0.94 + 0.03, 0);
+  railGroup.position.set(opticsBenchX, BENCH_MAT_TOP_Y + 0.012, 0);
 
   const rail = new THREE.Mesh(
-    new THREE.BoxGeometry(2.4, 0.06, 0.16),
+    new THREE.BoxGeometry(2.4, 0.054, 0.14),
     material(0x0f172a, { metalness: 0.9, roughness: 0.25 })
   );
+  rail.position.y = 0.027;
   railGroup.add(rail);
 
   registerInteractable(rail, {
@@ -2906,16 +4286,14 @@ export function createRoom3Scene(
     readout: 'Alignment: Paraxial collinear · Scale: 0 to 200 cm',
   });
 
-  // Load High-Fidelity Optical Rail System GLB Model
-  gltfLoader.load('/assets/room-3/optics/optical_rail_system.glb', (gltf) => {
-    const model = gltf.scene;
+  // Load High-Fidelity Optical Rail System GLB Model (hide frozen static Optical_Carrier_1..4 so carriages slide live)
+  loadSanitizedGlb('/assets/room-3/optics/optical_rail_system.glb', (model) => {
     model.name = 'OpticalRail_GLB';
     model.scale.setScalar(1.2);
     model.position.set(0, 0, 0);
-    model.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
+    model.traverse((obj) => {
+      if (obj.name.startsWith('Optical_Carrier_')) {
+        obj.visible = false;
       }
     });
     (rail.material as THREE.Material).transparent = true;
@@ -2933,35 +4311,49 @@ export function createRoom3Scene(
       action: 'Examine Optical Alignment',
       readout: 'Alignment: Paraxial collinear · Scale: 0 to 200 cm',
     });
-  }, undefined, (err) => console.warn('Optical Rail GLB load note:', err));
+  }, 'Optical Rail');
 
-  // Laser Diode Emitter
+  // Laser Diode Emitter Assembly (Hidden cleanly during backlit Target Imaging Mode to avoid carriage overlap)
+  const laserCarriageGroup = new THREE.Group();
+  laserCarriageGroup.position.set(-1.0, OPTICS_BEAM_Y, 0);
+  laserCarriageGroup.add(buildOpticsCarriage(OPTICS_BEAM_Y - OPTICS_RAIL_TOP_Y));
+
   const laserHousing = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.04, 0.04, 0.22, 24),
+    new THREE.CylinderGeometry(0.032, 0.032, 0.22, 24),
     material(0x1e293b, { metalness: 0.8, roughness: 0.3 })
   );
   laserHousing.rotation.z = Math.PI / 2;
-  laserHousing.position.set(-1.0, 0.12, 0);
-  railGroup.add(laserHousing);
+  laserCarriageGroup.add(laserHousing);
 
+  // Invisible ergonomic collider covering the full laser diode cylinder, mount post, and rail saddle
+  // Note: laserHousing has rotation.z = +PI/2, so local -X aligns with parent -Y (down toward the rail).
+  const laserHitbox = new THREE.Mesh(
+    new THREE.BoxGeometry(0.175, 0.28, 0.135),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+  );
+  laserHitbox.position.set(-0.042, 0, 0);
+  laserHousing.add(laserHitbox);
+
+  let laserGlbBeamOriginX = -0.868;
   // Load High-Fidelity Diode Laser Collimator GLB Model
-  gltfLoader.load('/assets/room-3/optics/laser_source.glb', (gltf) => {
-    const model = gltf.scene;
+  loadSanitizedGlb('/assets/room-3/optics/laser_source.glb', (model) => {
     model.name = 'LaserSource_GLB';
     model.scale.setScalar(1.3);
-    model.position.set(-1.0, 0.12, 0);
-    model.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
+    model.position.set(0, 0, 0);
     (laserHousing.material as THREE.Material).transparent = true;
     (laserHousing.material as THREE.Material).opacity = 0;
     (laserHousing.material as THREE.Material).depthWrite = false;
     (laserHousing.material as THREE.Material).needsUpdate = true;
     laserHousing.visible = true;
-    railGroup.add(model);
+    laserCarriageGroup.add(model);
+    railGroup.updateMatrixWorld(true);
+    const aperture = model.getObjectByName('Laser_Aperture_Emitter');
+    if (aperture) {
+      const worldTip = new THREE.Vector3();
+      aperture.getWorldPosition(worldTip);
+      railGroup.worldToLocal(worldTip);
+      laserGlbBeamOriginX = worldTip.x + 0.004;
+    }
     registerInteractable(model, {
       id: 'optics-laser',
       stationId: 'optics',
@@ -2971,84 +4363,242 @@ export function createRoom3Scene(
       action: 'Cycle Emission Wavelength (Green 532nm / Red 650nm / Violet 405nm)',
       readout: `Laser Wavelength: ${currentOptics.wavelength} nm · Coherence: 150 m`,
     });
-  }, undefined, (err) => console.warn('Laser Source GLB load note:', err));
+  }, 'Laser Source');
+  railGroup.add(laserCarriageGroup);
 
   const beamMat = new THREE.MeshBasicMaterial({
     color: wavelengthToRGB(currentOptics.wavelength),
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.88,
   });
 
-  const beamGeo = new THREE.CylinderGeometry(0.006, 0.006, 1.8, 16);
-  beamGeo.rotateZ(Math.PI / 2);
-  const laserBeam = new THREE.Mesh(beamGeo, beamMat);
-  laserBeam.position.set(0, 0.12, 0);
-  railGroup.add(laserBeam);
+  const secondaryBeamMat = new THREE.MeshBasicMaterial({
+    color: wavelengthToRGB(currentOptics.wavelength),
+    transparent: true,
+    opacity: 0.65,
+  });
 
-  // Optical Element (Semicircular Prism, Lens, Double Slit)
+  const beamHaloMat = new THREE.MeshBasicMaterial({
+    color: wavelengthToRGB(currentOptics.wavelength),
+    transparent: true,
+    opacity: 0.26,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  const positionBeamBetween = (mesh: THREE.Mesh, p1: THREE.Vector3, p2: THREE.Vector3) => {
+    const dir = new THREE.Vector3().subVectors(p2, p1);
+    const len = dir.length();
+    if (len < 0.005) {
+      mesh.visible = false;
+      return;
+    }
+    mesh.position.copy(p1).addScaledVector(dir, 0.5);
+    mesh.scale.set(1, len, 1);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    mesh.visible = true;
+  };
+
+  const unitBeamGeo = new THREE.CylinderGeometry(0.005, 0.005, 1.0, 12);
+  const marginalRayGeo = new THREE.CylinderGeometry(0.0028, 0.0028, 1.0, 10);
+  const unitHaloGeo = new THREE.CylinderGeometry(0.015, 0.015, 1.0, 12);
+  const marginalHaloGeo = new THREE.CylinderGeometry(0.0085, 0.0085, 1.0, 10);
+
+  const attachBeamHalo = (parent: THREE.Mesh, geo: THREE.CylinderGeometry) => {
+    const halo = new THREE.Mesh(geo, beamHaloMat);
+    halo.raycast = () => {};
+    parent.add(halo);
+    return halo;
+  };
+
+  const laserBeam = new THREE.Mesh(unitBeamGeo, beamMat);
+  const refractedBeam = new THREE.Mesh(unitBeamGeo, beamMat);
+  const reflectedBeam = new THREE.Mesh(marginalRayGeo, secondaryBeamMat);
+  const upperMarginalRay = new THREE.Mesh(marginalRayGeo, secondaryBeamMat);
+  const lowerMarginalRay = new THREE.Mesh(marginalRayGeo, secondaryBeamMat);
+  attachBeamHalo(laserBeam, unitHaloGeo);
+  attachBeamHalo(refractedBeam, unitHaloGeo);
+  attachBeamHalo(reflectedBeam, marginalHaloGeo);
+  attachBeamHalo(upperMarginalRay, marginalHaloGeo);
+  attachBeamHalo(lowerMarginalRay, marginalHaloGeo);
+  railGroup.add(laserBeam, refractedBeam, reflectedBeam, upperMarginalRay, lowerMarginalRay);
+
+  // Illuminated Object Target Carriage (Visible in Thin-Lens Imaging Mode at x = -0.82m)
+  const objectTargetGroup = new THREE.Group();
+  objectTargetGroup.position.set(-0.82, OPTICS_BEAM_Y, 0);
+  objectTargetGroup.add(buildOpticsCarriage(OPTICS_BEAM_Y - OPTICS_RAIL_TOP_Y));
+
+  const targetPlate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.016, 0.145, 0.145),
+    material(0x0f172a, { metalness: 0.5, roughness: 0.55 })
+  );
+
+  // Crisp glowing upward Arrow-Stencil Reticle Texture (matches projected Thin-Lens arrow!)
+  const reticleCanvas = document.createElement('canvas');
+  reticleCanvas.width = 256;
+  reticleCanvas.height = 256;
+  const retCtx = reticleCanvas.getContext('2d')!;
+  retCtx.fillStyle = '#090e1a';
+  retCtx.fillRect(0, 0, 256, 256);
+  retCtx.strokeStyle = '#64748b';
+  retCtx.lineWidth = 4;
+  retCtx.strokeRect(8, 8, 240, 240);
+  retCtx.strokeStyle = '#fef08a';
+  retCtx.fillStyle = '#fef08a';
+  retCtx.lineWidth = 10;
+  retCtx.beginPath();
+  retCtx.moveTo(128, 200);
+  retCtx.lineTo(128, 66);
+  retCtx.stroke();
+  retCtx.beginPath();
+  retCtx.moveTo(128, 42);
+  retCtx.lineTo(94, 86);
+  retCtx.lineTo(162, 86);
+  retCtx.closePath();
+  retCtx.fill();
+  retCtx.lineWidth = 4;
+  retCtx.beginPath();
+  retCtx.arc(128, 128, 52, 0, Math.PI * 2);
+  retCtx.stroke();
+  const targetReticleTex = new THREE.CanvasTexture(reticleCanvas);
+  targetReticleTex.colorSpace = THREE.SRGBColorSpace;
+
+  const targetArrowGlow = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.115, 0.115),
+    new THREE.MeshBasicMaterial({ map: targetReticleTex, side: THREE.DoubleSide })
+  );
+  targetArrowGlow.rotation.y = Math.PI / 2;
+  targetArrowGlow.position.x = 0.009;
+  objectTargetGroup.add(targetPlate, targetArrowGlow);
+  railGroup.add(objectTargetGroup);
+
+  // Optical Element Assembly (Sliding Carriage + Single Rotary Goniometer Prism OR Lathe Biconvex Lens OR Twin-Slit Aperture)
   const opticalElementGroup = new THREE.Group();
-  opticalElementGroup.position.set(0, 0.12, 0);
+  opticalElementGroup.position.set(0, OPTICS_BEAM_Y, 0);
+  opticalElementGroup.add(buildOpticsCarriage(OPTICS_BEAM_Y - OPTICS_RAIL_TOP_Y));
 
-  const prismGlassMat = new THREE.MeshPhysicalMaterial({
-    color: 0xffffff,
-    transmission: 0.92,
-    opacity: 1,
+  const prismGlassMat = new THREE.MeshStandardMaterial({
+    color: 0xe0f2fe,
+    opacity: 0.42,
     transparent: true,
     roughness: 0.05,
-    ior: currentOptics.n2,
+    metalness: 0.15,
+    depthWrite: false,
   });
-  const prismMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.12, 0.12, 0.08, 32, 1, false, 0, Math.PI),
-    prismGlassMat
+
+  // LatheGeometry Biconvex Crown-Glass Lens mounted in Anodized Retaining Ring
+  const biconvexGroup = new THREE.Group();
+  const biconvexPts: THREE.Vector2[] = [];
+  const lensR = 0.088;
+  const lensHalfThick = 0.015;
+  for (let i = 0; i <= 16; i++) {
+    const t = (i / 16) * lensR;
+    const xOffset = lensHalfThick * (1 - (t / lensR) * (t / lensR));
+    biconvexPts.push(new THREE.Vector2(t, xOffset));
+  }
+  for (let i = 16; i >= 0; i--) {
+    const t = (i / 16) * lensR;
+    const xOffset = -lensHalfThick * (1 - (t / lensR) * (t / lensR));
+    biconvexPts.push(new THREE.Vector2(t, xOffset));
+  }
+  const lensMesh = new THREE.Mesh(new THREE.LatheGeometry(biconvexPts, 36), prismGlassMat);
+  lensMesh.rotation.z = Math.PI / 2; // Optical axis along X
+
+  const lensHolderRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.094, 0.011, 14, 36),
+    material(0x1e293b, { metalness: 0.85, roughness: 0.28 })
   );
-  prismMesh.rotation.x = Math.PI / 2;
-  opticalElementGroup.add(prismMesh);
+  lensHolderRing.rotation.y = Math.PI / 2;
+  const lensCollar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.013, 0.015, 0.04, 16),
+    material(0x334155, { metalness: 0.85, roughness: 0.25 })
+  );
+  lensCollar.position.y = -0.105;
+  biconvexGroup.add(lensMesh, lensHolderRing, lensCollar);
+  biconvexGroup.visible = false;
+  opticalElementGroup.add(biconvexGroup);
 
-  const lensMesh = new THREE.Mesh(new THREE.SphereGeometry(0.12, 32, 16), prismGlassMat);
-  lensMesh.scale.set(0.2, 1, 1);
-  lensMesh.visible = false;
-  opticalElementGroup.add(lensMesh);
-
-  const slitPlate = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.22, 0.18), material(0x1e293b, { metalness: 0.8 }));
+  // Precision Double-Slit Aperture Assembly (two physical vertical slits + glowing diffraction mouth)
+  const slitPlate = new THREE.Group();
+  const slitFrameMat = material(0x1e293b, { metalness: 0.85, roughness: 0.28 });
+  const slitLeftSide = new THREE.Mesh(new THREE.BoxGeometry(0.010, 0.16, 0.068), slitFrameMat);
+  slitLeftSide.position.z = -0.044;
+  const slitCenterBridge = new THREE.Mesh(new THREE.BoxGeometry(0.010, 0.16, 0.008), slitFrameMat);
+  const slitRightSide = new THREE.Mesh(new THREE.BoxGeometry(0.010, 0.16, 0.068), slitFrameMat);
+  slitRightSide.position.z = 0.044;
+  const slitTopBar = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.025, 0.165), slitFrameMat);
+  slitTopBar.position.y = 0.072;
+  const slitBotBar = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.025, 0.165), slitFrameMat);
+  slitBotBar.position.y = -0.072;
+  const slitGlowMat = new THREE.MeshBasicMaterial({ color: wavelengthToRGB(currentOptics.wavelength), transparent: true, opacity: 0.9 });
+  const slitGlowA = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.09, 0.004), slitGlowMat);
+  slitGlowA.position.z = -0.0075;
+  const slitGlowB = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.09, 0.004), slitGlowMat);
+  slitGlowB.position.z = 0.0075;
+  slitPlate.add(slitLeftSide, slitCenterBridge, slitRightSide, slitTopBar, slitBotBar, slitGlowA, slitGlowB);
   slitPlate.visible = false;
   opticalElementGroup.add(slitPlate);
 
-  // Load High-Fidelity Goniometer Prism Stage GLB Model
-  gltfLoader.load('/assets/room-3/optics/goniometer_prism.glb', (gltf) => {
-    const model = gltf.scene;
+  // Load High-Fidelity Goniometer Prism Stage GLB Model (no procedural duplicate prism)
+  let goniometerGlbModel: THREE.Object3D | null = null;
+  let goniometerRotateGroup: THREE.Group | null = null;
+  loadSanitizedGlb('/assets/room-3/optics/goniometer_prism.glb', (model) => {
     model.name = 'GoniometerPrism_GLB';
     model.scale.setScalar(1.25);
-    model.position.set(0, -0.06, 0);
-    model.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
+    // Prism raw y = +0.035 -> scaled +0.04375 -> place at -0.04375 so prism midplane centers at OPTICS_BEAM_Y
+    model.position.set(0, -0.04375, 0);
+    // Group dial + Semicircular_Crown_Glass_Prism together so they rotate smoothly on stationary base
+    const rotarySubGroup = new THREE.Group();
+    rotarySubGroup.name = 'Goniometer_Rotary_Stage';
+    const prismNode = model.getObjectByName('Semicircular_Crown_Glass_Prism');
+    const stageRoot = model.getObjectByName('Rotary_Goniometer_Prism_Stage') || model;
+    if (prismNode && prismNode.parent) {
+      const parent = prismNode.parent;
+      const toRotate = parent.children.filter((c) => c === prismNode || c.position.y > 0.005);
+      parent.add(rotarySubGroup);
+      toRotate.forEach((c) => rotarySubGroup.add(c));
+      goniometerRotateGroup = rotarySubGroup;
+      rotarySubGroup.rotation.y = (currentOptics.theta1 * Math.PI) / 180;
+    }
+    model.visible = currentOptics.subMode === 'refraction';
+    goniometerGlbModel = model;
     opticalElementGroup.add(model);
-  }, undefined, (err) => console.warn('Goniometer Prism GLB load note:', err));
+    registerInteractable(model, {
+      id: 'optics-angle-dial',
+      stationId: 'optics',
+      category: 'GONIOMETER',
+      name: "Precision Snell's Law Goniometer Stage",
+      description: ROOM3_EQUIPMENT_DESCRIPTIONS['optics-angle-dial'],
+      action: 'Click / Scroll to Rotate Incident Angle θ₁',
+      readout: `θ₁ = ${currentOptics.theta1.toFixed(1)}° · n₁ = ${currentOptics.n1.toFixed(2)} · n₂ = ${currentOptics.n2.toFixed(2)}`,
+    });
+  }, 'Goniometer Prism');
 
   railGroup.add(opticalElementGroup);
 
-  // Observation Screen with Dynamic Interference Fringes
+  // Observation Screen with Sliding Carriage & Dynamic Interference / Focus Display
   const screenGroup = new THREE.Group();
-  screenGroup.position.set(1.0, 0.2, 0);
+  screenGroup.position.set(1.0, OPTICS_BEAM_Y, 0);
+  screenGroup.add(buildOpticsCarriage(OPTICS_BEAM_Y - OPTICS_RAIL_TOP_Y));
 
   // Load High-Fidelity Micrometric Diffraction Screen GLB Model
-  gltfLoader.load('/assets/room-3/optics/diffraction_screen.glb', (gltf) => {
-    const model = gltf.scene;
+  // Panel raw center y = +0.14 -> scaled 1.2 = +0.168 -> offset -0.168 aligns face center at OPTICS_BEAM_Y
+  loadSanitizedGlb('/assets/room-3/optics/diffraction_screen.glb', (model) => {
     model.name = 'DiffractionScreen_GLB';
     model.scale.setScalar(1.2);
-    model.position.set(0, -0.10, 0);
+    model.position.set(0, -0.168, 0);
     model.rotation.y = -Math.PI / 2;
-    model.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
     screenGroup.add(model);
-  }, undefined, (err) => console.warn('Diffraction Screen GLB load note:', err));
+    registerInteractable(model, {
+      id: 'optics-screen',
+      stationId: 'optics',
+      category: 'OPTICAL DETECTOR',
+      name: 'Translating Ground-Glass & Vernier Screen',
+      description: ROOM3_EQUIPMENT_DESCRIPTIONS['optics-screen'],
+      action: 'Click / Scroll to Slide Observation Screen Carriage',
+      readout: `Screen Distance v = ${(currentOptics.screenPositionCm ?? 45.0).toFixed(1)} cm`,
+    });
+  }, 'Diffraction Screen');
 
   const screenCanvas = document.createElement('canvas');
   screenCanvas.width = 512;
@@ -3057,17 +4607,148 @@ export function createRoom3Scene(
   const screenTexture = new THREE.CanvasTexture(screenCanvas);
 
   const screenSurface = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.35, 0.35),
-    new THREE.MeshStandardMaterial({ map: screenTexture, roughness: 0.6 })
+    new THREE.PlaneGeometry(0.39, 0.30),
+    new THREE.MeshStandardMaterial({
+      map: screenTexture,
+      emissive: 0xffffff,
+      emissiveMap: screenTexture,
+      emissiveIntensity: 0.55,
+      roughness: 0.6,
+    })
   );
   screenSurface.rotation.y = -Math.PI / 2;
+  // Offset cleanly in front of GLB front face (-0.006m) to prevent any Z-fighting
+  screenSurface.position.set(-0.0085, 0, 0);
   screenGroup.add(screenSurface);
+
+  const updateOpticsBenchGeometry = () => {
+    const optResult = calculateOptics(currentOptics);
+    const laserHex = wavelengthToRGB(currentOptics.wavelength);
+    beamMat.color.set(laserHex);
+    secondaryBeamMat.color.set(laserHex);
+    beamHaloMat.color.set(laserHex);
+    slitGlowMat.color.set(laserHex);
+    const powerOn = currentOptics.powerOn !== false;
+
+    const isImaging = currentOptics.subMode === 'imaging';
+    laserCarriageGroup.visible = !isImaging;
+    if (goniometerGlbModel) goniometerGlbModel.visible = currentOptics.subMode === 'refraction';
+    biconvexGroup.visible = isImaging;
+    objectTargetGroup.visible = isImaging;
+    slitPlate.visible = currentOptics.subMode === 'diffraction';
+    slitGlowMat.opacity = powerOn ? 0.92 : 0.08;
+    (targetArrowGlow.material as THREE.MeshBasicMaterial).color.set(powerOn ? 0xffffff : 0x334155);
+
+    const CM_TO_RAIL = 0.009;
+    let elemX = 0.0;
+    let scrX = 1.0;
+
+    if (isImaging) {
+      const uCm = THREE.MathUtils.clamp(currentOptics.objectDistance, 25, 80);
+      const vCm = THREE.MathUtils.clamp(currentOptics.screenPositionCm ?? 45.0, 15, 120);
+      elemX = -0.82 + uCm * CM_TO_RAIL;
+      scrX = Math.min(1.10, elemX + vCm * CM_TO_RAIL);
+    } else if (currentOptics.subMode === 'diffraction') {
+      elemX = -0.45;
+      scrX = Math.min(1.08, Math.max(0.20, elemX + currentOptics.screenDistance * 0.72));
+    } else {
+      elemX = 0.0;
+      scrX = 1.0;
+      if (goniometerRotateGroup) {
+        goniometerRotateGroup.rotation.y = (currentOptics.theta1 * Math.PI) / 180;
+      }
+    }
+
+    opticalElementGroup.position.set(elemX, OPTICS_BEAM_Y, 0);
+    screenGroup.position.set(scrX, OPTICS_BEAM_Y, 0);
+
+    if (!powerOn) {
+      laserBeam.visible = false;
+      refractedBeam.visible = false;
+      reflectedBeam.visible = false;
+      upperMarginalRay.visible = false;
+      lowerMarginalRay.visible = false;
+      return;
+    }
+
+    if (isImaging) {
+      laserBeam.visible = false;
+      refractedBeam.visible = false;
+      reflectedBeam.visible = false;
+
+      const objTop = new THREE.Vector3(-0.82, OPTICS_BEAM_Y + 0.045, 0);
+      const objBot = new THREE.Vector3(-0.82, OPTICS_BEAM_Y - 0.045, 0);
+      const lensTop = new THREE.Vector3(elemX, OPTICS_BEAM_Y + 0.065, 0);
+      const lensBot = new THREE.Vector3(elemX, OPTICS_BEAM_Y - 0.065, 0);
+
+      // Compute slope to theoretical focus (inverted image), evaluated at actual scrX
+      const focusX = elemX + Math.min(1.4, (optResult.imageDistanceCm ?? 40) * CM_TO_RAIL);
+      const mag = Math.min(2.5, Math.max(-2.5, optResult.magnification ?? -1.0));
+      const focusY = OPTICS_BEAM_Y + 0.045 * mag; // inverted below axis if real (mag < 0)
+      const dxFocus = Math.max(0.05, focusX - elemX);
+      const dxScreen = Math.max(0.05, scrX - elemX);
+
+      const upperEndY = OPTICS_BEAM_Y + 0.065 + ((focusY - (OPTICS_BEAM_Y + 0.065)) / dxFocus) * dxScreen;
+      const lowerEndY = OPTICS_BEAM_Y - 0.065 + ((focusY - (OPTICS_BEAM_Y - 0.065)) / dxFocus) * dxScreen;
+
+      positionBeamBetween(laserBeam, objTop, lensTop);
+      positionBeamBetween(refractedBeam, objBot, lensBot);
+      positionBeamBetween(upperMarginalRay, lensTop, new THREE.Vector3(scrX - 0.012, THREE.MathUtils.clamp(upperEndY, OPTICS_BEAM_Y - 0.13, OPTICS_BEAM_Y + 0.13), 0));
+      positionBeamBetween(lowerMarginalRay, lensBot, new THREE.Vector3(scrX - 0.012, THREE.MathUtils.clamp(lowerEndY, OPTICS_BEAM_Y - 0.13, OPTICS_BEAM_Y + 0.13), 0));
+    } else if (currentOptics.subMode === 'refraction') {
+      upperMarginalRay.visible = false;
+      lowerMarginalRay.visible = false;
+      const startPt = new THREE.Vector3(laserGlbBeamOriginX, OPTICS_BEAM_Y, 0);
+      const midPt = new THREE.Vector3(elemX, OPTICS_BEAM_Y, 0);
+      positionBeamBetween(laserBeam, startPt, midPt);
+
+      if (optResult.isTIR || optResult.theta2Deg === null) {
+        refractedBeam.visible = false;
+        const tirAng = ((90 - currentOptics.theta1) * Math.PI) / 180;
+        const tirEnd = new THREE.Vector3(
+          elemX - Math.cos(tirAng) * 0.42,
+          OPTICS_BEAM_Y,
+          Math.sin(tirAng) * 0.36
+        );
+        positionBeamBetween(reflectedBeam, midPt, tirEnd);
+      } else {
+        reflectedBeam.visible = false;
+        const devZ = THREE.MathUtils.clamp(Math.sin((optResult.theta2Deg * Math.PI) / 180) * 0.16, -0.16, 0.16);
+        const endPt = new THREE.Vector3(scrX - 0.012, OPTICS_BEAM_Y, devZ);
+        positionBeamBetween(refractedBeam, midPt, endPt);
+      }
+    } else {
+      // Diffraction: level coaxial beam from laser aperture to slit plate + 0th and ±1st order beams
+      positionBeamBetween(laserBeam, new THREE.Vector3(laserGlbBeamOriginX, OPTICS_BEAM_Y, 0), new THREE.Vector3(elemX, OPTICS_BEAM_Y, 0));
+      positionBeamBetween(refractedBeam, new THREE.Vector3(elemX, OPTICS_BEAM_Y, 0), new THREE.Vector3(scrX - 0.012, OPTICS_BEAM_Y, 0));
+      const orderOffset = Math.min(0.13, (optResult.fringeSpacingMm / 100) * 0.45);
+      positionBeamBetween(upperMarginalRay, new THREE.Vector3(elemX, OPTICS_BEAM_Y, 0), new THREE.Vector3(scrX - 0.012, OPTICS_BEAM_Y + orderOffset, 0));
+      positionBeamBetween(lowerMarginalRay, new THREE.Vector3(elemX, OPTICS_BEAM_Y, 0), new THREE.Vector3(scrX - 0.012, OPTICS_BEAM_Y - orderOffset, 0));
+      reflectedBeam.visible = false;
+    }
+  };
 
   const updateScreenTexture = () => {
     const optResult = calculateOptics(currentOptics);
-    screenCtx.fillStyle = '#0f172a';
+    screenCtx.save();
+    screenCtx.filter = 'none';
+    screenCtx.globalAlpha = 1.0;
+    screenCtx.fillStyle = '#090e1a';
     screenCtx.fillRect(0, 0, 512, 512);
     const laserHex = wavelengthToRGB(currentOptics.wavelength);
+    const powerOn = currentOptics.powerOn !== false;
+
+    if (!powerOn) {
+      screenCtx.fillStyle = '#475569';
+      screenCtx.font = 'bold 24px monospace';
+      screenCtx.textAlign = 'center';
+      screenCtx.fillText('SOURCE OFF — CLICK LASER', 256, 248);
+      screenCtx.font = '16px monospace';
+      screenCtx.fillText('Toggle Laser Power to Begin', 256, 282);
+      screenCtx.restore();
+      screenTexture.needsUpdate = true;
+      return;
+    }
 
     if (currentOptics.subMode === 'diffraction') {
       const fringeSpacingPx = Math.max(8, (optResult.fringeSpacingMm / 10) * 120);
@@ -3082,20 +4763,106 @@ export function createRoom3Scene(
         screenCtx.fillRect(0, y, 512, 1);
       }
       screenCtx.globalAlpha = 1.0;
+      screenCtx.fillStyle = '#e2e8f0';
+      screenCtx.font = 'bold 20px monospace';
+      screenCtx.fillText(`INTERFERENCE PATTERN · L=${currentOptics.screenDistance.toFixed(2)}m`, 22, 34);
     } else if (currentOptics.subMode === 'refraction') {
-      screenCtx.fillStyle = laserHex;
-      screenCtx.beginPath();
-      const spotY = 256 + (optResult.isTIR ? 0 : Math.sin(((optResult.theta2Deg ?? 0) * Math.PI) / 180) * 140);
-      screenCtx.arc(256, spotY, 24, 0, Math.PI * 2);
-      screenCtx.fill();
+      // Ground-glass reticle + refracted beam spot
+      screenCtx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
+      screenCtx.lineWidth = 1;
+      for (let g = 64; g < 512; g += 64) {
+        screenCtx.beginPath();
+        screenCtx.moveTo(g, 0);
+        screenCtx.lineTo(g, 512);
+        screenCtx.moveTo(0, g);
+        screenCtx.lineTo(512, g);
+        screenCtx.stroke();
+      }
+      if (optResult.isTIR || optResult.theta2Deg === null) {
+        screenCtx.fillStyle = '#ef4444';
+        screenCtx.font = 'bold 28px monospace';
+        screenCtx.textAlign = 'center';
+        screenCtx.fillText('TOTAL INTERNAL REFLECTION', 256, 240);
+        screenCtx.font = '18px monospace';
+        screenCtx.fillText(`No Transmitted Beam Beyond θc`, 256, 276);
+      } else {
+        const devZ = THREE.MathUtils.clamp(Math.sin((optResult.theta2Deg * Math.PI) / 180) * 0.16, -0.16, 0.16);
+        const spotX = 256 + (devZ / 0.195) * 256;
+        const spotY = 256;
+        const grad = screenCtx.createRadialGradient(spotX, spotY, 2, spotX, spotY, 36);
+        grad.addColorStop(0, '#ffffff');
+        grad.addColorStop(0.35, laserHex);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        screenCtx.fillStyle = grad;
+        screenCtx.beginPath();
+        screenCtx.arc(spotX, spotY, 36, 0, Math.PI * 2);
+        screenCtx.fill();
+      }
     } else {
-      screenCtx.fillStyle = laserHex;
-      screenCtx.font = 'bold 36px monospace';
-      screenCtx.fillText(`${optResult.imageType} Image`, 40, 80);
-      screenCtx.fillText(`M = ${optResult.magnification?.toFixed(2) ?? '∞'}`, 40, 130);
+      // Thin-Lens Imaging Mode: Draw faint reticle + blur-filtered optical arrow
+      screenCtx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
+      screenCtx.lineWidth = 1;
+      screenCtx.beginPath();
+      screenCtx.moveTo(256, 0);
+      screenCtx.lineTo(256, 512);
+      screenCtx.moveTo(0, 256);
+      screenCtx.lineTo(512, 256);
+      screenCtx.stroke();
+
+      const blurPx = optResult.defocusBlurPx;
+      const sharpness = optResult.focusSharpness;
+      const vCm = optResult.screenPositionCm;
+      const magScale = Math.min(2.2, Math.max(0.35, Math.abs(optResult.magnification ?? 1.0)));
+
+      screenCtx.save();
+      try {
+        screenCtx.filter = `blur(${blurPx.toFixed(1)}px)`;
+      } catch {
+        // Fallback if canvas filter unavailable
+      }
+      screenCtx.translate(256, 256);
+      const isInverted = (optResult.magnification ?? -1) < 0;
+      const arrowLen = 85 * magScale;
+      const dir = isInverted ? 1 : -1; // canvas +y is downward -> inverted points down
+      screenCtx.strokeStyle = sharpness > 85 ? '#fef08a' : laserHex;
+      screenCtx.fillStyle = sharpness > 85 ? '#fef08a' : laserHex;
+      screenCtx.lineWidth = Math.max(4, 12 - (100 - sharpness) * 0.05);
+      screenCtx.globalAlpha = Math.max(0.28, sharpness / 100);
+
+      // Vertical glowing target arrow on ground glass
+      screenCtx.beginPath();
+      screenCtx.moveTo(0, -arrowLen * 0.35 * dir);
+      screenCtx.lineTo(0, arrowLen * 0.75 * dir);
+      screenCtx.stroke();
+
+      screenCtx.beginPath();
+      screenCtx.moveTo(0, arrowLen * 0.85 * dir);
+      screenCtx.lineTo(-18 * magScale, arrowLen * 0.55 * dir);
+      screenCtx.lineTo(18 * magScale, arrowLen * 0.55 * dir);
+      screenCtx.closePath();
+      screenCtx.fill();
+
+      // Crossbar target ring
+      screenCtx.lineWidth = 3;
+      screenCtx.beginPath();
+      screenCtx.arc(0, arrowLen * 0.2 * dir, 22 * magScale, 0, Math.PI * 2);
+      screenCtx.stroke();
+      screenCtx.restore();
+
+      // Unblurred bezel / vernier telemetry strip on top & bottom
+      screenCtx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      screenCtx.fillRect(0, 0, 512, 62);
+      screenCtx.fillRect(0, 444, 512, 68);
+      screenCtx.fillStyle = sharpness >= 85 ? '#34d399' : '#f59e0b';
+      screenCtx.font = 'bold 22px monospace';
+      screenCtx.fillText(`SCREEN VERNIER v = ${vCm.toFixed(1)} cm`, 20, 38);
+      screenCtx.fillText(`FOCUS SHARPNESS: ${sharpness.toFixed(0)}%`, 20, 486);
     }
+
+    screenCtx.restore();
     screenTexture.needsUpdate = true;
   };
+  updateOpticsBenchGeometry();
   updateScreenTexture();
 
   railGroup.add(screenGroup);
@@ -3107,28 +4874,48 @@ export function createRoom3Scene(
     category: 'LASER SOURCE',
     name: 'Tunable Diode Laser Emitter',
     description: ROOM3_EQUIPMENT_DESCRIPTIONS['optics-laser'],
-    action: 'Adjust Wavelength λ / Toggle Laser',
-    readout: `λ = ${currentOptics.wavelength} nm · Beam Color: ${wavelengthToRGB(currentOptics.wavelength)}`,
+    action: 'Click to Toggle Laser Power / Scroll for λ',
+    readout: `λ = ${currentOptics.wavelength} nm · Power: ${currentOptics.powerOn === false ? 'OFF' : 'ON'}`,
   });
 
-  registerInteractable(prismMesh, {
-    id: 'optics-angle-dial',
+  registerInteractable(biconvexGroup, {
+    id: 'optics-lens-carrier',
     stationId: 'optics',
-    category: 'GONIOMETER',
-    name: 'Precision Snell\'s Law Goniometer Stage',
-    description: ROOM3_EQUIPMENT_DESCRIPTIONS['optics-angle-dial'],
-    action: 'Rotate Incident Angle θ₁',
-    readout: `θ₁ = ${currentOptics.theta1.toFixed(1)}° · n₁ = ${currentOptics.n1.toFixed(2)} · n₂ = ${currentOptics.n2.toFixed(2)}`,
+    category: 'THIN CONVEX LENS',
+    name: 'Converging Lens Carriage (f = 20 cm)',
+    description: ROOM3_EQUIPMENT_DESCRIPTIONS['optics-lens-carrier'],
+    action: 'Click / Scroll to Slide Object Distance u',
+    readout: `u = ${currentOptics.objectDistance.toFixed(1)} cm · f = 20.0 cm`,
+  });
+
+  registerInteractable(slitPlate, {
+    id: 'optics-submode-toggle',
+    stationId: 'optics',
+    category: 'DIFFRACTION GRATING',
+    name: 'Precision Double-Slit Plate',
+    description: ROOM3_EQUIPMENT_DESCRIPTIONS['optics-submode-toggle'],
+    action: 'Inspect Double-Slit Interference Plate',
+    readout: `Slit Separation d = ${currentOptics.slitSeparation.toFixed(2)} mm`,
+  });
+
+  registerInteractable(targetPlate, {
+    id: 'optics-object-target',
+    stationId: 'optics',
+    category: 'ILLUMINATED OBJECT',
+    name: 'Collimated Object Reticle Carriage',
+    description: 'Zero-point illuminated optical target at the graduated rail origin for thin-lens focusing.',
+    action: 'Inspect Illuminated Optical Target',
+    readout: `Object Distance u = ${currentOptics.objectDistance.toFixed(1)} cm`,
   });
 
   registerInteractable(screenSurface, {
     id: 'optics-screen',
     stationId: 'optics',
     category: 'OPTICAL DETECTOR',
-    name: 'Interference Fringe Observation Screen',
+    name: 'Translating Ground-Glass & Vernier Screen',
     description: ROOM3_EQUIPMENT_DESCRIPTIONS['optics-screen'],
-    action: 'Inspect Fringe Profile & Intensity',
-    readout: `Screen Distance L = ${currentOptics.screenDistance.toFixed(2)} m · Fringe Δy = ${calculateOptics(currentOptics).fringeSpacingMm.toFixed(2)} mm`,
+    action: 'Click / Scroll to Slide Screen Position v for Sharp Focus',
+    readout: `v = ${(currentOptics.screenPositionCm ?? 45.0).toFixed(1)} cm · Focus: ${calculateOptics(currentOptics).focusSharpness.toFixed(0)}%`,
   });
 
   // -------------------------------------------------------------
@@ -3137,13 +4924,15 @@ export function createRoom3Scene(
   const relativityBenchX = STATION_X.relativity;
 
   const relativityGroup = new THREE.Group();
-  relativityGroup.position.set(relativityBenchX, 0.94 + 0.03, 0);
+  // Grounded flush onto ESD mat (maglev_beamline.glb min.y = 0.000, reference_frame_display.glb min.y = 0.000)
+  relativityGroup.position.set(relativityBenchX, BENCH_MAT_TOP_Y, 0);
 
-  // Linear Maglev Vacuum Track
+  // Linear Maglev Vacuum Track Fallback
   const track = new THREE.Mesh(
-    new THREE.BoxGeometry(2.4, 0.05, 0.22),
+    new THREE.BoxGeometry(3.2, 0.08, 0.45),
     material(0x1e293b, { metalness: 0.9, roughness: 0.2 })
   );
+  track.position.y = 0.04;
   relativityGroup.add(track);
 
   registerInteractable(track, {
@@ -3156,16 +4945,17 @@ export function createRoom3Scene(
     readout: `Beamline: Synchrotron Quadrupole · Active β: ${(currentRelativity.beta).toFixed(3)}c`,
   });
 
-  // Load High-Fidelity Maglev Beamline GLB Model
-  gltfLoader.load('/assets/room-3/relativity/maglev_beamline.glb', (gltf) => {
-    const model = gltf.scene;
+  // Load High-Fidelity Maglev Beamline GLB Model (hide colliding static sled & narrow torus rings)
+  loadSanitizedGlb('/assets/room-3/relativity/maglev_beamline.glb', (model) => {
     model.name = 'MaglevBeamline_GLB';
     model.scale.setScalar(1.0);
     model.position.set(0, 0, 0);
-    model.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
+    model.traverse((obj) => {
+      if (obj.name === 'Relativistic_Carrier_Sled_S_Prime') {
+        obj.visible = false;
+      } else if ((obj as THREE.Mesh).isMesh && Math.abs(obj.position.y - 0.16) < 0.025) {
+        // Hide the 5 static r=0.135m torus coils inside the GLB so wide U-arch quadrupole magnets provide clearance
+        obj.visible = false;
       }
     });
     (track.material as THREE.Material).transparent = true;
@@ -3183,61 +4973,151 @@ export function createRoom3Scene(
       action: 'Examine Synchrotron Beamline',
       readout: `Beamline: Synchrotron Quadrupole · Active β: ${(currentRelativity.beta).toFixed(3)}c`,
     });
-  }, undefined, (err) => console.warn('Maglev Beamline GLB load note:', err));
+  }, 'Maglev Beamline');
 
-  // Quadrupole magnetic coils along track
-  [-0.9, -0.45, 0, 0.45, 0.9].forEach((qx) => {
-    const coil = new THREE.Mesh(
-      new THREE.TorusGeometry(0.14, 0.02, 16, 24),
-      material(0xb45309, { metalness: 0.85, roughness: 0.3 })
-    );
-    coil.position.set(qx, 0.12, 0);
-    relativityGroup.add(coil);
-  });
+  // Open U-Arch Superconducting Quadrupole Coils (wide 0.43m lateral & 0.56m overhead clearance over moving clock)
+  const relativityCoilMats: THREE.MeshStandardMaterial[] = [];
+  const archCryoMat = material(0x1e293b, { metalness: 0.85, roughness: 0.28 });
+  const buildMaglevUArch = (qx: number) => {
+    const coilGroup = new THREE.Group();
+    coilGroup.position.set(qx, 0, 0);
 
-  // Moving Carrier Sled (Frame S')
+    // Track-side bronze superconducting cryostat arch spanning Z ∈ [-0.225, +0.225], Y up to 0.56m
+    const archCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0.05, -0.225),
+      new THREE.Vector3(0, 0.34, -0.225),
+      new THREE.Vector3(0, 0.52, -0.175),
+      new THREE.Vector3(0, 0.565, 0),
+      new THREE.Vector3(0, 0.52, 0.175),
+      new THREE.Vector3(0, 0.34, 0.225),
+      new THREE.Vector3(0, 0.05, 0.225),
+    ]);
+    const coilMat = material(0xb45309, {
+      metalness: 0.85,
+      roughness: 0.28,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.25,
+    });
+    relativityCoilMats.push(coilMat);
+    const coilMesh = new THREE.Mesh(new THREE.TubeGeometry(archCurve, 32, 0.019, 12, false), coilMat);
+    coilMesh.castShadow = true;
+    coilGroup.add(coilMesh);
+
+    // Side anchor foot flanges on track base
+    [-0.225, 0.225].forEach((sz) => {
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.055, 0.055), archCryoMat);
+      foot.position.set(0, 0.065, sz);
+      coilGroup.add(foot);
+    });
+
+    relativityGroup.add(coilGroup);
+  };
+  [-1.0, -0.5, 0, 0.5, 1.0].forEach(buildMaglevUArch);
+
+  // Moving Carrier Sled (Frame S'): Hovers 1.5cm above blue guide rails (rails top y = 0.10m)
   const sledGroup = new THREE.Group();
-  sledGroup.position.set(0, 0.12, 0);
+  sledGroup.position.set(0, 0.115, 0);
 
   const sledBody = new THREE.Mesh(
-    new THREE.BoxGeometry(0.8, 0.12, 0.3),
-    material(0x3b82f6, { metalness: 0.7, roughness: 0.3 })
+    new THREE.BoxGeometry(0.68, 0.032, 0.24),
+    material(0x1e3a8a, { metalness: 0.78, roughness: 0.26 })
   );
   sledGroup.add(sledBody);
 
-  // Contracting 3D Meter-Rod along X-axis of motion (Demo B: Length Contraction)
-  const contractingRodGeo = new THREE.BoxGeometry(0.7, 0.04, 0.04);
-  const contractingRodMat = material(0xf59e0b, { metalness: 0.8, roughness: 0.25 });
+  const sledTrim = new THREE.Mesh(
+    new THREE.BoxGeometry(0.70, 0.016, 0.256),
+    material(0x38bdf8, { metalness: 0.75, roughness: 0.22, emissive: 0x0284c7, emissiveIntensity: 0.35 })
+  );
+  sledGroup.add(sledTrim);
+
+  // Superconducting maglev air-gap glow runners beneath sled (-Z and +Z aligned to rails z=±0.14? trimmed to ±0.095)
+  [-0.095, 0.095].forEach((rz) => {
+    const pad = new THREE.Mesh(
+      new THREE.BoxGeometry(0.60, 0.008, 0.025),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8 })
+    );
+    pad.position.set(0, -0.016, rz);
+    sledGroup.add(pad);
+  });
+
+  // Calibrated Gold Contracting Meter-Rod (Demo B: Lorentz Length Contraction along X-axis)
+  const rodCanvas = document.createElement('canvas');
+  rodCanvas.width = 512;
+  rodCanvas.height = 64;
+  const rodCtx = rodCanvas.getContext('2d')!;
+  rodCtx.fillStyle = '#d97706';
+  rodCtx.fillRect(0, 0, 512, 64);
+  rodCtx.fillStyle = '#0f172a';
+  for (let i = 0; i <= 20; i++) {
+    const x = 16 + (i / 20) * 480;
+    const h = i % 5 === 0 ? 34 : 18;
+    rodCtx.fillRect(x - 1.5, 0, 3, h);
+    if (i % 5 === 0) {
+      rodCtx.font = 'bold 18px monospace';
+      rodCtx.textAlign = 'center';
+      rodCtx.fillText(`${i * 0.5}`, x, 54);
+    }
+  }
+  const meterRodTex = new THREE.CanvasTexture(rodCanvas);
+  meterRodTex.colorSpace = THREE.SRGBColorSpace;
+
+  const contractingRodGeo = new THREE.BoxGeometry(0.62, 0.032, 0.032);
+  const contractingRodMat = material(0xf59e0b, { metalness: 0.65, roughness: 0.25, map: meterRodTex });
   const contractingRod = new THREE.Mesh(contractingRodGeo, contractingRodMat);
-  contractingRod.position.set(0, 0.12, 0.12);
+  contractingRod.position.set(0, 0.056, 0.078);
+  const rodEndCapMat = material(0xdc2626, { roughness: 0.3, metalness: 0.3 });
+  [-0.312, 0.312].forEach((cx) => {
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.042, 0.042), rodEndCapMat);
+    cap.position.x = cx;
+    contractingRod.add(cap);
+  });
   sledGroup.add(contractingRod);
 
-  // Photon Light-Clock on Sled (Demo A: Two-Mirror Photon Clock)
-  const mirrorMat = material(0xffffff, { metalness: 0.98, roughness: 0.05 });
-  const mirrorTop = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.015, 0.15), mirrorMat);
-  mirrorTop.position.set(0, 0.35, -0.05);
-  sledGroup.add(mirrorTop);
-
-  const mirrorBottom = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.015, 0.15), mirrorMat);
-  mirrorBottom.position.set(0, 0.05, -0.05);
-  sledGroup.add(mirrorBottom);
-
+  // Photon Pulse + Corona (Bounced exclusively inside Photon_Clock_GLB mirror cavity — no duplicate plates)
   const photonPulse = new THREE.Mesh(
-    new THREE.SphereGeometry(0.02, 16, 16),
+    new THREE.SphereGeometry(0.016, 16, 16),
     new THREE.MeshBasicMaterial({ color: 0xfacc15 })
   );
-  photonPulse.position.set(0, 0.2, -0.05);
+  photonPulse.position.set(0, 0.20, -0.045);
+  const photonCorona = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: nebulaTex,
+      color: 0xfef08a,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+  );
+  photonCorona.scale.set(0.12, 0.12, 1);
+  photonPulse.add(photonCorona);
   sledGroup.add(photonPulse);
 
-  // Simultaneity Laser Detector Gates (Laboratory Frame S)
+  // Open U-Portal Optical Simultaneity Detector Arches (x = ±0.35m, full overhead clearance above photon_clock.glb)
   const gateMat = material(0x38bdf8, { metalness: 0.8, roughness: 0.2 });
-  const gateLeft = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.45), gateMat);
-  gateLeft.position.set(-0.35, 0.22, 0.12);
-  relativityGroup.add(gateLeft);
-
-  const gateRight = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.45), gateMat);
-  gateRight.position.set(0.35, 0.22, 0.12);
-  relativityGroup.add(gateRight);
+  const buildSimultaneityArch = (gx: number) => {
+    const g = new THREE.Group();
+    g.position.set(gx, 0, 0);
+    [-0.21, 0.21].forEach((gz) => {
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.48, 14), gateMat);
+      pillar.position.set(0, 0.295, gz);
+      g.add(pillar);
+    });
+    const crossbar = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.020, 0.44), gateMat);
+    crossbar.position.set(0, 0.535, 0);
+    g.add(crossbar);
+    const beamCurtain = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.004, 0.44),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.16, side: THREE.DoubleSide })
+    );
+    beamCurtain.rotation.y = Math.PI / 2;
+    beamCurtain.position.set(0, 0.30, 0);
+    beamCurtain.userData.isCurtain = true;
+    g.add(beamCurtain);
+    relativityGroup.add(g);
+  };
+  buildSimultaneityArch(-0.35);
+  buildSimultaneityArch(0.35);
 
   // Dynamic 3D Photon Spacetime Path Tracer
   const maxPathPoints = 64;
@@ -3255,54 +5135,95 @@ export function createRoom3Scene(
 
   let pathIndex = 0;
   let pathCount = 0;
+  let clockBounceMinY = 0.058;
+  let clockBounceMaxY = 0.357;
 
-  // Load High-Fidelity Photon Clock GLB Model
-  gltfLoader.load('/assets/room-3/relativity/photon_clock.glb', (gltf) => {
-    const model = gltf.scene;
+  // Load High-Fidelity Photon Clock GLB Model (sole photon-clock cavity on sled)
+  loadSanitizedGlb('/assets/room-3/relativity/photon_clock.glb', (model) => {
     model.name = 'PhotonClock_GLB';
-    model.scale.setScalar(1.0);
-    model.position.set(0, 0.04, -0.05);
-    model.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
+    model.scale.setScalar(0.85);
+    model.position.set(0, 0.025, -0.045);
+    sledGroup.add(model);
+    sledGroup.updateMatrixWorld(true);
+
+    // Measure internal mirror plates dynamically so photon bounces accurately mirror-to-mirror
+    const meshMirrors: THREE.Box3[] = [];
+    model.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const b = new THREE.Box3().setFromObject(obj);
+        const h = b.max.y - b.min.y;
+        const w = b.max.x - b.min.x;
+        // Thin horizontal cylindrical mirrors inside cavity (h < 0.025m, w < 0.10m vs wide base)
+        if (h < 0.025 && w < 0.10) {
+          meshMirrors.push(b);
+        }
       }
     });
-    sledGroup.add(model);
-  }, undefined, (err) => console.warn('Photon Clock GLB load note:', err));
+    if (meshMirrors.length >= 2) {
+      meshMirrors.sort((a, b) => a.min.y - b.min.y);
+      const localBotTop = meshMirrors[0].max.y - sledGroup.getWorldPosition(new THREE.Vector3()).y;
+      const localTopBot = meshMirrors[meshMirrors.length - 1].min.y - sledGroup.getWorldPosition(new THREE.Vector3()).y;
+      if (localTopBot > localBotTop + 0.15) {
+        clockBounceMinY = localBotTop + 0.017;
+        clockBounceMaxY = localTopBot - 0.017;
+      }
+    }
+
+    registerInteractable(model, {
+      id: 'relativity-light-clock',
+      stationId: 'relativity',
+      category: 'RELATIVISTIC CLOCK',
+      name: 'Relativistic Photon Light-Clock Chamber',
+      description: ROOM3_EQUIPMENT_DESCRIPTIONS['relativity-light-clock'],
+      action: 'Click to Toggle Observer Frame S ↔ S\'',
+      readout: `Frame: ${(currentRelativity.referenceFrame ?? 'lab') === 'lab' ? 'Lab S' : 'Moving S\''} · γ = ${calculateRelativity(currentRelativity).gamma.toFixed(4)}`,
+    });
+  }, 'Photon Clock');
 
   relativityGroup.add(sledGroup);
 
-  // Dual Synchronized Digital Atomic Clocks (Frame S vs Frame S')
-  const clockCanvas = document.createElement('canvas');
-  clockCanvas.width = 512;
-  clockCanvas.height = 256;
-  const clockCtx = clockCanvas.getContext('2d')!;
-  const clockTexture = new THREE.CanvasTexture(clockCanvas);
+  // Dual High-Contrast Telemetry Displays mapped directly onto reference_frame_display.glb panels
+  const clockLabCanvas = document.createElement('canvas');
+  clockLabCanvas.width = 512;
+  clockLabCanvas.height = 512;
+  const clockLabCtx = clockLabCanvas.getContext('2d')!;
+  const clockLabTexture = new THREE.CanvasTexture(clockLabCanvas);
+  clockLabTexture.colorSpace = THREE.SRGBColorSpace;
 
-  const atomicClock = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.56, 0.28),
-    new THREE.MeshBasicMaterial({ map: clockTexture })
-  );
-  atomicClock.position.set(-0.6, 0.27, -0.35);
-  relativityGroup.add(atomicClock);
+  const clockRestCanvas = document.createElement('canvas');
+  clockRestCanvas.width = 512;
+  clockRestCanvas.height = 512;
+  const clockRestCtx = clockRestCanvas.getContext('2d')!;
+  const clockRestTexture = new THREE.CanvasTexture(clockRestCanvas);
+  clockRestTexture.colorSpace = THREE.SRGBColorSpace;
 
-  // Load High-Fidelity Reference Frame Telemetry Console GLB Model
-  gltfLoader.load('/assets/room-3/relativity/reference_frame_display.glb', (gltf) => {
-    const model = gltf.scene;
+  // Load High-Fidelity Reference Frame Telemetry Console GLB Model (grounded at y = 0.0 -> 0.9324m)
+  loadSanitizedGlb('/assets/room-3/relativity/reference_frame_display.glb', (model) => {
     model.name = 'ReferenceFrameDisplay_GLB';
     model.scale.setScalar(1.15);
-    model.position.set(-0.6, 0.12, -0.36);
-    model.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
+    model.position.set(-0.65, 0, -0.40);
+    model.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        if (obj.name === 'Display_Frame_S_Lab') {
+          (obj as THREE.Mesh).material = new THREE.MeshBasicMaterial({ map: clockLabTexture });
+        } else if (obj.name === 'Display_Frame_SPrime_Moving') {
+          (obj as THREE.Mesh).material = new THREE.MeshBasicMaterial({ map: clockRestTexture });
+        }
       }
     });
     relativityGroup.add(model);
-  }, undefined, (err) => console.warn('Ref Frame Display GLB load note:', err));
+    registerInteractable(model, {
+      id: 'relativity-telemetry-console',
+      stationId: 'relativity',
+      category: 'TELEMETRY CONSOLE',
+      name: 'Reference Frame Telemetry Console (S vs S\')',
+      description: ROOM3_EQUIPMENT_DESCRIPTIONS['relativity-light-clock'],
+      action: 'Click to Switch Inertial Reference Frame',
+      readout: `Active Frame: ${(currentRelativity.referenceFrame ?? 'lab') === 'lab' ? 'Lab Frame S' : 'Sled Frame S\''}`,
+    });
+  }, 'Ref Frame Display');
 
-  let photonY = 0.06;
+  let photonY = 0.08;
   let photonDirection = 1;
   let sledX = 0;
   let sledDirection = 1;
@@ -3338,17 +5259,17 @@ export function createRoom3Scene(
       contractingRod.scale.x = 1.0; // Proper length L0 in rest frame
     }
 
-    // 3. Demonstration A: Photon Bouncing between parallel mirrors
+    // 3. Demonstration A: Photon Bouncing strictly between GLB mirrors
     // In lab frame, tick interval is dilated by gamma (light follows longer diagonal hypotenuse)
     const bounceSpeed = isPlaying
       ? 1.2 * (1 / relResult.gamma) * simSpeed
       : 0;
     photonY += photonDirection * bounceSpeed * delta;
-    if (photonY > 0.34) {
-      photonY = 0.34;
+    if (photonY > clockBounceMaxY) {
+      photonY = clockBounceMaxY;
       photonDirection = -1;
-    } else if (photonY < 0.06) {
-      photonY = 0.06;
+    } else if (photonY < clockBounceMinY) {
+      photonY = clockBounceMinY;
       photonDirection = 1;
     }
     photonPulse.position.y = photonY;
@@ -3383,45 +5304,115 @@ export function createRoom3Scene(
       gateMat.emissive.setHex(0x000000);
     }
 
-    // 6. High-Contrast Scientific Digital Telemetry Display
+    const coilIntensity = isPlaying ? 0.5 + currentRelativity.beta * 2.2 : 0.25;
+    relativityCoilMats.forEach((cm) => {
+      cm.emissiveIntensity = coilIntensity;
+    });
+
+    // 6. Dual-Screen Scientific Digital Telemetry Display (Left: Frame S | Right: Frame S')
     labTime += delta * simSpeed;
-    clockCtx.fillStyle = '#090d16';
-    clockCtx.fillRect(0, 0, 512, 256);
+    const bounceFrac = (photonY - clockBounceMinY) / Math.max(0.01, clockBounceMaxY - clockBounceMinY);
 
-    // Frame Header Banner
-    clockCtx.fillStyle = isLabFrame ? 'rgba(56, 189, 248, 0.2)' : 'rgba(168, 85, 247, 0.2)';
-    clockCtx.fillRect(0, 0, 512, 38);
-    clockCtx.font = 'bold 18px monospace';
-    clockCtx.fillStyle = isLabFrame ? '#38bdf8' : '#c084fc';
-    clockCtx.fillText(isLabFrame ? 'FRAME S: LABORATORY OBSERVER' : "FRAME S': CO-MOVING REST FRAME", 16, 26);
+    // Left Screen: Laboratory Observer Frame S
+    clockLabCtx.fillStyle = '#070b14';
+    clockLabCtx.fillRect(0, 0, 512, 512);
+    clockLabCtx.fillStyle = isLabFrame ? 'rgba(56, 189, 248, 0.28)' : 'rgba(56, 189, 248, 0.10)';
+    clockLabCtx.fillRect(0, 0, 512, 58);
+    clockLabCtx.strokeStyle = isLabFrame ? '#38bdf8' : '#1e293b';
+    clockLabCtx.lineWidth = isLabFrame ? 6 : 2;
+    clockLabCtx.strokeRect(3, 3, 506, 506);
 
-    // Main Parameters
-    clockCtx.font = 'bold 20px monospace';
-    clockCtx.fillStyle = '#fef08a';
-    clockCtx.fillText(`β = ${relResult.beta.toFixed(3)}c   γ = ${relResult.gamma.toFixed(4)}`, 16, 70);
+    clockLabCtx.font = 'bold 26px monospace';
+    clockLabCtx.fillStyle = '#38bdf8';
+    clockLabCtx.fillText('FRAME S · LAB OBSERVER', 20, 38);
+    clockLabCtx.font = 'bold 30px monospace';
+    clockLabCtx.fillStyle = '#fef08a';
+    clockLabCtx.fillText(`β = ${relResult.beta.toFixed(3)}c`, 20, 108);
+    clockLabCtx.fillText(`γ = ${relResult.gamma.toFixed(4)}`, 270, 108);
+    clockLabCtx.font = '20px monospace';
+    clockLabCtx.fillStyle = '#94a3b8';
+    clockLabCtx.fillText(`v = ${(relResult.speedMps / 1e6).toFixed(2)} × 10⁶ m/s`, 20, 146);
 
-    clockCtx.font = '16px monospace';
-    clockCtx.fillStyle = '#94a3b8';
-    clockCtx.fillText(`Velocity v: ${(relResult.speedMps / 1e6).toFixed(2)} × 10⁶ m/s`, 16, 102);
+    clockLabCtx.font = 'bold 24px monospace';
+    clockLabCtx.fillStyle = '#38bdf8';
+    clockLabCtx.fillText(`Dilated Δt = ${relResult.dilatedTime.toFixed(3)} ns`, 20, 200);
+    clockLabCtx.font = '19px monospace';
+    clockLabCtx.fillStyle = '#cbd5e1';
+    clockLabCtx.fillText(`(+${((relResult.gamma - 1) * 100).toFixed(1)}% Time Dilation)`, 20, 232);
 
-    // Demonstration A Readout
-    clockCtx.fillStyle = '#34d399';
-    clockCtx.fillText(`Proper Time Δτ = 6.671 ns`, 16, 134);
-    clockCtx.fillStyle = isLabFrame ? '#38bdf8' : '#94a3b8';
-    clockCtx.fillText(`Dilated Time Δt = ${(relResult.dilatedTime).toFixed(3)} ns (${((relResult.gamma - 1) * 100).toFixed(1)}% dilation)`, 16, 162);
+    clockLabCtx.font = 'bold 24px monospace';
+    clockLabCtx.fillStyle = '#facc15';
+    clockLabCtx.fillText(`Contracted L = ${relResult.contractedLength.toFixed(3)} m`, 20, 286);
+    clockLabCtx.font = '19px monospace';
+    clockLabCtx.fillStyle = '#f59e0b';
+    clockLabCtx.fillText(`(-${relResult.lengthContractionPercent.toFixed(1)}% Lorentz Length)`, 20, 318);
 
-    // Demonstration B Readout
-    clockCtx.fillStyle = '#f59e0b';
-    clockCtx.fillText(`Proper Length L₀ = 10.00 m`, 16, 194);
-    clockCtx.fillStyle = isLabFrame ? '#facc15' : '#94a3b8';
-    clockCtx.fillText(`Contracted L = ${(relResult.contractedLength).toFixed(3)} m (-${relResult.lengthContractionPercent.toFixed(1)}%)`, 16, 222);
+    // Mini Lab Diagonal Photon Diagram
+    clockLabCtx.strokeStyle = '#334155';
+    clockLabCtx.lineWidth = 2;
+    clockLabCtx.strokeRect(20, 348, 472, 128);
+    clockLabCtx.strokeStyle = '#facc15';
+    clockLabCtx.lineWidth = 4;
+    clockLabCtx.beginPath();
+    clockLabCtx.moveTo(60, 456);
+    clockLabCtx.lineTo(256, 368);
+    clockLabCtx.lineTo(452, 456);
+    clockLabCtx.stroke();
+    clockLabCtx.fillStyle = '#38bdf8';
+    clockLabCtx.beginPath();
+    clockLabCtx.arc(60 + bounceFrac * 392, 456 - Math.sin(bounceFrac * Math.PI) * 88, 9, 0, Math.PI * 2);
+    clockLabCtx.fill();
 
-    // Timescale footer note
-    clockCtx.font = '11px sans-serif';
-    clockCtx.fillStyle = '#64748b';
-    clockCtx.fillText('Computational Physics Simulation · Invariant c = 299,792,458 m/s', 16, 246);
+    clockLabTexture.needsUpdate = true;
 
-    clockTexture.needsUpdate = true;
+    // Right Screen: Co-Moving Proper Rest Frame S'
+    clockRestCtx.fillStyle = '#070b14';
+    clockRestCtx.fillRect(0, 0, 512, 512);
+    clockRestCtx.fillStyle = !isLabFrame ? 'rgba(168, 85, 247, 0.28)' : 'rgba(168, 85, 247, 0.10)';
+    clockRestCtx.fillRect(0, 0, 512, 58);
+    clockRestCtx.strokeStyle = !isLabFrame ? '#c084fc' : '#1e293b';
+    clockRestCtx.lineWidth = !isLabFrame ? 6 : 2;
+    clockRestCtx.strokeRect(3, 3, 506, 506);
+
+    clockRestCtx.font = 'bold 26px monospace';
+    clockRestCtx.fillStyle = '#c084fc';
+    clockRestCtx.fillText("FRAME S' · REST FRAME", 20, 38);
+    clockRestCtx.font = 'bold 30px monospace';
+    clockRestCtx.fillStyle = '#34d399';
+    clockRestCtx.fillText(`Proper Δτ = 6.671 ns`, 20, 108);
+    clockRestCtx.fillStyle = '#f59e0b';
+    clockRestCtx.fillText(`Proper L₀ = 10.00 m`, 20, 152);
+    clockRestCtx.font = '20px monospace';
+    clockRestCtx.fillStyle = '#cbd5e1';
+    clockRestCtx.fillText(`Momentum Ratio: γ·β = ${(relResult.gamma * relResult.beta).toFixed(3)}`, 20, 208);
+    clockRestCtx.fillText(`Clock Speed: ${(100 / relResult.gamma).toFixed(1)}% of c`, 20, 244);
+    clockRestCtx.fillStyle = '#94a3b8';
+    clockRestCtx.fillText(`Active View: ${isLabFrame ? 'LAB S' : "REST S'"} (Click Toggle)`, 20, 290);
+
+    // Mini Vertical Bounce Rest-Frame Diagram
+    clockRestCtx.strokeStyle = '#334155';
+    clockRestCtx.lineWidth = 2;
+    clockRestCtx.strokeRect(20, 348, 472, 128);
+    clockRestCtx.strokeStyle = '#e2e8f0';
+    clockRestCtx.lineWidth = 5;
+    clockRestCtx.beginPath();
+    clockRestCtx.moveTo(190, 366);
+    clockRestCtx.lineTo(322, 366);
+    clockRestCtx.moveTo(190, 458);
+    clockRestCtx.lineTo(322, 458);
+    clockRestCtx.stroke();
+    clockRestCtx.strokeStyle = '#c084fc';
+    clockRestCtx.lineWidth = 3;
+    clockRestCtx.beginPath();
+    clockRestCtx.moveTo(256, 368);
+    clockRestCtx.lineTo(256, 456);
+    clockRestCtx.stroke();
+    clockRestCtx.fillStyle = '#facc15';
+    clockRestCtx.beginPath();
+    clockRestCtx.arc(256, 456 - bounceFrac * 88, 9, 0, Math.PI * 2);
+    clockRestCtx.fill();
+
+    clockRestTexture.needsUpdate = true;
   };
   updateRelativityApparatus(0);
 
@@ -3447,7 +5438,7 @@ export function createRoom3Scene(
     readout: `β = ${currentRelativity.beta.toFixed(3)}c · Lorentz Factor γ = ${calculateRelativity(currentRelativity).gamma.toFixed(4)}`,
   });
 
-  registerInteractable(atomicClock, {
+  registerInteractable(photonPulse, {
     id: 'relativity-light-clock',
     stationId: 'relativity',
     category: 'CHRONOMETRY',
@@ -3460,45 +5451,117 @@ export function createRoom3Scene(
   // -------------------------------------------------------------
   // 15. Guidance Marker Positioning Targets
   // -------------------------------------------------------------
+  const guidanceBoxHelper = new THREE.Box3();
+  const guidanceCenterHelper = new THREE.Vector3();
+
+  const setFromObjectTopCenter = (
+    obj: THREE.Object3D | null | undefined,
+    out: THREE.Vector3,
+    extraY = 0.01
+  ): boolean => {
+    if (!obj) return false;
+    obj.updateWorldMatrix(true, true);
+    guidanceBoxHelper.setFromObject(obj);
+    if (!guidanceBoxHelper.isEmpty()) {
+      guidanceBoxHelper.getCenter(guidanceCenterHelper);
+      out.set(guidanceCenterHelper.x, guidanceBoxHelper.max.y + extraY, guidanceCenterHelper.z);
+      return true;
+    }
+    obj.getWorldPosition(out);
+    out.y += extraY;
+    return true;
+  };
+
   const getGuidanceTargetPosition = (id: string, out: THREE.Vector3): boolean => {
+    if (id.startsWith('circuits-terminal-')) {
+      const termId = id.replace('circuits-terminal-', '') as TerminalId;
+      const hitbox = multimeter3d.terminalHitboxes[termId];
+      if (hitbox && setFromObjectTopCenter(hitbox, out, 0.004)) {
+        return true;
+      }
+      const termPos = multimeter3d.terminalPositions[termId];
+      if (termPos) {
+        multimeter3d.root.localToWorld(out.copy(termPos));
+        out.y += 0.01;
+        return true;
+      }
+    }
+
     switch (id) {
       // --- Station 01: Circuits ---
       case 'circuits-placard':
         out.set(STATION_X.circuits, 3.40, ROOM2_CONFIG.room.backZ + 0.25);
         return true;
       case 'circuits-power-switch':
-        out.set(circuitsBenchX - 0.58, 1.15, -0.38);
-        return true;
+        if (setFromObjectTopCenter(psuSwitchAnchor, out, 0.012)) {
+          return true;
+        }
+        return setFromObjectTopCenter(interactionToObjectMap.get('circuits-power-switch'), out, 0.012)
+          || Boolean(out.set(circuitsBenchX - 0.64, 1.00, -0.28));
       case 'circuits-voltage-knob':
-        out.set(circuitsBenchX - 0.72, 1.15, -0.38);
-        return true;
+        if (psuVoltKnobMesh && setFromObjectTopCenter(psuVoltKnobMesh, out, 0.008)) return true;
+        return setFromObjectTopCenter(interactionToObjectMap.get('circuits-voltage-knob'), out, 0.008)
+          || Boolean(out.set(circuitsBenchX - 0.62, 1.08, -0.36));
       case 'circuits-multimeter':
       case 'circuits-dmm-dial':
-        out.set(circuitsBenchX + 0.30, 1.12, 0.10);
-        return true;
-      case 'circuits-dmm-jack':
-        out.set(circuitsBenchX + 0.33, 1.05, 0.18);
-        return true;
+        if (multimeter3d.rotaryDialMesh && setFromObjectTopCenter(multimeter3d.rotaryDialMesh, out, 0.008)) return true;
+        return setFromObjectTopCenter(interactionToObjectMap.get('circuits-multimeter'), out, 0.012);
+      case 'circuits-dmm-jack-v':
+        if (multimeter3d.redLeadJackMesh && setFromObjectTopCenter(multimeter3d.redLeadJackMesh, out, 0.008)) return true;
+        return false;
+      case 'circuits-dmm-jack-ma':
+        if (multimeter3d.maJackMesh && setFromObjectTopCenter(multimeter3d.maJackMesh, out, 0.008)) return true;
+        return false;
+      case 'circuits-dmm-jack-com':
+        if (multimeter3d.comJackMesh && setFromObjectTopCenter(multimeter3d.comJackMesh, out, 0.008)) return true;
+        return false;
+      case 'circuits-dmm-jack': {
+        const jackObj = multimeter3d.dmmState.redJack === 'ma_10a'
+          ? multimeter3d.redLeadJackMesh
+          : multimeter3d.maJackMesh;
+        if (jackObj && setFromObjectTopCenter(jackObj, out, 0.008)) return true;
+        return setFromObjectTopCenter(multimeter3d.comJackMesh, out, 0.008);
+      }
+      case 'circuits-probe-red':
+        return setFromObjectTopCenter(multimeter3d.redProbeGroup, out, 0.01);
+      case 'circuits-probe-black':
+        return setFromObjectTopCenter(multimeter3d.blackProbeGroup, out, 0.01);
       case 'circuits-oscilloscope':
-        out.set(circuitsBenchX - 0.05, 1.22, -0.48);
+        if (setFromObjectTopCenter(interactionToObjectMap.get('circuits-oscilloscope'), out, 0.015)) return true;
+        out.set(circuitsBenchX - 0.05, 1.20, -0.52);
         return true;
+      case 'circuits-osc-time-knob':
+        return setFromObjectTopCenter(oscTimeKnobMesh || interactionToObjectMap.get('circuits-osc-time-knob'), out, 0.008);
+      case 'circuits-osc-ch1-knob':
+        return setFromObjectTopCenter(oscCh1KnobMesh || interactionToObjectMap.get('circuits-osc-ch1-knob'), out, 0.008);
+      case 'circuits-osc-ch2-knob':
+        return setFromObjectTopCenter(oscCh2KnobMesh || interactionToObjectMap.get('circuits-osc-ch2-knob'), out, 0.008);
+      case 'circuits-osc-trigger-knob':
+        return setFromObjectTopCenter(oscTriggerKnobMesh || interactionToObjectMap.get('circuits-osc-trigger-knob'), out, 0.008);
+      case 'circuits-osc-ch1-input':
+        return setFromObjectTopCenter(oscCh1InputMesh || interactionToObjectMap.get('circuits-osc-ch1-input'), out, 0.008);
+      case 'circuits-osc-ch2-input':
+        return setFromObjectTopCenter(oscCh2InputMesh || interactionToObjectMap.get('circuits-osc-ch2-input'), out, 0.008);
       case 'circuits-topology-selector':
-        out.set(circuitsBenchX - 0.06, 1.10, 0.10);
-        return true;
+        return setFromObjectTopCenter(
+          multimeter3d.terminalHitboxes['R2_A'] || interactionToObjectMap.get('circuits-topology-selector'),
+          out,
+          0.012
+        );
       case 'circuits-probe-r1':
-        out.set(circuitsBenchX - 0.06 - 0.0684, 1.08, 0.10 - 0.0273);
-        return true;
+        return setFromObjectTopCenter(multimeter3d.terminalHitboxes['R1_A'], out, 0.008);
       case 'circuits-probe-r2':
-        out.set(circuitsBenchX - 0.06 + 0.0180, 1.08, 0.10 - 0.0189);
-        return true;
+        return setFromObjectTopCenter(multimeter3d.terminalHitboxes['R2_A'], out, 0.008);
       case 'circuits-probe-r3':
-        out.set(circuitsBenchX - 0.06 + 0.0900, 1.08, 0.10 - 0.0273);
-        return true;
+        return setFromObjectTopCenter(multimeter3d.terminalHitboxes['R3_A'], out, 0.008);
       case 'circuits-series-jumper':
-        out.set(circuitsBenchX - 0.06 - 0.1332, 1.08, 0.10 - 0.0439);
-        return true;
+        if (multimeter3d.circuitState.seriesJumperConnected && multimeter3d.seriesJumperMesh?.visible) {
+          if (setFromObjectTopCenter(multimeter3d.seriesJumperMesh, out, 0.008)) return true;
+        }
+        return setFromObjectTopCenter(multimeter3d.terminalHitboxes['SERIES_JACK_A'] || multimeter3d.seriesJumperMesh, out, 0.008);
       case 'circuits-clipboard':
-        out.set(circuitsBenchX + 1.1, 1.15, 0.35);
+        if (setFromObjectTopCenter(interactionToObjectMap.get('circuits-clipboard'), out, 0.015)) return true;
+        out.set(circuitsBenchX + 1.1, 1.05, 0.35);
         return true;
 
       // --- Station 02: Optics ---
@@ -3506,21 +5569,25 @@ export function createRoom3Scene(
         out.set(STATION_X.optics, 3.40, ROOM2_CONFIG.room.backZ + 0.25);
         return true;
       case 'optics-laser':
-        out.set(opticsBenchX - 1.0, 1.25, 0.0);
+        if (setFromObjectTopCenter(interactionToObjectMap.get('optics-laser'), out, 0.015)) return true;
+        out.set(opticsBenchX - 0.96, 1.16, 0.0);
         return true;
       case 'optics-angle-dial':
       case 'optics-submode-toggle':
-        out.set(opticsBenchX, 1.25, 0.0);
-        return true;
-      case 'optics-rail':
       case 'optics-lens-carrier':
-        out.set(opticsBenchX + 0.35, 1.20, 0.0);
-        return true;
+        return setFromObjectTopCenter(opticalElementGroup, out, 0.015);
+      case 'optics-rail':
+        if (currentOptics.subMode === 'imaging') {
+          return setFromObjectTopCenter(objectTargetGroup, out, 0.015);
+        }
+        return setFromObjectTopCenter(rail, out, 0.02);
+      case 'optics-object-target':
+        return setFromObjectTopCenter(objectTargetGroup, out, 0.015);
       case 'optics-screen':
-        out.set(opticsBenchX + 1.0, 1.25, 0.0);
-        return true;
+        return setFromObjectTopCenter(screenGroup, out, 0.015);
       case 'optics-clipboard':
-        out.set(opticsBenchX + 1.1, 1.15, 0.35);
+        if (setFromObjectTopCenter(interactionToObjectMap.get('optics-clipboard'), out, 0.015)) return true;
+        out.set(opticsBenchX + 1.1, 1.05, 0.35);
         return true;
 
       // --- Station 03: Special Relativity ---
@@ -3528,19 +5595,26 @@ export function createRoom3Scene(
         out.set(STATION_X.relativity, 3.40, ROOM2_CONFIG.room.backZ + 0.25);
         return true;
       case 'relativity-velocity-dial':
-        out.set(relativityBenchX, 1.25, 0.0);
+        if (setFromObjectTopCenter(sledBody, out, 0.015)) return true;
+        if (setFromObjectTopCenter(interactionToObjectMap.get('relativity-velocity-dial'), out, 0.015)) return true;
+        out.set(relativityBenchX - 0.6, 1.24, -0.35);
         return true;
       case 'relativity-contracting-rod':
-        out.set(relativityBenchX, 1.25, 0.12);
+        if (setFromObjectTopCenter(interactionToObjectMap.get('relativity-contracting-rod'), out, 0.015)) return true;
+        out.set(relativityBenchX, 1.14, 0.12);
         return true;
       case 'relativity-light-clock':
-        out.set(relativityBenchX - 0.6, 1.35, -0.35);
+        if (setFromObjectTopCenter(interactionToObjectMap.get('relativity-light-clock'), out, 0.015)) return true;
+        if (setFromObjectTopCenter(photonPulse, out, 0.015)) return true;
+        out.set(relativityBenchX, 1.32, -0.045);
         return true;
       case 'relativity-accelerator':
-        out.set(relativityBenchX + 0.6, 1.25, 0.0);
+        if (setFromObjectTopCenter(interactionToObjectMap.get('relativity-accelerator'), out, 0.015)) return true;
+        out.set(relativityBenchX + 0.6, 1.15, 0.0);
         return true;
       case 'relativity-clipboard':
-        out.set(relativityBenchX + 1.1, 1.15, 0.35);
+        if (setFromObjectTopCenter(interactionToObjectMap.get('relativity-clipboard'), out, 0.015)) return true;
+        out.set(relativityBenchX + 1.1, 1.05, 0.35);
         return true;
 
       // --- Hallway Exit Doors ---
@@ -3549,16 +5623,20 @@ export function createRoom3Scene(
         return true;
 
       default: {
+        const mappedObj = interactionToObjectMap.get(id);
+        if (mappedObj && setFromObjectTopCenter(mappedObj, out, 0.012)) {
+          return true;
+        }
         if (id.startsWith('circuits-')) {
-          out.set(circuitsBenchX, 1.20, 0.0);
+          out.set(circuitsBenchX, 1.05, 0.0);
           return true;
         }
         if (id.startsWith('optics-')) {
-          out.set(opticsBenchX, 1.20, 0.0);
+          out.set(opticsBenchX, 1.08, 0.0);
           return true;
         }
         if (id.startsWith('relativity-')) {
-          out.set(relativityBenchX, 1.20, 0.0);
+          out.set(relativityBenchX, 1.08, 0.0);
           return true;
         }
         return false;
@@ -3580,15 +5658,13 @@ export function createRoom3Scene(
   assistantSpot.target = assistantGroup;
   scene.add(assistantSpot);
 
-  gltfLoader.load('/assets/character_student.glb', (gltf) => {
-    const model = gltf.scene;
+  loadSanitizedGlb('/assets/character_student.glb', (model) => {
     model.name = 'Carla_Assistant_Model';
     model.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-        if ((child as THREE.Mesh).material) {
-          const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+        const mesh = child as THREE.Mesh;
+        if (mesh.material && !Array.isArray(mesh.material)) {
+          const mat = mesh.material as THREE.MeshStandardMaterial;
           mat.roughness = 0.65;
           mat.metalness = 0.05;
         }
@@ -3601,7 +5677,7 @@ export function createRoom3Scene(
     const scaledBox = new THREE.Box3().setFromObject(model);
     model.position.set(0, -scaledBox.min.y, 0);
     assistantGroup.add(model);
-  }, undefined, (err) => console.warn('Assistant model load note:', err));
+  }, 'Assistant');
 
   const professorGroup = new THREE.Group();
   professorGroup.name = 'Senior_Professor';
@@ -3614,15 +5690,13 @@ export function createRoom3Scene(
   professorSpot.target = professorGroup;
   scene.add(professorSpot);
 
-  gltfLoader.load('/assets/character_professor.glb', (gltf) => {
-    const model = gltf.scene;
+  loadSanitizedGlb('/assets/character_professor.glb', (model) => {
     model.name = 'Professor_Model';
     model.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-        if ((child as THREE.Mesh).material) {
-          const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+        const mesh = child as THREE.Mesh;
+        if (mesh.material && !Array.isArray(mesh.material)) {
+          const mat = mesh.material as THREE.MeshStandardMaterial;
           mat.roughness = 0.70;
           mat.metalness = 0.05;
         }
@@ -3635,7 +5709,7 @@ export function createRoom3Scene(
     const scaledBox = new THREE.Box3().setFromObject(model);
     model.position.set(0, -scaledBox.min.y, 0);
     professorGroup.add(model);
-  }, undefined, (err) => console.warn('Professor model load note:', err));
+  }, 'Professor');
 
   // -------------------------------------------------------------
   // 16. Collision Detection & Walking Bounds
@@ -3666,7 +5740,6 @@ export function createRoom3Scene(
   const screenCenter = new THREE.Vector2(0, 0);
   let currentHoveredInteraction: EquipmentInteraction | null = null;
 
-  let cameraMode: 'walk' | 'closeup' = 'walk';
   const savedPlayerPos = new THREE.Vector3();
   let savedYaw = 0;
   let savedPitch = 0;
@@ -3685,47 +5758,131 @@ export function createRoom3Scene(
 
   const CLOSEUP_TARGETS: Record<Room3StationId, { pos: THREE.Vector3; lookAt: THREE.Vector3 }> = {
     circuits: {
-      pos: new THREE.Vector3(STATION_X.circuits + 0.04, 1.38, 0.78),
-      lookAt: new THREE.Vector3(STATION_X.circuits + 0.04, 0.98, 0.04),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.02, 1.54, 1.16),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.02, 0.98, -0.06),
     },
     optics: {
-      pos: new THREE.Vector3(STATION_X.optics, 1.34, 0.72),
-      lookAt: new THREE.Vector3(STATION_X.optics, 0.98, 0.08),
+      pos: new THREE.Vector3(STATION_X.optics, 1.66, 1.92),
+      lookAt: new THREE.Vector3(STATION_X.optics, 1.04, 0.0),
     },
     relativity: {
-      pos: new THREE.Vector3(STATION_X.relativity, 1.34, 0.72),
-      lookAt: new THREE.Vector3(STATION_X.relativity, 0.98, 0.08),
+      pos: new THREE.Vector3(STATION_X.relativity, 1.70, 1.78),
+      lookAt: new THREE.Vector3(STATION_X.relativity, 1.08, 0.0),
     },
   };
 
-  const CIRCUITS_CLOSEUP_SUBVIEWS = {
+  const CIRCUITS_CLOSEUP_SUBVIEWS: Record<string, { pos: THREE.Vector3; lookAt: THREE.Vector3 }> = {
     station: {
-      pos: new THREE.Vector3(STATION_X.circuits + 0.04, 1.38, 0.78),
-      lookAt: new THREE.Vector3(STATION_X.circuits + 0.04, 0.98, 0.04),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.02, 1.54, 1.16),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.02, 0.98, -0.06),
     },
     board: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.08, 1.22, 0.38),
-      lookAt: new THREE.Vector3(STATION_X.circuits - 0.08, 0.96, 0.10),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.06, 1.34, 0.62),
+      lookAt: new THREE.Vector3(STATION_X.circuits - 0.06, 0.96, 0.08),
     },
     multimeter: {
-      pos: new THREE.Vector3(STATION_X.circuits + 0.30, 1.18, 0.36),
-      lookAt: new THREE.Vector3(STATION_X.circuits + 0.30, 0.96, 0.10),
+      pos: new THREE.Vector3(STATION_X.circuits + 0.28, 1.30, 0.58),
+      lookAt: new THREE.Vector3(STATION_X.circuits + 0.28, 0.96, 0.08),
     },
     psu: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.65, 1.18, -0.10),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.62, 1.28, 0.18),
       lookAt: new THREE.Vector3(STATION_X.circuits - 0.65, 1.02, -0.42),
     },
     oscilloscope: {
-      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.20, -0.15),
+      pos: new THREE.Vector3(STATION_X.circuits - 0.05, 1.28, 0.12),
       lookAt: new THREE.Vector3(STATION_X.circuits - 0.05, 1.05, -0.52),
     },
   };
 
-  const setCloseupFocus = (focus: 'station' | 'board' | 'multimeter' | 'psu' | 'oscilloscope') => {
+  const getOpticsCloseupSubview = (focus: Room3CloseupFocus): { pos: THREE.Vector3; lookAt: THREE.Vector3 } => {
+    const elemWorldX = STATION_X.optics + opticalElementGroup.position.x;
+    const scrWorldX = STATION_X.optics + screenGroup.position.x;
+    if (focus === 'laser') {
+      return {
+        pos: new THREE.Vector3(STATION_X.optics - 0.85, 1.36, 0.82),
+        lookAt: new THREE.Vector3(STATION_X.optics - 0.96, 1.08, 0.0),
+      };
+    }
+    if (focus === 'lens') {
+      return {
+        pos: new THREE.Vector3(elemWorldX, 1.36, 0.78),
+        lookAt: new THREE.Vector3(elemWorldX, 1.08, 0.0),
+      };
+    }
+    if (focus === 'screen') {
+      return {
+        pos: new THREE.Vector3(scrWorldX - 0.56, 1.32, 0.48),
+        lookAt: new THREE.Vector3(scrWorldX, 1.14, 0.0),
+      };
+    }
+    return CLOSEUP_TARGETS.optics;
+  };
+
+  const RELATIVITY_CLOSEUP_SUBVIEWS: Record<string, { pos: THREE.Vector3; lookAt: THREE.Vector3 }> = {
+    station: CLOSEUP_TARGETS.relativity,
+    clock: {
+      pos: new THREE.Vector3(STATION_X.relativity, 1.42, 0.84),
+      lookAt: new THREE.Vector3(STATION_X.relativity, 1.14, -0.02),
+    },
+    rod: {
+      pos: new THREE.Vector3(STATION_X.relativity + 0.05, 1.38, 0.82),
+      lookAt: new THREE.Vector3(STATION_X.relativity, 1.08, 0.10),
+    },
+    console: {
+      pos: new THREE.Vector3(STATION_X.relativity - 0.6, 1.42, 0.48),
+      lookAt: new THREE.Vector3(STATION_X.relativity - 0.6, 1.18, -0.35),
+    },
+  };
+
+  let currentCloseupFocus: Room3CloseupFocus = 'station';
+  let labelsVisible = true;
+  const baseCloseupCamPos = new THREE.Vector3().copy(CLOSEUP_TARGETS.circuits.pos);
+  const baseCloseupCamLookAt = new THREE.Vector3().copy(CLOSEUP_TARGETS.circuits.lookAt);
+  let closeupZoomFactor = 1.0;
+  const closeupPanOffset = new THREE.Vector3();
+  const closeupDeltaHelper = new THREE.Vector3();
+
+  const recomputeCloseupCameraTargets = () => {
+    targetCloseupCamLookAt.copy(baseCloseupCamLookAt).add(closeupPanOffset);
+    closeupDeltaHelper.copy(baseCloseupCamPos).sub(baseCloseupCamLookAt);
+    targetCloseupCamPos.copy(targetCloseupCamLookAt).addScaledVector(closeupDeltaHelper, closeupZoomFactor);
+  };
+
+  const zoomCloseup = (deltaFactor: number): number => {
+    closeupZoomFactor = THREE.MathUtils.clamp(
+      Math.round((closeupZoomFactor + deltaFactor) * 100) / 100,
+      0.45,
+      2.20
+    );
+    recomputeCloseupCameraTargets();
+    callbacks.onCloseupZoomChange?.(closeupZoomFactor);
+    return closeupZoomFactor;
+  };
+
+  const resetCloseupCamera = () => {
+    closeupZoomFactor = 1.0;
+    closeupPanOffset.set(0, 0, 0);
+    recomputeCloseupCameraTargets();
+    callbacks.onCloseupZoomChange?.(1.0);
+  };
+
+  const setCloseupFocus = (focus: Room3CloseupFocus) => {
     if (cameraMode !== 'closeup') return;
-    const t = CIRCUITS_CLOSEUP_SUBVIEWS[focus] || CIRCUITS_CLOSEUP_SUBVIEWS.station;
-    targetCloseupCamPos.copy(t.pos);
-    targetCloseupCamLookAt.copy(t.lookAt);
+    currentCloseupFocus = focus;
+    let t: { pos: THREE.Vector3; lookAt: THREE.Vector3 };
+    if (activeStation === 'optics') {
+      t = getOpticsCloseupSubview(focus);
+    } else if (activeStation === 'relativity') {
+      t = RELATIVITY_CLOSEUP_SUBVIEWS[focus] || RELATIVITY_CLOSEUP_SUBVIEWS.station;
+    } else {
+      t = CIRCUITS_CLOSEUP_SUBVIEWS[focus] || CIRCUITS_CLOSEUP_SUBVIEWS.station;
+    }
+    baseCloseupCamPos.copy(t.pos);
+    baseCloseupCamLookAt.copy(t.lookAt);
+    closeupZoomFactor = 1.0;
+    closeupPanOffset.set(0, 0, 0);
+    recomputeCloseupCameraTargets();
+    callbacks.onCloseupZoomChange?.(1.0);
   };
 
   const setCameraMode = (mode: 'walk' | 'closeup', targetStation: Room3StationId = activeStation) => {
@@ -3743,12 +5900,17 @@ export function createRoom3Scene(
       savedPitch = pitch;
 
       activeStation = targetStation;
+      currentCloseupFocus = 'station';
       stationLight.color.setHex(STATION_COLOR[activeStation]);
       stationLight.position.x = STATION_X[activeStation];
 
       const t = CLOSEUP_TARGETS[targetStation] || CLOSEUP_TARGETS.circuits;
-      targetCloseupCamPos.copy(t.pos);
-      targetCloseupCamLookAt.copy(t.lookAt);
+      baseCloseupCamPos.copy(t.pos);
+      baseCloseupCamLookAt.copy(t.lookAt);
+      closeupZoomFactor = 1.0;
+      closeupPanOffset.set(0, 0, 0);
+      recomputeCloseupCameraTargets();
+      callbacks.onCloseupZoomChange?.(1.0);
 
       // Setup smooth cinematic camera swoop
       camStartPos.copy(camera.position);
@@ -3776,16 +5938,379 @@ export function createRoom3Scene(
       character.isThirdPerson = true;
       character.syncVisibility();
 
-      // Third-person camera follow target behind the avatar
+      // Third-person camera follow target behind the avatar (aligned with wider pullback)
+      const charTargetY = character.activeCharacter === 'female' ? 1.40 : 1.48;
       camStartPos.copy(camera.position);
       camStartLookAt.copy(currentCamLookAt);
-      camTargetPos.set(playerPosition.x + 0.28, playerPosition.y + 0.32, playerPosition.z + 2.15);
+      camTargetPos.set(playerPosition.x + 0.28, charTargetY + 0.44, playerPosition.z + 2.90);
       camTargetLookAt.set(playerPosition.x, playerPosition.y - 0.1, playerPosition.z - 1.5);
 
       cameraTransitionState = 'exiting';
       transitionProgress = 0;
       cameraMode = 'walk';
       callbacks.onCameraModeChange?.('walk');
+    }
+  };
+
+  // Floating 3D Callout Badges (Shown in Close-Up Mode; toggled via UI button)
+  const calloutGroup = new THREE.Group();
+  calloutGroup.name = 'EquipmentCalloutBadges';
+  calloutGroup.visible = false;
+  scene.add(calloutGroup);
+
+  const createCalloutSprite = (title: string, subtitle: string): THREE.Sprite => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 420;
+    canvas.height = 112;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, 420, 112);
+
+      // Pill body (dark Room 03 maroon + antique gold border)
+      ctx.fillStyle = 'rgba(26, 9, 15, 0.90)';
+      ctx.strokeStyle = 'rgba(212, 175, 55, 0.92)';
+      ctx.lineWidth = 3;
+      const r = 14;
+      const w = 408;
+      const h = 88;
+      const x = 6;
+      const y = 6;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Downward pointer notch
+      ctx.fillStyle = 'rgba(212, 175, 55, 0.92)';
+      ctx.beginPath();
+      ctx.moveTo(200, 94);
+      ctx.lineTo(220, 94);
+      ctx.lineTo(210, 110);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fde68a';
+      ctx.font = 'bold 23px system-ui, sans-serif';
+      ctx.fillText(title, 210, 34);
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = '600 18px system-ui, sans-serif';
+      ctx.fillText(subtitle, 210, 68);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.center.set(0.5, 0);
+    sprite.renderOrder = 950;
+    calloutGroup.add(sprite);
+    return sprite;
+  };
+
+  type CalloutSpec = {
+    station: Room3StationId;
+    focuses: Room3CloseupFocus[];
+    instrumentGroup?: string;
+    isOverview?: boolean;
+    guidanceIds?: string[];
+    sprite: THREE.Sprite;
+    offset?: [number, number, number];
+    getTarget: (out: THREE.Vector3) => boolean;
+  };
+
+  const CALLOUT_SPECS: CalloutSpec[] = [
+    // Circuits Station — Full Overview Badges (1 per instrument)
+    {
+      station: 'circuits',
+      focuses: ['station'],
+      instrumentGroup: 'psu',
+      isOverview: true,
+      sprite: createCalloutSprite('DC POWER SUPPLY', 'Click: Power & Voltage (0–24V)'),
+      offset: [0, 0.055, 0],
+      getTarget: (out) => setFromObjectTopCenter(psuGroup, out, 0.02),
+    },
+    {
+      station: 'circuits',
+      focuses: ['station'],
+      instrumentGroup: 'oscilloscope',
+      isOverview: true,
+      sprite: createCalloutSprite('OSCILLOSCOPE', 'Click: Inspect Waveforms'),
+      offset: [0, 0.05, 0],
+      getTarget: (out) => setFromObjectTopCenter(oscCh1InputMesh || interactionToObjectMap.get('circuits-oscilloscope'), out, 0.02),
+    },
+    {
+      station: 'circuits',
+      focuses: ['station'],
+      instrumentGroup: 'fgen',
+      isOverview: true,
+      sprite: createCalloutSprite('FUNCTION GENERATOR', 'Click: AC/DC & Freq Dial'),
+      offset: [0, 0.04, 0],
+      getTarget: (out) => setFromObjectTopCenter(fgenGroup, out, 0.02),
+    },
+    {
+      station: 'circuits',
+      focuses: ['station'],
+      instrumentGroup: 'board',
+      isOverview: true,
+      sprite: createCalloutSprite('RESISTOR BREADBOARD', 'Click Socket: Place Lead'),
+      offset: [0, 0.045, 0],
+      getTarget: (out) => setFromObjectTopCenter(multimeter3d.terminalHitboxes['R2_A'], out, 0.02),
+    },
+    {
+      station: 'circuits',
+      focuses: ['station'],
+      instrumentGroup: 'multimeter',
+      isOverview: true,
+      sprite: createCalloutSprite('DIGITAL MULTIMETER', 'Click: Mode Dial & Jacks'),
+      offset: [0, 0.045, 0.02],
+      getTarget: (out) => setFromObjectTopCenter(multimeter3d.rotaryDialMesh, out, 0.015),
+    },
+
+    // Circuits Station — Sub-Control Badges (Sub-view or active guided target)
+    {
+      station: 'circuits',
+      focuses: ['psu'],
+      instrumentGroup: 'psu',
+      guidanceIds: ['circuits-power-switch'],
+      sprite: createCalloutSprite('PSU POWER SWITCH', 'Click: Toggle ON/OFF'),
+      offset: [-0.035, 0.04, 0.01],
+      getTarget: (out) => setFromObjectTopCenter(psuSwitchAnchor, out, 0.02),
+    },
+    {
+      station: 'circuits',
+      focuses: ['psu'],
+      instrumentGroup: 'psu',
+      guidanceIds: ['circuits-voltage-knob'],
+      sprite: createCalloutSprite('VOLTAGE DIAL', 'Click/Scroll: Tune Vs (0–30V)'),
+      offset: [0.045, 0.025, 0.02],
+      getTarget: (out) => setFromObjectTopCenter(psuVoltKnobMesh || interactionToObjectMap.get('circuits-voltage-knob'), out, 0.02),
+    },
+    {
+      station: 'circuits',
+      focuses: ['multimeter'],
+      instrumentGroup: 'multimeter',
+      guidanceIds: ['circuits-dmm-dial'],
+      sprite: createCalloutSprite('DMM MODE DIAL', 'Click: V⎓ · V~ · A · Ω · CONT'),
+      offset: [-0.025, 0.035, 0.02],
+      getTarget: (out) => setFromObjectTopCenter(multimeter3d.rotaryDialMesh, out, 0.015),
+    },
+    {
+      station: 'circuits',
+      focuses: ['multimeter'],
+      instrumentGroup: 'multimeter',
+      guidanceIds: ['circuits-dmm-jack', 'circuits-probe-red', 'circuits-probe-black'],
+      sprite: createCalloutSprite('INPUT JACKS', 'mA (Series) | COM | V·Ω'),
+      offset: [0.025, 0.005, 0.06],
+      getTarget: (out) => setFromObjectTopCenter(multimeter3d.comJackMesh, out, 0.015),
+    },
+    {
+      station: 'circuits',
+      focuses: ['board'],
+      instrumentGroup: 'board',
+      guidanceIds: ['circuits-series-jumper'],
+      sprite: createCalloutSprite('SERIES JUMPER', 'Click: Open for Ammeter'),
+      offset: [-0.02, 0.03, -0.01],
+      getTarget: (out) => setFromObjectTopCenter(
+        (multimeter3d.seriesJumperMesh?.visible ? multimeter3d.seriesJumperMesh : multimeter3d.terminalHitboxes['SERIES_JACK_A']),
+        out,
+        0.018
+      ),
+    },
+    {
+      station: 'circuits',
+      focuses: ['oscilloscope'],
+      instrumentGroup: 'oscilloscope',
+      guidanceIds: ['circuits-osc-time-knob'],
+      sprite: createCalloutSprite('SEC/DIV TIMEBASE', 'Click/Scroll: Sweep ms/div'),
+      offset: [0, 0.02, 0],
+      getTarget: (out) => setFromObjectTopCenter(oscTimeKnobMesh, out, 0.015),
+    },
+    {
+      station: 'circuits',
+      focuses: ['oscilloscope'],
+      instrumentGroup: 'oscilloscope',
+      guidanceIds: ['circuits-osc-ch1-knob'],
+      sprite: createCalloutSprite('CH1 VOLTS/DIV', 'Click/Scroll: CH1 V Scale'),
+      offset: [0, 0.02, 0],
+      getTarget: (out) => setFromObjectTopCenter(oscCh1KnobMesh, out, 0.015),
+    },
+    {
+      station: 'circuits',
+      focuses: ['oscilloscope'],
+      instrumentGroup: 'oscilloscope',
+      guidanceIds: ['circuits-osc-ch2-knob'],
+      sprite: createCalloutSprite('CH2 SCALE/DIV', 'Click/Scroll: CH2 mA Scale'),
+      offset: [0, 0.045, 0],
+      getTarget: (out) => setFromObjectTopCenter(oscCh2KnobMesh, out, 0.015),
+    },
+    {
+      station: 'circuits',
+      focuses: ['oscilloscope'],
+      instrumentGroup: 'oscilloscope',
+      guidanceIds: ['circuits-osc-trigger-knob'],
+      sprite: createCalloutSprite('TRIGGER RUN/STOP', 'Click: Freeze Waveform'),
+      offset: [0, 0.015, 0],
+      getTarget: (out) => setFromObjectTopCenter(oscTriggerKnobMesh, out, 0.015),
+    },
+    {
+      station: 'circuits',
+      focuses: ['oscilloscope'],
+      instrumentGroup: 'oscilloscope',
+      guidanceIds: ['circuits-osc-ch1-input', 'circuits-osc-ch2-input'],
+      sprite: createCalloutSprite('BNC INPUT JACKS', 'Click: Switch CH1/CH2 Node'),
+      offset: [0, 0.025, 0.02],
+      getTarget: (out) => setFromObjectTopCenter(oscCh1InputMesh || interactionToObjectMap.get('circuits-oscilloscope'), out, 0.02),
+    },
+
+    // Optics Station
+    {
+      station: 'optics',
+      focuses: ['station', 'laser'],
+      instrumentGroup: 'laser',
+      isOverview: true,
+      sprite: createCalloutSprite('DIODE LASER', 'Click: Power · Scroll: λ (nm)'),
+      offset: [0, 0.035, 0],
+      getTarget: (out) => setFromObjectTopCenter(interactionToObjectMap.get('optics-laser'), out, 0.02),
+    },
+    {
+      station: 'optics',
+      focuses: ['station', 'lens'],
+      instrumentGroup: 'lens',
+      isOverview: true,
+      sprite: createCalloutSprite('LENS / PRISM CARRIAGE', 'Click/Scroll: Slide or θ₁'),
+      offset: [0.03, 0.045, 0],
+      getTarget: (out) => setFromObjectTopCenter(opticalElementGroup, out, 0.02),
+    },
+    {
+      station: 'optics',
+      focuses: ['lens'],
+      instrumentGroup: 'lens',
+      guidanceIds: ['optics-object-target', 'optics-rail'],
+      sprite: createCalloutSprite('OBJECT TARGET', 'Click/Scroll: Step Distance u'),
+      offset: [-0.04, 0.035, 0],
+      getTarget: (out) => setFromObjectTopCenter(objectTargetGroup, out, 0.02),
+    },
+    {
+      station: 'optics',
+      focuses: ['station', 'screen'],
+      instrumentGroup: 'screen',
+      isOverview: true,
+      sprite: createCalloutSprite('OBSERVATION SCREEN', 'Click/Scroll: Focus Image v'),
+      offset: [0, 0.04, 0],
+      getTarget: (out) => setFromObjectTopCenter(screenGroup, out, 0.02),
+    },
+
+    // Relativity Station
+    {
+      station: 'relativity',
+      focuses: ['station', 'clock'],
+      instrumentGroup: 'clock',
+      isOverview: true,
+      sprite: createCalloutSprite('PHOTON CLOCK', 'Click: Toggle Frame S / S\''),
+      offset: [0, 0.04, 0],
+      getTarget: (out) => setFromObjectTopCenter(interactionToObjectMap.get('relativity-light-clock'), out, 0.02),
+    },
+    {
+      station: 'relativity',
+      focuses: ['station', 'rod'],
+      instrumentGroup: 'rod',
+      isOverview: true,
+      sprite: createCalloutSprite('CONTRACTING ROD', 'L = L₀/γ · Click: Play/Pause'),
+      offset: [0, 0.04, 0],
+      getTarget: (out) => setFromObjectTopCenter(interactionToObjectMap.get('relativity-contracting-rod'), out, 0.02),
+    },
+    {
+      station: 'relativity',
+      focuses: ['console', 'clock'],
+      instrumentGroup: 'console',
+      guidanceIds: ['relativity-velocity-dial'],
+      sprite: createCalloutSprite('VELOCITY DIAL (β)', 'Click/Scroll: Tune β = v/c'),
+      offset: [0, 0.035, 0],
+      getTarget: (out) => setFromObjectTopCenter(interactionToObjectMap.get('relativity-velocity-dial'), out, 0.02),
+    },
+    {
+      station: 'relativity',
+      focuses: ['station', 'console'],
+      instrumentGroup: 'console',
+      isOverview: true,
+      sprite: createCalloutSprite('SYNCHROTRON TRACK', 'Click: Play/Pause · Scroll: β'),
+      offset: [0, 0.045, 0],
+      getTarget: (out) => setFromObjectTopCenter(interactionToObjectMap.get('relativity-accelerator'), out, 0.02),
+    },
+  ];
+
+  const calloutPosHelper = new THREE.Vector3();
+  const activeGuidedSubGroups = new Set<string>();
+  const updateCalloutBadges = () => {
+    const show = cameraMode === 'closeup' && labelsVisible;
+    calloutGroup.visible = show;
+    if (!show) return;
+
+    activeGuidedSubGroups.clear();
+    if (activeGuidanceId && currentCloseupFocus === 'station') {
+      for (const spec of CALLOUT_SPECS) {
+        if (
+          spec.station === activeStation &&
+          spec.instrumentGroup &&
+          spec.guidanceIds?.includes(activeGuidanceId)
+        ) {
+          activeGuidedSubGroups.add(spec.instrumentGroup);
+        }
+      }
+    }
+
+    for (const spec of CALLOUT_SPECS) {
+      if (spec.station !== activeStation) {
+        spec.sprite.visible = false;
+        continue;
+      }
+
+      const inFocus = spec.focuses.includes(currentCloseupFocus);
+      const isGuidedSubControl = Boolean(
+        currentCloseupFocus === 'station' &&
+          activeGuidanceId &&
+          spec.guidanceIds?.includes(activeGuidanceId)
+      );
+      const suppressedByGuidedSub = Boolean(
+        currentCloseupFocus === 'station' &&
+          spec.isOverview &&
+          spec.instrumentGroup &&
+          activeGuidedSubGroups.has(spec.instrumentGroup)
+      );
+
+      const active = (inFocus || isGuidedSubControl) && !suppressedByGuidedSub;
+      if (!active || !spec.getTarget(calloutPosHelper)) {
+        spec.sprite.visible = false;
+        continue;
+      }
+      spec.sprite.visible = true;
+      if (spec.offset) {
+        calloutPosHelper.x += spec.offset[0];
+        calloutPosHelper.y += spec.offset[1];
+        calloutPosHelper.z += spec.offset[2];
+      }
+      if (activeGuidanceId && guidanceMarker.visible && calloutPosHelper.distanceTo(guidancePosition) < 0.10) {
+        calloutPosHelper.y += 0.075;
+      }
+      spec.sprite.position.copy(calloutPosHelper);
+      const dist = camera.position.distanceTo(calloutPosHelper);
+      const badgeW = THREE.MathUtils.clamp(dist * 0.145, 0.075, 0.22);
+      spec.sprite.scale.set(badgeW, badgeW * (112 / 420), 1);
     }
   };
 
@@ -3799,27 +6324,56 @@ export function createRoom3Scene(
 
     if (interactionId === 'circuits-voltage-knob') {
       const curVs = currentCircuits.vs;
-      const nextIdx = VOLT_CYCLE_STEPS.findIndex((v) => v > curVs + 0.1);
-      const nextVs = nextIdx !== -1 ? VOLT_CYCLE_STEPS[nextIdx] : VOLT_CYCLE_STEPS[0];
+      let nextVs = 24;
+      if (curVs >= 0.5) {
+        const nextIdx = VOLT_CYCLE_STEPS.findIndex((v) => v > curVs + 0.1);
+        nextVs = nextIdx !== -1 ? VOLT_CYCLE_STEPS[nextIdx] : VOLT_CYCLE_STEPS[0];
+      }
       currentCircuits.vs = nextVs;
       updatePsuKnobRotation(nextVs);
       updatePsuTexture(nextVs, currentCircuits.freq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
+      updateFgenDisplay();
       multimeter3d.updateCircuitParameters({ sourceVoltage: nextVs });
       callbacks.onCircuitsChange?.({ vs: nextVs });
       playTone(480 + (nextVs / 24) * 200, 'sine', 0.05, 0.15);
       return;
     }
 
-    if (interactionId === 'circuits-power-switch') {
+    if (interactionId === 'circuits-power-switch' || interactionId === 'circuits-function-generator') {
       const nextPower = currentCircuits.powerOn === false ? true : false;
       currentCircuits.powerOn = nextPower;
       updatePsuTexture(currentCircuits.vs, currentCircuits.freq, currentCircuits.mode === 'ac', nextPower);
+      updateFgenDisplay();
       multimeter3d.updateCircuitParameters({ powerOn: nextPower });
       callbacks.onCircuitsChange?.({ powerOn: nextPower });
       playTone(nextPower ? 880 : 330, 'square', 0.06, 0.2);
       if (cameraMode !== 'closeup') {
         setCameraMode('closeup', 'circuits');
       }
+      return;
+    }
+
+    if (interactionId === 'circuits-fgen-freq-knob') {
+      const FGEN_STEPS = [10, 60, 120, 250, 500, 1000];
+      const nextIdx = FGEN_STEPS.findIndex((f) => f > currentCircuits.freq + 1);
+      const nextFreq = nextIdx !== -1 ? FGEN_STEPS[nextIdx] : FGEN_STEPS[0];
+      currentCircuits.freq = nextFreq;
+      updateFgenDisplay();
+      updatePsuTexture(currentCircuits.vs, nextFreq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
+      multimeter3d.updateCircuitParameters({ frequency: nextFreq });
+      callbacks.onCircuitsChange?.({ freq: nextFreq });
+      playTone(400 + (nextFreq / 1000) * 320, 'sine', 0.04, 0.12);
+      return;
+    }
+
+    if (interactionId === 'circuits-fgen-mode-btn') {
+      const nextMode = currentCircuits.mode === 'ac' ? 'dc' : 'ac';
+      currentCircuits.mode = nextMode;
+      updateFgenDisplay();
+      updatePsuTexture(currentCircuits.vs, currentCircuits.freq, nextMode === 'ac', currentCircuits.powerOn !== false);
+      multimeter3d.updateCircuitParameters({ mode: nextMode });
+      callbacks.onCircuitsChange?.({ mode: nextMode });
+      playTone(nextMode === 'ac' ? 760 : 480, 'triangle', 0.05, 0.14);
       return;
     }
 
@@ -3893,11 +6447,91 @@ export function createRoom3Scene(
       return;
     }
 
+    if (cameraMode === 'closeup') {
+      if (interactionId === 'optics-laser') {
+        const nextPower = currentOptics.powerOn === false ? true : false;
+        currentOptics.powerOn = nextPower;
+        updateOpticsBenchGeometry();
+        updateScreenTexture();
+        callbacks.onOpticsChange?.({ powerOn: nextPower });
+        playTone(nextPower ? 860 : 340, 'sine', 0.05, 0.14);
+        return;
+      }
+      if (interactionId === 'optics-angle-dial' || interactionId === 'optics-lens-carrier') {
+        if (currentOptics.subMode !== 'imaging') {
+          currentOptics.subMode = 'imaging';
+          currentOptics.focalLength = 20.0;
+          updateOpticsBenchGeometry();
+          updateScreenTexture();
+          callbacks.onOpticsChange?.({ subMode: 'imaging', focalLength: 20.0 });
+          playTone(620, 'triangle', 0.05, 0.12);
+          return;
+        }
+        if (interactionId === 'optics-angle-dial') {
+          const nextTheta = currentOptics.theta1 + 5 > 80 ? 0 : Math.round(currentOptics.theta1 + 5);
+          currentOptics.theta1 = nextTheta;
+          updateOpticsBenchGeometry();
+          updateScreenTexture();
+          callbacks.onOpticsChange?.({ theta1: nextTheta });
+          playTone(540, 'triangle', 0.04, 0.1);
+          return;
+        }
+      }
+      if (
+        interactionId === 'optics-lens-carrier' ||
+        interactionId === 'optics-object-target' ||
+        (interactionId === 'optics-rail' && currentOptics.subMode === 'imaging')
+      ) {
+        const nextU = currentOptics.objectDistance + 5 > 75 ? 25 : Math.round(currentOptics.objectDistance + 5);
+        currentOptics.objectDistance = nextU;
+        updateOpticsBenchGeometry();
+        updateScreenTexture();
+        callbacks.onOpticsChange?.({ objectDistance: nextU });
+        playTone(620, 'sine', 0.04, 0.1);
+        return;
+      }
+      if (interactionId === 'optics-rail') {
+        playTone(540, 'sine', 0.04, 0.08);
+        return;
+      }
+      if (interactionId === 'optics-screen') {
+        const curV = currentOptics.screenPositionCm ?? 45.0;
+        const nextV = curV + 2.5 > 100 ? 20 : Math.round((curV + 2.5) * 10) / 10;
+        currentOptics.screenPositionCm = nextV;
+        updateOpticsBenchGeometry();
+        updateScreenTexture();
+        callbacks.onOpticsChange?.({ screenPositionCm: nextV });
+        playTone(720, 'sine', 0.04, 0.1);
+        return;
+      }
+      if (interactionId === 'relativity-light-clock' || interactionId === 'relativity-telemetry-console') {
+        const nextFrame = (currentRelativity.referenceFrame ?? 'lab') === 'lab' ? 'rest' : 'lab';
+        currentRelativity.referenceFrame = nextFrame;
+        callbacks.onRelativityChange?.({ referenceFrame: nextFrame });
+        playTone(nextFrame === 'lab' ? 680 : 520, 'triangle', 0.05, 0.14);
+        return;
+      }
+      if (interactionId === 'relativity-velocity-dial') {
+        const nextBeta = currentRelativity.beta + 0.05 > 0.95 ? 0.05 : Math.round((currentRelativity.beta + 0.05) * 100) / 100;
+        currentRelativity.beta = nextBeta;
+        callbacks.onRelativityChange?.({ beta: nextBeta });
+        playTone(500 + nextBeta * 360, 'sine', 0.04, 0.12);
+        return;
+      }
+      if (interactionId === 'relativity-contracting-rod' || interactionId === 'relativity-accelerator') {
+        const nextPlay = currentRelativity.simPlaying === false ? true : false;
+        currentRelativity.simPlaying = nextPlay;
+        callbacks.onRelativityChange?.({ simPlaying: nextPlay });
+        playTone(nextPlay ? 780 : 400, 'square', 0.04, 0.1);
+        return;
+      }
+    }
+
     if (['circuits-multimeter', 'circuits-topology-selector'].includes(interactionId)) {
       setCameraMode('closeup', 'circuits');
-    } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen'].includes(interactionId)) {
+    } else if (['optics-laser', 'optics-angle-dial', 'optics-submode-toggle', 'optics-screen', 'optics-lens-carrier', 'optics-rail', 'optics-object-target'].includes(interactionId)) {
       setCameraMode('closeup', 'optics');
-    } else if (['relativity-velocity-dial', 'relativity-contracting-rod', 'relativity-light-clock'].includes(interactionId)) {
+    } else if (['relativity-velocity-dial', 'relativity-contracting-rod', 'relativity-light-clock', 'relativity-telemetry-console', 'relativity-accelerator'].includes(interactionId)) {
       setCameraMode('closeup', 'relativity');
     }
   };
@@ -3981,7 +6615,7 @@ export function createRoom3Scene(
   };
 
   const requestPointerLock = () => {
-    if (cameraMode !== 'walk') return;
+    if (cameraMode !== 'walk' || isMobileTouchDevice()) return;
     try {
       const lockReq = renderer.domElement.requestPointerLock?.();
       if (lockReq && typeof (lockReq as Promise<void>).catch === 'function') {
@@ -3992,21 +6626,107 @@ export function createRoom3Scene(
     }
   };
 
+  let isCloseupPanning = false;
+  let closeupPanPointerId: number | null = null;
+  let lookPointerId: number | null = null;
+  const activeCanvasTouches = new Map<number, { x: number; y: number }>();
+  let lastPinchDist: number | null = null;
+  let isPinching = false;
+  let lastTouchUpTime = 0;
+  let closeupDragTravel = 0;
+  let prevCloseupX = 0;
+  let prevCloseupY = 0;
+  const closeupPanRight = new THREE.Vector3();
+  const closeupPanUp = new THREE.Vector3();
+
+  const triggerCloseupAtClientPoint = (clientX: number, clientY: number) => {
+    if (!renderer.domElement) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const tapPointer = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
+
+    if (activeStation === 'circuits') {
+      raycaster.setFromCamera(tapPointer, camera);
+      const hits = raycaster.intersectObjects(multimeter3d.interactableMeshes, true);
+      if (hits.length > 0) {
+        callbacks.onCloseupHover?.(formatMultimeterMeshTooltip(hits[0].object));
+      }
+      if (handleCloseupProbePlacement(clientX, clientY)) {
+        return;
+      }
+    }
+
+    const inter = findInteractableHit(tapPointer);
+    if (inter) {
+      callbacks.onCloseupHover?.(getCloseupTooltip(inter));
+      triggerEquipmentAction(inter.id);
+      playTone(550, 'triangle', 0.06, 0.16);
+    } else {
+      callbacks.onCloseupHover?.(null);
+    }
+  };
+
   const onPointerDown = (e: PointerEvent) => {
     if (e.target !== renderer.domElement) return;
 
+    if (e.pointerType === 'touch') {
+      activeCanvasTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (cameraMode === 'closeup') {
+        if (activeCanvasTouches.size >= 2) {
+          const pts = Array.from(activeCanvasTouches.values());
+          lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+          isPinching = true;
+          isCloseupPanning = false;
+          closeupPanPointerId = null;
+          closeupDragTravel = 999;
+          return;
+        }
+        isPinching = false;
+        lastPinchDist = null;
+        isCloseupPanning = true;
+        closeupPanPointerId = e.pointerId;
+        closeupDragTravel = 0;
+        prevCloseupX = e.clientX;
+        prevCloseupY = e.clientY;
+        try {
+          renderer.domElement.setPointerCapture(e.pointerId);
+        } catch {}
+        return;
+      }
+
+      if (lookPointerId !== null && lookPointerId !== e.pointerId) return;
+      lookPointerId = e.pointerId;
+      isPointerDown = true;
+      dragTravel = 0;
+      prevMouseX = e.clientX;
+      prevMouseY = e.clientY;
+      try {
+        renderer.domElement.setPointerCapture(e.pointerId);
+      } catch {}
+      return;
+    }
+
     if (cameraMode === 'closeup') {
+      isCloseupPanning = true;
+      closeupPanPointerId = e.pointerId;
+      closeupDragTravel = 0;
+      prevCloseupX = e.clientX;
+      prevCloseupY = e.clientY;
       return;
     }
 
     isPointerDown = true;
+    lookPointerId = e.pointerId;
     dragTravel = 0;
     prevMouseX = e.clientX;
     prevMouseY = e.clientY;
 
     if (document.pointerLockElement !== renderer.domElement) {
       if (e.button === 0) {
-        if (!interactAtScreenPoint(e.clientX, e.clientY)) {
+        if (!interactAtScreenPoint(e.clientX, e.clientY) && !isMobileTouchDevice()) {
           requestPointerLock();
         }
       }
@@ -4018,38 +6738,249 @@ export function createRoom3Scene(
     }
   };
 
+  const findInteractableHit = (pointer: THREE.Vector2): EquipmentInteraction | null => {
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObjects(interactableObjects, true);
+    for (const hit of hits) {
+      if (!isObjectVisibleInChain(hit.object)) continue;
+      let currentObj: THREE.Object3D | null = hit.object;
+      let inter: EquipmentInteraction | undefined = undefined;
+      while (currentObj && !inter) {
+        inter = objectToInteractionMap.get(currentObj) || currentObj.userData.equipmentInteraction;
+        currentObj = currentObj.parent;
+      }
+      if (inter) {
+        if (cameraMode === 'closeup') {
+          if (
+            hit.distance > 3.5 ||
+            inter.stationId !== activeStation ||
+            inter.id.includes('placard') ||
+            inter.id.includes('clipboard')
+          ) {
+            continue;
+          }
+        }
+        return inter;
+      }
+    }
+    return null;
+  };
+
+  const getCloseupTooltip = (inter: EquipmentInteraction): string => {
+    const circ = calculateCircuit(currentCircuits);
+    if (inter.id === 'circuits-power-switch' || inter.id === 'circuits-function-generator') {
+      const pwr = currentCircuits.powerOn !== false;
+      return `${inter.id === 'circuits-function-generator' ? 'Rigol Function Gen / Master Power' : 'PSU Main Power Switch'} | Energizes or isolates the circuit power rail safely before rewiring. | Output: ${pwr ? 'ON (ENERGIZED)' : 'OFF (ISOLATED)'} · ${currentCircuits.vs.toFixed(1)} V | Click: Toggle Power ON/OFF`;
+    }
+    if (inter.id === 'circuits-fgen-freq-knob') {
+      return `Function Generator Frequency Dial | Sets AC excitation frequency (10–1000 Hz) driving capacitive Xc & inductive XL reactance. | Freq: ${currentCircuits.freq.toFixed(0)} Hz · Mode: ${currentCircuits.mode.toUpperCase()} | Click: Step Hz · Scroll: ±10 Hz`;
+    }
+    if (inter.id === 'circuits-fgen-mode-btn') {
+      return `Function Generator AC / DC Selector | Toggles circuit excitation between DC constant bias and sinusoidal AC sweep. | Active Mode: ${currentCircuits.mode === 'ac' ? 'AC SINE ~' : 'DC CONSTANT'} | Click: Switch AC / DC`;
+    }
+    if (inter.id === 'circuits-voltage-knob') {
+      return `PSU Voltage Regulator Knob | Sets regulated source EMF (Vs) driving current around the circuit. | Setting: ${currentCircuits.vs.toFixed(1)} V (I = ${(circ.current * 1000).toFixed(1)} mA) | Click: Step V · Scroll: ±0.5 V`;
+    }
+    if (inter.id === 'circuits-oscilloscope') {
+      return `Tektronix Dual-Channel Oscilloscope | Plots live time-domain Voltage V(t) (CH1) and Current I(t) (CH2) waveforms. | CH1: ${currentOscilloscope.ch1Source.toUpperCase()} · CH2: ${currentOscilloscope.ch2Source.toUpperCase()} · ${currentOscilloscope.runState.toUpperCase()} | Click: Focus Controls`;
+    }
+    if (inter.id === 'circuits-osc-time-knob') {
+      return `Oscilloscope Timebase (SEC/DIV) | Stretches or compresses horizontal time (ms per grid division) to inspect waveform cycles. | Scale: ${currentOscilloscope.timePerDivMs} ms/div | Click / Scroll: Step sweep speed`;
+    }
+    if (inter.id === 'circuits-osc-ch1-knob') {
+      return `Oscilloscope CH1 Scale (VOLTS/DIV) | Scales vertical sensitivity (Volts per grid division) for the yellow CH1 voltage trace. | Scale: ${currentOscilloscope.ch1VoltsPerDiv} V/div | Click / Scroll: Adjust CH1 gain`;
+    }
+    if (inter.id === 'circuits-osc-ch2-knob') {
+      return `Oscilloscope CH2 Scale (SCALE/DIV) | Scales vertical sensitivity (mA or V per grid division) for the cyan CH2 trace. | Scale: ${currentOscilloscope.ch2VoltsPerDiv} mA/div | Click / Scroll: Adjust CH2 gain`;
+    }
+    if (inter.id === 'circuits-osc-trigger-knob') {
+      return `Oscilloscope Run / Stop Trigger | Freezes (STOP) or continuously acquires (RUN) the live scope trace on screen. | Trigger: ${currentOscilloscope.runState.toUpperCase()} | Click: Toggle RUN / STOP`;
+    }
+    if (inter.id === 'circuits-osc-ch1-input') {
+      return `Oscilloscope BNC Input CH1 | Selects which circuit test node is routed to Channel 1 (Vs, R1, R2, or R3). | Connected: ${currentOscilloscope.ch1Source.toUpperCase()} | Click: Cycle CH1 node`;
+    }
+    if (inter.id === 'circuits-osc-ch2-input') {
+      return `Oscilloscope BNC Input CH2 | Selects which signal is plotted on Channel 2 (Series Current I or R1–R3). | Connected: ${currentOscilloscope.ch2Source.toUpperCase()} | Click: Cycle CH2 node`;
+    }
+    if (inter.id === 'circuits-multimeter') {
+      const r = multimeter3d.updateDisplay();
+      return `Fluke Digital Multimeter | Measures DC/AC Voltage (parallel), Resistance (unpowered), or Current (series). | Reading: ${r.displayString} | Click controls on DMM face`;
+    }
+    if (inter.id === 'circuits-topology-selector') {
+      return `Solderless Resistor Breadboard | Holds R1, R2, R3 and color-coded test sockets for placing Red (+) and Black (COM) probes. | Red: ${multimeter3d.dmmState.redProbeTerminal ?? 'Parked'} · Black: ${multimeter3d.dmmState.blackProbeTerminal ?? 'Parked'} | Left-Click Socket: Active Lead · Right-Click: Black`;
+    }
+    if (inter.id === 'optics-laser') {
+      return `Tunable Diode Laser Emitter | Produces coherent monochromatic light (400–700 nm) aligned down the optical rail. | λ = ${currentOptics.wavelength} nm · Beam: ${currentOptics.powerOn === false ? 'OFF' : 'ON'} | Click: Toggle Power · Scroll: ±10 nm`;
+    }
+    if (inter.id === 'optics-angle-dial') {
+      return `Prism & Goniometer Angle Dial | Adjusts incident ray angle θ₁ against the dielectric prism for Snell's Law & TIR. | θ₁ = ${currentOptics.theta1.toFixed(1)}° | Click / Scroll: Adjust θ₁`;
+    }
+    if (inter.id === 'optics-lens-carrier') {
+      return `Thin-Lens Optical Carriage | Converging lens mount satisfying the Gaussian thin-lens equation 1/f = 1/u + 1/v. | Object u = ${currentOptics.objectDistance.toFixed(1)} cm · Mode: ${currentOptics.subMode.toUpperCase()} | Click / Scroll: Step u`;
+    }
+    if (inter.id === 'optics-screen') {
+      const sharp = calculateOptics(currentOptics).focusSharpness.toFixed(0);
+      return currentOptics.subMode === 'imaging'
+        ? `Diffuse Observation Screen | Captures the projected real image; reaches 100% sharpness at Gaussian focus v. | v = ${(currentOptics.screenPositionCm ?? 45.0).toFixed(1)} cm · Sharpness: ${sharp}% | Click / Scroll: Slide Screen v`
+        : `Diffraction Observation Screen | Projects interference fringes at adjustable distance L from the aperture slits. | L = ${currentOptics.screenDistance.toFixed(2)} m | Click / Scroll: Slide Screen L`;
+    }
+    if (inter.id === 'optics-object-target') {
+      return `Illuminated Object Target & Bench | Sets the object distance u from the luminous target to the converging lens center. | Object u = ${currentOptics.objectDistance.toFixed(1)} cm | Click / Scroll: Step u`;
+    }
+    if (inter.id === 'optics-rail') {
+      if (currentOptics.subMode === 'imaging') {
+        return `Precision Optical Rail Bench | Dovetail bench calibrated for thin-lens object & image conjugate distances. | Object u = ${currentOptics.objectDistance.toFixed(1)} cm | Click / Scroll: Step u`;
+      }
+      return `Precision Optical Rail Bench | Rigid 2.4 m extruded dovetail track aligning all optical carriages on a common optic axis. | Sub-mode: ${currentOptics.subMode === 'refraction' ? 'Snell’s Law & TIR' : 'Double-Slit Diffraction'} | Click: Inspect Rail`;
+    }
+    if (inter.id === 'relativity-light-clock' || inter.id === 'relativity-telemetry-console') {
+      const rel = calculateRelativity(currentRelativity);
+      const frame = (currentRelativity.referenceFrame ?? 'lab') === 'lab' ? "Lab Frame S" : "Rest Frame S'";
+      return `Photon Light-Clock Mirror Cavity | Compares vertical proper bounce (Frame S') vs longer diagonal light path (Lab Frame S). | ${frame} · Δt = ${rel.dilatedTime.toFixed(3)} ns (γ = ${rel.gamma.toFixed(3)}) | Click: Switch Reference Frame`;
+    }
+    if (inter.id === 'relativity-velocity-dial') {
+      const rel = calculateRelativity(currentRelativity);
+      return `Relativistic Velocity Dial (β = v/c) | Adjusts shuttle speed fraction β, changing Lorentz factor γ = 1/√(1−β²). | β = ${currentRelativity.beta.toFixed(2)}c · γ = ${rel.gamma.toFixed(3)} | Click / Scroll: Adjust β`;
+    }
+    if (inter.id === 'relativity-contracting-rod' || inter.id === 'relativity-accelerator') {
+      const rel = calculateRelativity(currentRelativity);
+      return `Synchrotron & Contracting Meter-Rod | Demonstrates Lorentz length contraction L = L₀/γ along the axis of motion. | L = ${rel.contractedLength.toFixed(2)} m · ${currentRelativity.simPlaying === false ? 'PAUSED' : 'RUNNING'} | Click: Play/Pause · Scroll: Adjust β`;
+    }
+    return `${inter.name} | ${inter.description || 'Laboratory apparatus control.'} | ${inter.readout || 'Ready'} | ${inter.action}`;
+  };
+
+  const formatMultimeterMeshTooltip = (hitObj: THREE.Object3D): string | null => {
+    const action = hitObj.userData.action as string | undefined;
+    const dmm = multimeter3d.dmmState;
+    const reading = multimeter3d.updateDisplay();
+    if (action === 'cycle_mode') {
+      const modeNames: Record<MultimeterMode, string> = {
+        v_dc: 'DC Voltage (V⎓)',
+        v_ac: 'AC Voltage (V~)',
+        a_dc: 'DC Current (mA/A⎓)',
+        a_ac: 'AC Current (mA/A~)',
+        ohm: 'Resistance (Ω)',
+        cont: 'Continuity Buzzer (🔊)',
+      };
+      return `DMM Rotary Mode Selector | Selects measurement quantity & range: V⎓, V~, A⎓, A~, Ω, or Continuity. | Dial: ${modeNames[dmm.mode]} · ${reading.displayString} | Click: Rotate to next mode`;
+    }
+    if (action === 'toggle_red_jack') {
+      if (hitObj.name === 'DMM_Jack_COM') {
+        return `DMM Common Ground Jack (COM -) | Reference negative return terminal always paired with the Black (-) test lead. | Red Lead Socket: ${dmm.redJack === 'ma_10a' ? 'mA/10A' : 'V·Ω'} | Black lead permanently in COM`;
+      }
+      const isMaJack = hitObj.name === 'DMM_Jack_mA';
+      return `${isMaJack ? 'DMM Current Input Jack (mA / 10A)' : 'DMM Voltage / Ohm Input Jack (V·Ω)'} | ${isMaJack ? 'Fused input used ONLY when inserting the meter in series for current (A).' : 'High-impedance input for parallel voltage (V) or unpowered resistance (Ω).'} | Red Lead In: ${dmm.redJack === 'ma_10a' ? 'mA/10A (Current)' : 'V·Ω (Voltage/Ohm)'} | Click: Swap red lead jack`;
+    }
+    if (action === 'toggle_jumper') {
+      return `Series Ammeter Break Jumper | Connects PSU to R1 during voltage checks; remove it to force circuit current through the ammeter. | State: ${multimeter3d.circuitState.seriesJumperConnected ? 'CLOSED (Continuity Bridge In)' : 'OPEN (Series Ammeter Break)'} | Click: Insert / Remove jumper`;
+    }
+    if (action === 'select_probe') {
+      const probe = (hitObj.userData.probe as 'red' | 'black') || 'red';
+      const attached = probe === 'red' ? dmm.redProbeTerminal : dmm.blackProbeTerminal;
+      return `${probe === 'red' ? 'Red (+) Positive Test Probe' : 'Black (COM −) Reference Probe'} | ${probe === 'red' ? 'Attaches to the higher-potential test socket on the breadboard.' : 'Attaches to ground/lower-potential reference socket.'} | Location: ${attached ?? 'Parked on Dock'} | Click: Select as Active Lead`;
+    }
+    if (hitObj.userData.terminalId) {
+      const tId = hitObj.userData.terminalId as TerminalId;
+      const rawTip = (hitObj.userData.hoverTooltip as string) || `Breadboard Socket ${tId}`;
+      const [labelPart, detailPart] = rawTip.split('·').map((s) => s.trim());
+      const occupiedBy =
+        dmm.redProbeTerminal === tId && dmm.blackProbeTerminal === tId
+          ? 'Red (+) & Black (−) Here'
+          : dmm.redProbeTerminal === tId
+            ? 'Red (+) Attached'
+            : dmm.blackProbeTerminal === tId
+              ? 'Black (COM) Attached'
+              : 'Empty Socket';
+      return `Socket: ${labelPart || tId} | ${detailPart || 'Electrical node terminal on the series resistor breadboard.'} | Status: ${occupiedBy} · Active Lead: ${multimeter3d.activeProbe === 'red' ? 'RED (+)' : 'BLACK (−)'} | Left-Click: Place Active · Right-Click: Black`;
+    }
+    return hitObj.userData.hoverTooltip || null;
+  };
+
   const onPointerMove = (e: PointerEvent) => {
+    if (e.pointerType === 'touch') {
+      if (!activeCanvasTouches.has(e.pointerId) && e.pointerId !== lookPointerId && e.pointerId !== closeupPanPointerId) {
+        return;
+      }
+      if (activeCanvasTouches.has(e.pointerId)) {
+        activeCanvasTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+      if (cameraMode === 'closeup' && activeCanvasTouches.size >= 2) {
+        const pts = Array.from(activeCanvasTouches.values());
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        if (lastPinchDist !== null && dist > 1) {
+          const deltaDist = dist - lastPinchDist;
+          zoomCloseup(-deltaDist * 0.0045);
+          closeupDragTravel = 999;
+        }
+        lastPinchDist = dist;
+        return;
+      }
+    }
+
     const rect = renderer.domElement.getBoundingClientRect();
-    mouseScreenPos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    mouseScreenPos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    mouseActive = true;
+    if (e.pointerType !== 'touch' && rect.width > 0 && rect.height > 0) {
+      mouseScreenPos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouseScreenPos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      mouseActive = true;
+    }
 
     if (cameraMode === 'closeup') {
+      if (isCloseupPanning && (closeupPanPointerId === null || e.pointerId === closeupPanPointerId)) {
+        const dx = e.clientX - prevCloseupX;
+        const dy = e.clientY - prevCloseupY;
+        closeupDragTravel += Math.hypot(dx, dy);
+        prevCloseupX = e.clientX;
+        prevCloseupY = e.clientY;
+        if (closeupDragTravel >= 4) {
+          camera.updateMatrixWorld();
+          closeupPanRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+          closeupPanUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+          const panSpeed = 0.0014 * closeupZoomFactor;
+          closeupPanOffset.addScaledVector(closeupPanRight, -dx * panSpeed);
+          closeupPanOffset.addScaledVector(closeupPanUp, dy * panSpeed);
+          closeupPanOffset.x = THREE.MathUtils.clamp(closeupPanOffset.x, -0.85, 0.85);
+          closeupPanOffset.y = THREE.MathUtils.clamp(closeupPanOffset.y, -0.35, 0.45);
+          closeupPanOffset.z = THREE.MathUtils.clamp(closeupPanOffset.z, -0.85, 0.85);
+          recomputeCloseupCameraTargets();
+          renderer.domElement.style.cursor = 'grabbing';
+          return;
+        }
+      }
+      if (e.pointerType === 'touch') return;
       if (activeStation === 'circuits') {
         raycaster.setFromCamera(mouseScreenPos, camera);
         const hits = raycaster.intersectObjects(multimeter3d.interactableMeshes, true);
         if (hits.length > 0) {
-          const hitObj = hits[0].object;
-          const tooltip = hitObj.userData.hoverTooltip || (hitObj.userData.terminalId ? `Terminal ${hitObj.userData.terminalId}` : null);
           renderer.domElement.style.cursor = 'pointer';
-          callbacks.onCloseupHover?.(tooltip);
-        } else {
-          renderer.domElement.style.cursor = 'default';
-          callbacks.onCloseupHover?.(null);
+          callbacks.onCloseupHover?.(formatMultimeterMeshTooltip(hits[0].object));
+          return;
         }
+      }
+      const inter = findInteractableHit(mouseScreenPos);
+      if (inter) {
+        renderer.domElement.style.cursor = 'pointer';
+        callbacks.onCloseupHover?.(getCloseupTooltip(inter));
+      } else {
+        renderer.domElement.style.cursor = 'default';
+        callbacks.onCloseupHover?.(null);
       }
       return;
     }
 
-    // When NOT in pointer lock, allow smooth dragging with either mouse button
-    if (document.pointerLockElement !== renderer.domElement && isPointerDown) {
+    // When NOT in pointer lock, allow smooth dragging with either mouse or single touch
+    if (
+      document.pointerLockElement !== renderer.domElement &&
+      isPointerDown &&
+      (lookPointerId === null || e.pointerId === lookPointerId)
+    ) {
       const dx = e.clientX - prevMouseX;
       const dy = e.clientY - prevMouseY;
       dragTravel += Math.hypot(dx, dy);
       prevMouseX = e.clientX;
       prevMouseY = e.clientY;
-      yaw -= dx * 0.0032;
-      pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch - dy * 0.0032));
+      const lookGain = e.pointerType === 'touch' ? 0.0038 : 0.0032;
+      yaw -= dx * lookGain;
+      pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch - dy * lookGain));
       updateCamera();
     }
   };
@@ -4063,8 +6994,63 @@ export function createRoom3Scene(
     updateCamera();
   };
 
-  const onPointerUp = () => {
-    isPointerDown = false;
+  const onPointerUp = (e: PointerEvent) => {
+    if (e.pointerType === 'touch') {
+      const trackedCanvasTouch =
+        activeCanvasTouches.has(e.pointerId) ||
+        e.pointerId === lookPointerId ||
+        e.pointerId === closeupPanPointerId;
+      if (!trackedCanvasTouch) return;
+
+      activeCanvasTouches.delete(e.pointerId);
+      try {
+        renderer.domElement.releasePointerCapture(e.pointerId);
+      } catch {}
+
+      if (cameraMode === 'closeup') {
+        if (activeCanvasTouches.size < 2) {
+          lastPinchDist = null;
+        }
+        if (isPinching) {
+          if (activeCanvasTouches.size === 0) {
+            isPinching = false;
+          }
+          closeupPanPointerId = null;
+          isCloseupPanning = false;
+          return;
+        }
+        if (e.pointerId === closeupPanPointerId) {
+          const wasTap = e.type === 'pointerup' && closeupDragTravel < 20;
+          closeupPanPointerId = null;
+          isCloseupPanning = false;
+          if (wasTap) {
+            lastTouchUpTime = performance.now();
+            triggerCloseupAtClientPoint(e.clientX, e.clientY);
+          }
+        }
+        return;
+      }
+
+      if (e.pointerId === lookPointerId) {
+        const wasTap = e.type === 'pointerup' && dragTravel < 20;
+        lookPointerId = null;
+        isPointerDown = false;
+        if (cameraMode === 'walk' && wasTap) {
+          lastTouchUpTime = performance.now();
+          interactAtScreenPoint(e.clientX, e.clientY);
+        }
+      }
+      return;
+    }
+
+    if (lookPointerId === null || e.pointerId === lookPointerId) {
+      isPointerDown = false;
+      lookPointerId = null;
+    }
+    if (closeupPanPointerId === null || e.pointerId === closeupPanPointerId) {
+      isCloseupPanning = false;
+      closeupPanPointerId = null;
+    }
   };
 
   const onPointerLockChange = () => {
@@ -4076,107 +7062,98 @@ export function createRoom3Scene(
     }
   };
 
-  const onContextMenu = (e: MouseEvent) => {
-    e.preventDefault();
+  const handleCloseupProbePlacement = (clientX: number, clientY: number, forcedProbe?: 'red' | 'black'): boolean => {
+    if (cameraMode !== 'closeup' || activeStation !== 'circuits' || !renderer.domElement) return false;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const pointer = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObjects(multimeter3d.interactableMeshes, true);
+    if (hits.length === 0) return false;
+
+    const hitObj = hits[0].object;
+    if (hitObj.userData.action === 'select_probe') {
+      const picked = (hitObj.userData.probe as 'red' | 'black') || 'red';
+      multimeter3d.setActiveProbe(picked);
+      callbacks.onEquipmentInteract?.('circuits-multimeter');
+      playTone(picked === 'red' ? 760 : 540, 'sine', 0.05, 0.14);
+      return true;
+    }
+    if (hitObj.userData.action === 'cycle_mode') {
+      multimeter3d.cycleMode();
+      callbacks.onEquipmentInteract?.('circuits-multimeter');
+      playTone(800, 'square', 0.05, 0.12);
+      return true;
+    }
+    if (hitObj.userData.action === 'toggle_red_jack') {
+      const next = multimeter3d.dmmState.redJack === 'v_ohm' ? 'ma_10a' : 'v_ohm';
+      multimeter3d.setRedJack(next);
+      callbacks.onEquipmentInteract?.('circuits-multimeter');
+      playTone(600, 'sine', 0.06, 0.12);
+      return true;
+    }
+    if (hitObj.userData.action === 'toggle_jumper') {
+      multimeter3d.toggleSeriesJumper();
+      callbacks.onEquipmentInteract?.('circuits-topology-selector');
+      playTone(550, 'triangle', 0.08, 0.15);
+      return true;
+    }
+    if (hitObj.userData.terminalId) {
+      const term = hitObj.userData.terminalId as TerminalId;
+      const targetProbe: 'red' | 'black' = forcedProbe ?? multimeter3d.activeProbe;
+      const existingOnTarget =
+        targetProbe === 'red'
+          ? multimeter3d.dmmState.redProbeTerminal
+          : multimeter3d.dmmState.blackProbeTerminal;
+
+      if (existingOnTarget === term) {
+        multimeter3d.setProbeTerminal(targetProbe, null);
+      } else {
+        multimeter3d.setProbeTerminal(targetProbe, term);
+        if (!forcedProbe) {
+          multimeter3d.setActiveProbe(targetProbe === 'red' ? 'black' : 'red');
+        }
+      }
+      callbacks.onEquipmentInteract?.('circuits-topology-selector');
+      playTone(targetProbe === 'red' ? 740 : 620, 'sine', 0.05, 0.15);
+      return true;
+    }
+    return false;
   };
 
-  let lastProbeMoved: 'red' | 'black' = 'black';
+  const onContextMenu = (e: MouseEvent) => {
+    e.preventDefault();
+    if (cameraMode === 'closeup' && activeStation === 'circuits') {
+      if (closeupDragTravel >= 6) return;
+      handleCloseupProbePlacement(e.clientX, e.clientY, 'black');
+    }
+  };
 
   const onCanvasClick = (e: MouseEvent) => {
     if (!container || !renderer.domElement) return;
+    if (performance.now() - lastTouchUpTime < 450) return;
 
     if (cameraMode === 'closeup') {
-      if (activeStation === 'circuits') {
-        const rect = renderer.domElement.getBoundingClientRect();
-        const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        const clickPointer = new THREE.Vector2(mouseX, mouseY);
-        raycaster.setFromCamera(clickPointer, camera);
-        const hits = raycaster.intersectObjects(multimeter3d.interactableMeshes, true);
-        if (hits.length > 0) {
-          const hitObj = hits[0].object;
-          if (hitObj.userData.action === 'cycle_mode') {
-            multimeter3d.cycleMode();
-            playTone(800, 'square', 0.05, 0.12);
-            return;
-          }
-          if (hitObj.userData.action === 'toggle_red_jack') {
-            const next = multimeter3d.dmmState.redJack === 'v_ohm' ? 'ma_10a' : 'v_ohm';
-            multimeter3d.setRedJack(next);
-            playTone(600, 'sine', 0.06, 0.12);
-            return;
-          }
-          if (hitObj.userData.action === 'toggle_jumper') {
-            multimeter3d.toggleSeriesJumper();
-            playTone(550, 'triangle', 0.08, 0.15);
-            return;
-          }
-          if (hitObj.userData.terminalId) {
-            const term = hitObj.userData.terminalId as TerminalId;
-            // Intuitive resistor & component lead probe snapping with positive polarity:
-            if (term === 'R1_A' || term === 'R1_B') {
-              multimeter3d.setProbeTerminal('red', 'R1_A');
-              multimeter3d.setProbeTerminal('black', 'R1_B');
-              lastProbeMoved = 'black';
-            } else if (term === 'R2_A' || term === 'R2_B') {
-              multimeter3d.setProbeTerminal('red', 'R2_A');
-              multimeter3d.setProbeTerminal('black', 'R2_B');
-              lastProbeMoved = 'black';
-            } else if (term === 'R3_A' || term === 'R3_B') {
-              multimeter3d.setProbeTerminal('red', 'R3_A');
-              multimeter3d.setProbeTerminal('black', 'R3_B');
-              lastProbeMoved = 'black';
-            } else if (term === 'SERIES_JACK_A' || term === 'SERIES_JACK_B') {
-              multimeter3d.setProbeTerminal('red', 'SERIES_JACK_A');
-              multimeter3d.setProbeTerminal('black', 'SERIES_JACK_B');
-              lastProbeMoved = 'black';
-            } else if (term === 'SRC_POS' || term === 'SRC_NEG') {
-              multimeter3d.setProbeTerminal('red', 'SRC_POS');
-              multimeter3d.setProbeTerminal('black', 'SRC_NEG');
-              lastProbeMoved = 'black';
-            } else {
-              // Clicked individual terminal socket: intelligent alternating placement
-              if (multimeter3d.dmmState.redProbeTerminal === term) {
-                multimeter3d.setProbeTerminal('red', null);
-              } else if (multimeter3d.dmmState.blackProbeTerminal === term) {
-                multimeter3d.setProbeTerminal('black', null);
-              } else if (!multimeter3d.dmmState.redProbeTerminal) {
-                multimeter3d.setProbeTerminal('red', term);
-                lastProbeMoved = 'red';
-              } else if (!multimeter3d.dmmState.blackProbeTerminal) {
-                multimeter3d.setProbeTerminal('black', term);
-                lastProbeMoved = 'black';
-              } else {
-                const targetProbe = lastProbeMoved === 'red' ? 'black' : 'red';
-                multimeter3d.setProbeTerminal(targetProbe, term);
-                lastProbeMoved = targetProbe;
-              }
-            }
-            playTone(720, 'sine', 0.05, 0.15);
-            return;
-          }
-        } else {
-          // General workbench equipment inspection & interaction in closeup mode
-          const hitsGeneral = raycaster.intersectObjects(interactableObjects, true);
-          for (const hit of hitsGeneral) {
-            let currentObj: THREE.Object3D | null = hit.object;
-            let inter: EquipmentInteraction | undefined = undefined;
-            while (currentObj && !inter) {
-              inter = objectToInteractionMap.get(currentObj) || currentObj.userData.equipmentInteraction;
-              currentObj = currentObj.parent;
-            }
-            if (inter) {
-              triggerEquipmentAction(inter.id);
-              playTone(550, 'triangle', 0.08, 0.2);
-              break;
-            }
-          }
-        }
+      if (closeupDragTravel >= 6) return;
+      if (activeStation === 'circuits' && handleCloseupProbePlacement(e.clientX, e.clientY)) {
+        return;
+      }
+      const rect = renderer.domElement.getBoundingClientRect();
+      const clickPointer = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const inter = findInteractableHit(clickPointer);
+      if (inter) {
+        triggerEquipmentAction(inter.id);
+        playTone(550, 'triangle', 0.06, 0.16);
       }
     } else {
       if (dragTravel >= 8) return;
       if (document.pointerLockElement !== renderer.domElement) {
-        if (!interactAtScreenPoint(e.clientX, e.clientY)) {
+        if (!interactAtScreenPoint(e.clientX, e.clientY) && !isMobileTouchDevice()) {
           requestPointerLock();
         }
       }
@@ -4184,25 +7161,28 @@ export function createRoom3Scene(
   };
 
   const onCanvasWheel = (e: WheelEvent) => {
-    if (cameraMode !== 'closeup' || activeStation !== 'circuits') return;
     if (!renderer.domElement) return;
+    if (cameraMode === 'walk') {
+      if (character.isThirdPerson) {
+        e.preventDefault();
+        walkExtraPullback = THREE.MathUtils.clamp(
+          walkExtraPullback + (e.deltaY > 0 ? 0.28 : -0.28),
+          0.05,
+          4.35
+        );
+        updateCamera();
+      }
+      return;
+    }
+    if (cameraMode !== 'closeup') return;
 
     const rect = renderer.domElement.getBoundingClientRect();
     const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     const hoverPointer = new THREE.Vector2(mouseX, mouseY);
-    raycaster.setFromCamera(hoverPointer, camera);
-    const hits = raycaster.intersectObjects(interactableObjects, true);
+    const inter = findInteractableHit(hoverPointer);
 
-    for (const hit of hits) {
-      let currentObj: THREE.Object3D | null = hit.object;
-      let inter: EquipmentInteraction | undefined = undefined;
-      while (currentObj && !inter) {
-        inter = objectToInteractionMap.get(currentObj) || currentObj.userData.equipmentInteraction;
-        currentObj = currentObj.parent;
-      }
-      if (!inter) continue;
-
+    if (inter && activeStation === 'circuits') {
       if (inter.id === 'circuits-voltage-knob') {
         e.preventDefault();
         const step = e.deltaY < 0 ? 0.5 : -0.5;
@@ -4211,9 +7191,25 @@ export function createRoom3Scene(
           currentCircuits.vs = newVs;
           updatePsuKnobRotation(newVs);
           updatePsuTexture(newVs, currentCircuits.freq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
+          updateFgenDisplay();
           multimeter3d.updateCircuitParameters({ sourceVoltage: newVs });
           callbacks.onCircuitsChange?.({ vs: newVs });
           playTone(480 + (newVs / 30) * 240, 'sine', 0.03, 0.08);
+        }
+        return;
+      }
+
+      if (inter.id === 'circuits-fgen-freq-knob') {
+        e.preventDefault();
+        const step = e.deltaY < 0 ? 10 : -10;
+        const newFreq = Math.max(10, Math.min(1000, Math.round(currentCircuits.freq + step)));
+        if (newFreq !== currentCircuits.freq) {
+          currentCircuits.freq = newFreq;
+          updateFgenDisplay();
+          updatePsuTexture(currentCircuits.vs, newFreq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
+          multimeter3d.updateCircuitParameters({ frequency: newFreq });
+          callbacks.onCircuitsChange?.({ freq: newFreq });
+          playTone(400 + (newFreq / 1000) * 320, 'sine', 0.03, 0.08);
         }
         return;
       }
@@ -4266,6 +7262,90 @@ export function createRoom3Scene(
         return;
       }
     }
+
+    if (inter && activeStation === 'optics') {
+      const dir = e.deltaY < 0 ? 1 : -1;
+      if (inter.id === 'optics-laser') {
+        e.preventDefault();
+        const nextWavelength = THREE.MathUtils.clamp(currentOptics.wavelength + dir * 10, 400, 700);
+        if (nextWavelength !== currentOptics.wavelength) {
+          currentOptics.wavelength = nextWavelength;
+          updateOpticsBenchGeometry();
+          updateScreenTexture();
+          callbacks.onOpticsChange?.({ wavelength: nextWavelength });
+          playTone(500 + (700 - nextWavelength), 'sine', 0.03, 0.08);
+        }
+        return;
+      }
+      if (inter.id === 'optics-angle-dial') {
+        e.preventDefault();
+        const nextTheta = THREE.MathUtils.clamp(Math.round(currentOptics.theta1 + dir), 0, 80);
+        if (nextTheta !== currentOptics.theta1) {
+          currentOptics.theta1 = nextTheta;
+          updateOpticsBenchGeometry();
+          updateScreenTexture();
+          callbacks.onOpticsChange?.({ theta1: nextTheta });
+          playTone(540, 'triangle', 0.03, 0.08);
+        }
+        return;
+      }
+      if (
+        inter.id === 'optics-lens-carrier' ||
+        inter.id === 'optics-object-target' ||
+        (inter.id === 'optics-rail' && currentOptics.subMode === 'imaging')
+      ) {
+        e.preventDefault();
+        const nextU = THREE.MathUtils.clamp(Math.round((currentOptics.objectDistance + dir) * 10) / 10, 25, 80);
+        if (nextU !== currentOptics.objectDistance) {
+          currentOptics.objectDistance = nextU;
+          updateOpticsBenchGeometry();
+          updateScreenTexture();
+          callbacks.onOpticsChange?.({ objectDistance: nextU });
+          playTone(600, 'sine', 0.03, 0.08);
+        }
+        return;
+      }
+      if (inter.id === 'optics-screen') {
+        e.preventDefault();
+        if (currentOptics.subMode === 'imaging') {
+          const curV = currentOptics.screenPositionCm ?? 45.0;
+          const nextV = THREE.MathUtils.clamp(Math.round((curV + dir * 0.5) * 10) / 10, 15, 120);
+          if (nextV !== curV) {
+            currentOptics.screenPositionCm = nextV;
+            updateOpticsBenchGeometry();
+            updateScreenTexture();
+            callbacks.onOpticsChange?.({ screenPositionCm: nextV });
+            playTone(680, 'sine', 0.03, 0.08);
+          }
+        } else if (currentOptics.subMode === 'diffraction') {
+          const nextL = THREE.MathUtils.clamp(Math.round((currentOptics.screenDistance + dir * 0.05) * 100) / 100, 0.5, 3.0);
+          if (nextL !== currentOptics.screenDistance) {
+            currentOptics.screenDistance = nextL;
+            updateOpticsBenchGeometry();
+            updateScreenTexture();
+            callbacks.onOpticsChange?.({ screenDistance: nextL });
+            playTone(680, 'sine', 0.03, 0.08);
+          }
+        }
+        return;
+      }
+    }
+
+    if (inter && activeStation === 'relativity' && inter.id.startsWith('relativity-')) {
+      e.preventDefault();
+      const dir = e.deltaY < 0 ? 1 : -1;
+      const nextBeta = THREE.MathUtils.clamp(Math.round((currentRelativity.beta + dir * 0.02) * 100) / 100, 0.05, 0.99);
+      if (nextBeta !== currentRelativity.beta) {
+        currentRelativity.beta = nextBeta;
+        callbacks.onRelativityChange?.({ beta: nextBeta });
+        playTone(460 + nextBeta * 400, 'sine', 0.03, 0.08);
+      }
+      return;
+    }
+
+    // Default close-up mouse wheel: smooth camera zoom in/out when not over a tunable knob
+    e.preventDefault();
+    zoomCloseup(e.deltaY > 0 ? 0.12 : -0.12);
   };
 
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
@@ -4274,6 +7354,7 @@ export function createRoom3Scene(
   renderer.domElement.addEventListener('contextmenu', onContextMenu);
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('pointerlockchange', onPointerLockChange);
 
@@ -4290,13 +7371,7 @@ export function createRoom3Scene(
     else if (key === 'a') movement.left = true;
     else if (key === 'd') movement.right = true;
     else if (key === 'e') interact();
-    else if (key === 'v') {
-      character.toggleView();
-      updateCamera();
-    } else if (key === 'c') {
-      character.switchCharacter();
-      updateCamera();
-    } else if (key === '1') setStation('circuits');
+    else if (key === '1') setStation('circuits');
     else if (key === '2') setStation('optics');
     else if (key === '3') setStation('relativity');
   };
@@ -4322,7 +7397,7 @@ export function createRoom3Scene(
       if (width > 0 && height > 0) {
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
-        const pixelRatio = Math.min(window.devicePixelRatio, currentGraphicsSettings.resolutionScale);
+        const pixelRatio = getEffectivePixelRatio(currentGraphicsSettings.resolutionScale);
         renderer.setPixelRatio(pixelRatio);
         renderer.setSize(width, height, false);
       }
@@ -4365,6 +7440,7 @@ export function createRoom3Scene(
   let lastRenderTime = performance.now();
 
   const animate = () => {
+    if (isDisposed) return;
     animationFrameId = requestAnimationFrame(animate);
 
     const now = performance.now();
@@ -4391,7 +7467,13 @@ export function createRoom3Scene(
     const delta = Math.min(0.08, clock.getDelta());
     const elapsed = clock.getElapsedTime();
 
-    // Twinkling landmark stars
+    // Gentle Moon axial rotation & Infinite Tsukuyomi iris spin + twinkling landmark stars
+    moonGroup.rotation.y += delta * 0.015;
+    if (tsukuyomiMoonGroup.visible) {
+      tsukuyomiSpinGroup.rotation.z += delta * 0.045;
+      const crimsonPulse = 96.0 + Math.sin(now * 0.002) * 5.0;
+      moonCorona.scale.set(crimsonPulse, crimsonPulse, 1.0);
+    }
     if (currentGraphicsSettings.bloomAndAtmosphere) {
       landmarkStars.forEach((star) => {
         const twinkle = 1 + Math.sin(now * 0.001 * star.twinkleSpeed + star.phase) * 0.32;
@@ -4476,6 +7558,7 @@ export function createRoom3Scene(
         }
 
         character.update(delta, playerPosition, dir, yaw, pitch, camera, false);
+        applyWalkCameraPullback();
 
         // Station Proximity Detection (student walking near experiment benches)
         let currentProximate: Room3StationId | null = null;
@@ -4517,11 +7600,38 @@ export function createRoom3Scene(
       // In-World Guidance Marker Animation & HUD Indicator Projection
       if (activeGuidanceId && guidanceMarker.visible) {
         if (getGuidanceTargetPosition(activeGuidanceId, guidancePosition)) {
-          const bobbing = Math.sin(elapsed * 3.5) * 0.035;
-          guidanceMarker.position.set(guidancePosition.x, guidancePosition.y + 0.28 + bobbing, guidancePosition.z);
+          const isTinySocket =
+            activeGuidanceId.startsWith('circuits-terminal-') ||
+            activeGuidanceId.startsWith('circuits-dmm-jack') ||
+            activeGuidanceId === 'circuits-series-jumper' ||
+            activeGuidanceId.startsWith('circuits-probe-r');
+          const isKnobControl =
+            activeGuidanceId === 'circuits-voltage-knob' ||
+            activeGuidanceId === 'circuits-power-switch' ||
+            activeGuidanceId === 'circuits-dmm-dial' ||
+            activeGuidanceId.startsWith('circuits-osc-');
+
+          const targetMarkerScale =
+            cameraMode === 'closeup'
+              ? isTinySocket
+                ? 0.16
+                : isKnobControl
+                  ? 0.22
+                  : 0.30
+              : 0.85;
+          guidanceMarker.scale.setScalar(targetMarkerScale);
+
+          const bobAmp = cameraMode === 'closeup' ? (isTinySocket ? 0.004 : 0.008) : 0.035;
+          const bobbing = (0.5 + 0.5 * Math.sin(elapsed * 4.0)) * bobAmp;
+          guidanceMarker.position.set(
+            guidancePosition.x,
+            guidancePosition.y + bobbing + (cameraMode === 'walk' ? 0.03 : 0),
+            guidancePosition.z
+          );
           const pulse = 0.85 + Math.sin(elapsed * 4.5) * 0.15;
           guidanceRing.scale.setScalar(pulse);
           guidanceInnerRing.scale.setScalar(1.4 - pulse * 0.4);
+          guidanceMaterial.emissiveIntensity = 1.05 + Math.sin(elapsed * 5.0) * 0.35;
           guidanceMarker.rotation.y = elapsed * 0.75;
 
           // Project target position into screen space for real-time HUD directional compass
@@ -4541,10 +7651,14 @@ export function createRoom3Scene(
         callbacks.onGuidanceIndicator?.(null);
       }
 
+      updateCalloutBadges();
+
       checkInteractions();
     }
 
-    renderer.render(scene, camera);
+    if (!isDisposed && !renderer.getContext().isContextLost()) {
+      renderer.render(scene, camera);
+    }
   };
   animate();
 
@@ -4555,16 +7669,20 @@ export function createRoom3Scene(
   // -------------------------------------------------------------
   return {
     dispose: () => {
+      isDisposed = true;
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       resizeObserver.disconnect();
+      renderer.domElement.removeEventListener('webglcontextlost', handleContextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('click', onCanvasClick);
       renderer.domElement.removeEventListener('wheel', onCanvasWheel);
       renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('pointerlockchange', onPointerLockChange);
       character.dispose();
@@ -4588,10 +7706,25 @@ export function createRoom3Scene(
       starGeo.dispose();
       starMaterial.dispose();
       starGlowTex.dispose();
+      nebulaTex.dispose();
+      esdMatTextures.forEach((tex) => tex.dispose());
+      psuTexture.dispose();
+      oscTexture.dispose();
+      fgenTexture.dispose();
+      screenTexture.dispose();
+      targetReticleTex.dispose();
+      meterRodTex.dispose();
+      clockLabTexture.dispose();
+      clockRestTexture.dispose();
+      multimeter3d.dispose();
       diffractionTex.dispose();
       moonMaterial.dispose();
       moonDiffuseMap.dispose();
       moonBumpMap.dispose();
+      tsukuyomiMaterial.dispose();
+      tsukuyomiTex.dispose();
+      normalMoonCoronaTex.dispose();
+      tsukuyomiCoronaTex.dispose();
       moonCoronaMat.dispose();
       renderer.dispose();
       if (renderer.domElement.parentElement) {
@@ -4634,6 +7767,7 @@ export function createRoom3Scene(
       currentCircuits = { ...settings };
       updatePsuKnobRotation(currentCircuits.vs);
       updatePsuTexture(currentCircuits.vs, currentCircuits.freq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
+      updateFgenDisplay();
       multimeter3d.updateCircuitParameters({
         mode: currentCircuits.mode,
         topology: currentCircuits.topology,
@@ -4654,10 +7788,7 @@ export function createRoom3Scene(
     },
     setOptics: (settings) => {
       currentOptics = { ...settings };
-      beamMat.color.set(wavelengthToRGB(currentOptics.wavelength));
-      prismMesh.visible = currentOptics.subMode === 'refraction';
-      lensMesh.visible = currentOptics.subMode === 'imaging';
-      slitPlate.visible = currentOptics.subMode === 'diffraction';
+      updateOpticsBenchGeometry();
       updateScreenTexture();
     },
     setRelativity: (settings) => {
@@ -4686,6 +7817,8 @@ export function createRoom3Scene(
     getCameraMode: () => cameraMode,
     setDmmMode: (mode) => multimeter3d.setMode(mode),
     setDmmJack: (jack) => multimeter3d.setRedJack(jack),
+    setActiveProbe: (probe) => multimeter3d.setActiveProbe(probe),
+    getActiveProbe: () => multimeter3d.activeProbe,
     setProbeTerminal: (probe, term) => multimeter3d.setProbeTerminal(probe, term),
     flipProbePolarity: () => {
       const curRed = multimeter3d.dmmState.redProbeTerminal;
@@ -4698,6 +7831,14 @@ export function createRoom3Scene(
     resetDmmFuse: () => multimeter3d.resetFuse(),
     getDmmReading: () => multimeter3d.updateDisplay(),
     setCloseupFocus,
+    zoomCloseup,
+    resetCloseupCamera,
+    getCloseupZoom: () => closeupZoomFactor,
+    setLabelsVisible: (visible: boolean) => {
+      labelsVisible = visible;
+      updateCalloutBadges();
+    },
+    getLabelsVisible: () => labelsVisible,
     setCameraYawPitch: (targetYaw: number, targetPitch = pitch) => {
       yaw = targetYaw;
       pitch = targetPitch;

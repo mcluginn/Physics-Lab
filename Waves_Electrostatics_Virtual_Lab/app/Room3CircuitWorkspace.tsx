@@ -207,7 +207,7 @@ export function Room3CircuitWorkspace({
       overflow: 'hidden',
     }}>
       {/* Top Application Bar */}
-      <header style={{
+      <header className="r3cw-header" style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -291,9 +291,9 @@ export function Room3CircuitWorkspace({
       </header>
 
       {/* Main Workspace Body */}
-      <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
+      <div className="r3cw-body" style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
         {/* Left Side: Interactive Circuit Construction Canvas */}
-        <main style={{
+        <main className="r3cw-main" style={{
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
@@ -303,7 +303,7 @@ export function Room3CircuitWorkspace({
           padding: '12px',
         }}>
           {/* Quick Actions & Circuit Presets Toolbar */}
-          <div style={{
+          <div className="r3cw-toolbar" style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -313,7 +313,7 @@ export function Room3CircuitWorkspace({
             borderRadius: '8px',
             border: '1px solid rgba(212, 175, 55, 0.4)',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="r3cw-toolbar-presets" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>CIRCUIT ARRANGEMENT:</span>
               <button
                 type="button"
@@ -404,7 +404,7 @@ export function Room3CircuitWorkspace({
           </div>
 
           {/* Interactive Breadboard SVG */}
-          <div style={{
+          <div className="r3cw-board-wrap" style={{
             flex: 1,
             display: 'flex',
             alignItems: 'center',
@@ -416,6 +416,7 @@ export function Room3CircuitWorkspace({
             boxShadow: 'inset 0 0 40px rgba(0,0,0,0.6)',
             padding: '10px',
             minHeight: '440px',
+            touchAction: 'manipulation',
           }}>
             <svg
               viewBox="0 0 960 560"
@@ -980,7 +981,7 @@ export function Room3CircuitWorkspace({
         {/* ------------------------------------------------------------- */}
         {/* Right Aside: DCACLab REAL-TIME RESULTS TELEMETRY HUD */}
         {/* ------------------------------------------------------------- */}
-        <aside style={{
+        <aside className="r3cw-sidebar" style={{
           width: '320px',
           background: 'linear-gradient(180deg, #35121d 0%, #230c14 100%)',
           borderLeft: '1px solid rgba(212, 175, 55, 0.4)',

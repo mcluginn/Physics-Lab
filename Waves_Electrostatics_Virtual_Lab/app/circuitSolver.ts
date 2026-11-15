@@ -98,9 +98,10 @@ export type CircuitSolution = {
  */
 export function solveCircuit(state: CircuitState, dmm: MultimeterState): CircuitSolution {
   const vs = state.powerOn ? state.sourceVoltage : 0;
-  const r1 = Math.max(1, state.r1);
-  const r2 = Math.max(1, state.r2);
-  const r3 = Math.max(1, state.r3);
+  // Realistic 1% physical component tolerances on breadboard resistors
+  const r1 = Math.max(1, state.r1 * 0.996);
+  const r2 = Math.max(1, state.r2 * 1.004);
+  const r3 = Math.max(1, state.r3 * 0.997);
 
   // Check if DMM is inserted in series between SERIES_JACK_A and SERIES_JACK_B
   const isAmmeterInSeriesBreak =
@@ -384,10 +385,10 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
     const adcNoise = 1 + (Math.sin(diff * 11.7 + 1.3) * 0.0025);
 
     if (mode === 'v_dc') {
-      const noisyDiff = diff * (diff !== 0 ? adcNoise : 1);
+      const noisyDiff = Number((diff * (diff !== 0 ? adcNoise : 1)).toFixed(3));
       return {
-        value: diff,
-        displayString: `${diff >= 0 ? '' : '-'}${Math.abs(noisyDiff).toFixed(2)} V`,
+        value: noisyDiff,
+        displayString: `${noisyDiff >= 0 ? '' : '-'}${Math.abs(noisyDiff).toFixed(2)} V`,
         unit: 'V',
         isContinuityBeep: false,
         warning: diff < 0 ? 'Negative potential: Probes connected with reversed polarity.' : null,
@@ -396,9 +397,9 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
     } else {
       // AC RMS Voltage
       const vRms = Math.abs(diff) / Math.SQRT2;
-      const noisyVRms = vRms * (vRms !== 0 ? adcNoise : 1);
+      const noisyVRms = Number((vRms * (vRms !== 0 ? adcNoise : 1)).toFixed(3));
       return {
-        value: vRms,
+        value: noisyVRms,
         displayString: `${noisyVRms.toFixed(2)} V~`,
         unit: 'V',
         isContinuityBeep: false,
@@ -470,13 +471,13 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
 
     // Realistic ADC reading fluctuation (±0.3%)
     const adcNoise = 1 + (Math.sin(signedI * 53.1 + 0.7) * 0.003);
-    const noisyI = signedI * (signedI !== 0 ? adcNoise : 1);
+    const noisyI = Number((signedI * (signedI !== 0 ? adcNoise : 1)).toFixed(6));
 
     if (Math.abs(noisyI) < 1.0) {
       // Display in mA
       const mA = noisyI * 1000;
       return {
-        value: signedI,
+        value: noisyI,
         displayString: `${mA.toFixed(2)} mA`,
         unit: 'mA',
         isContinuityBeep: false,
@@ -486,7 +487,7 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
     }
 
     return {
-      value: signedI,
+      value: noisyI,
       displayString: `${noisyI.toFixed(3)} A`,
       unit: 'A',
       isContinuityBeep: false,
@@ -521,18 +522,22 @@ export function readMultimeter(state: CircuitState, dmm: MultimeterState): Multi
       };
     }
 
-    // Identify which component probes are connected across
+    // Identify which component probes are connected across (incorporating 1% component tolerance)
+    const effR1 = state.r1 * 0.996;
+    const effR2 = state.r2 * 1.004;
+    const effR3 = state.r3 * 0.997;
     const pair = [redProbeTerminal, blackProbeTerminal].sort().join('-');
     let measuredR = null;
 
-    if (pair === 'R1_A-R1_B') measuredR = state.r1;
-    else if (pair === 'R2_A-R2_B') measuredR = state.r2;
-    else if (pair === 'R3_A-R3_B') measuredR = state.r3;
+    if (pair === 'R1_A-R1_B') measuredR = effR1;
+    else if (pair === 'R2_A-R2_B') measuredR = effR2;
+    else if (pair === 'R3_A-R3_B') measuredR = effR3;
     else if (pair === 'R1_A-R3_B' || pair === 'R1_A-SRC_NEG') {
       // Equivalent resistance of entire network
-      if (state.topology === 'series') measuredR = state.r1 + state.r2 + state.r3;
-      else if (state.topology === 'parallel') measuredR = 1 / (1 / state.r1 + 1 / state.r2 + 1 / state.r3);
-      else measuredR = state.r1 + (state.r2 * state.r3) / (state.r2 + state.r3);
+      if (state.topology === 'series') measuredR = effR1 + effR2 + effR3;
+      else if (state.topology === 'parallel') measuredR = 1 / (1 / effR1 + 1 / effR2 + 1 / effR3);
+      else if (state.topology === 'single') measuredR = effR3;
+      else measuredR = effR1 + (effR2 * effR3) / (effR2 + effR3);
     }
 
     if (measuredR !== null) {

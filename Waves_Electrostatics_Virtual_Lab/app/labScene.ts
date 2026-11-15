@@ -15,6 +15,7 @@ import { addAnchorMarkers, createReplaceableEquipment } from './equipmentAssets'
 import { EQUIPMENT_REGISTRY } from './equipmentRegistry';
 import { ROOM2_COLLISION, ROOM2_CONFIG } from './labSceneConfig';
 import { CharacterController, type CharacterType } from './characterController';
+import { getEffectivePixelRatio, isMobileTouchDevice } from './graphicsSettings';
 
 export type LabSceneApi = {
   dispose: () => void;
@@ -241,11 +242,16 @@ export function createLabScene(
   };
   updateCamera();
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.7));
+  const mobileTouch = isMobileTouchDevice();
+  const renderer = new THREE.WebGLRenderer({
+    antialias: !mobileTouch || (window.devicePixelRatio || 1) < 2,
+    powerPreference: 'high-performance',
+  });
+  renderer.setPixelRatio(getEffectivePixelRatio(1.7));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = mobileTouch ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.domElement.style.touchAction = 'none';
   container.appendChild(renderer.domElement);
 
   const interactables: THREE.Object3D[] = [];
@@ -1274,6 +1280,9 @@ export function createLabScene(
   const keyLight = new THREE.DirectionalLight(0xffffff, 2.05);
   keyLight.position.set(5, 10, 8);
   keyLight.castShadow = true;
+  if (mobileTouch) {
+    keyLight.shadow.mapSize.set(512, 512);
+  }
   scene.add(keyLight);
   const stationLight = new THREE.PointLight(STATION_COLOR.wave, 22, 14, 2);
   stationLight.position.set(STATION_X.wave, 4.4, 2);
@@ -4067,12 +4076,15 @@ export function createLabScene(
 
   const onPointerDown = (event: PointerEvent) => {
     if (event.pointerType === 'touch') {
+      if (touchLooking && touchPointerId !== event.pointerId) return;
       touchLooking = true;
       touchPointerId = event.pointerId;
       lastX = event.clientX;
       lastY = event.clientY;
       touchTravel = 0;
-      renderer.domElement.setPointerCapture(event.pointerId);
+      try {
+        renderer.domElement.setPointerCapture(event.pointerId);
+      } catch {}
       return;
     }
     if (event.button !== 0) return;
@@ -4080,7 +4092,7 @@ export function createLabScene(
       // A normal click should still operate an apparatus in embedded previews
       // where the browser refuses pointer lock. If the click missed, fall back
       // to requesting walk mode for mouse-look and keyboard movement.
-      if (!interactAtScreenPoint(event.clientX, event.clientY)) {
+      if (!interactAtScreenPoint(event.clientX, event.clientY) && !isMobileTouchDevice()) {
         const lockRequest = renderer.domElement.requestPointerLock();
         if (lockRequest && typeof (lockRequest as Promise<void>).catch === 'function') void (lockRequest as Promise<void>).catch(() => callbacks.onPointerLockChange?.(false));
       }
@@ -4118,7 +4130,10 @@ export function createLabScene(
   };
   const onPointerUp = (event: PointerEvent) => {
     if (event.pointerId !== touchPointerId) return;
-    if (touchTravel < 10) interactAtScreenPoint(event.clientX, event.clientY);
+    try {
+      renderer.domElement.releasePointerCapture(event.pointerId);
+    } catch {}
+    if (event.type === 'pointerup' && touchTravel < 18) interactAtScreenPoint(event.clientX, event.clientY);
     touchLooking = false;
     touchPointerId = -1;
   };
@@ -4517,6 +4532,7 @@ export function createLabScene(
       playDoorSound(true);
     },
     requestPointerLock: () => {
+      if (isMobileTouchDevice()) return;
       const lockRequest = renderer.domElement.requestPointerLock();
       if (lockRequest && typeof (lockRequest as Promise<void>).catch === 'function') void (lockRequest as Promise<void>).catch(() => callbacks.onPointerLockChange?.(false));
     },

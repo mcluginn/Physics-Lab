@@ -1,10 +1,19 @@
 import * as THREE from 'three';
+import { applyMadaraGait, buildMadaraSkeletonAndSkin, type MadaraRigHandles } from './madaraRig';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 
-export type CharacterType = 'female' | 'male';
+export type CharacterType = 'female' | 'male' | 'madara';
+
+export const CHARACTER_META: Record<CharacterType, { name: string; label: string; shortBadge: string }> = {
+  female: { name: 'Carla', label: 'Female (Carla)', shortBadge: '👩 CARLA' },
+  male: { name: 'Eric', label: 'Male (Eric)', shortBadge: '👨 ERIC' },
+  madara: { name: 'Madara', label: 'Madara Uchiha', shortBadge: '👁️ MADARA' },
+};
 
 export function normalizeCharacterType(val: string | null | undefined): CharacterType {
   if (val === 'male' || val === 'eric') return 'male';
+  if (val === 'madara' || val === 'uchiha') return 'madara';
   return 'female';
 }
 
@@ -42,9 +51,13 @@ export class CharacterController {
   private walkWeight = 0;
   private sprintWeight = 0;
 
-  // Rigged actors
+  // Rigged & custom actors
   private femaleActor: RiggedActor;
   private maleActor: RiggedActor;
+  private madaraActor: RiggedActor;
+  private madaraModelGroup: THREE.Group | null = null;
+  private madaraRig: MadaraRigHandles | null = null;
+  private disposed = false;
 
   // Third-person camera tuning
   private cameraDistance = 2.15;
@@ -105,9 +118,24 @@ export class CharacterController {
       restPositions: {},
     };
 
+    // Madara container (Madara Uchiha)
+    const madaraGroup = new THREE.Group();
+    madaraGroup.name = 'Character_Madara_Uchiha';
+    madaraGroup.visible = this.activeCharacter === 'madara' && this.isThirdPerson;
+    this.root.add(madaraGroup);
+    this.madaraActor = {
+      gender: 'madara',
+      group: madaraGroup,
+      loaded: false,
+      bones: {},
+      restQuats: {},
+      restPositions: {},
+    };
+
     if (this.allowThirdPerson) {
       this.loadFemaleModel(options.onLoaded);
       this.loadMaleModel(options.onLoaded);
+      this.loadMadaraModel(options.onLoaded);
     }
   }
 
@@ -135,6 +163,7 @@ export class CharacterController {
     fbxLoader.load(
       '/assets/rp_carla_rigged_001_yup_a.fbx',
       (fbx) => {
+        if (this.disposed) return;
         // Compute bounding box and auto-scale to realistic 1.68m female height
         const box = new THREE.Box3().setFromObject(fbx);
         const rawHeight = Math.max(0.1, box.max.y - box.min.y);
@@ -196,6 +225,7 @@ export class CharacterController {
     fbxLoader.load(
       '/assets/rp_eric_rigged_001_yup_a.fbx',
       (fbx) => {
+        if (this.disposed) return;
         // Auto-scale to 1.80m male height
         const box = new THREE.Box3().setFromObject(fbx);
         const rawHeight = Math.max(0.1, box.max.y - box.min.y);
@@ -230,6 +260,87 @@ export class CharacterController {
       },
       undefined,
       (err) => console.error('Error loading Eric (Male) model:', err)
+    );
+  }
+
+  /**
+   * Load and configure Madara Uchiha static OBJ model with Sharingan & armor textures
+   */
+  private loadMadaraModel(onLoaded?: () => void) {
+    const objLoader = new OBJLoader();
+    const textureLoader = new THREE.TextureLoader();
+
+    const bodyMap = textureLoader.load('/assets/madara/_Madara_texture_main_mAIN.png');
+    bodyMap.colorSpace = THREE.SRGBColorSpace;
+    bodyMap.flipY = true;
+
+    const eyesMap = textureLoader.load('/assets/madara/Sharingan_texture.jpg');
+    eyesMap.colorSpace = THREE.SRGBColorSpace;
+    eyesMap.flipY = true;
+
+    const bodyMaterial = new THREE.MeshStandardMaterial({
+      map: bodyMap,
+      roughness: 0.72,
+      metalness: 0.14,
+      side: THREE.DoubleSide,
+    });
+
+    const eyesMaterial = new THREE.MeshStandardMaterial({
+      map: eyesMap,
+      roughness: 0.35,
+      metalness: 0.05,
+      emissive: new THREE.Color(0x991b1b),
+      emissiveMap: eyesMap,
+      emissiveIntensity: 0.45,
+      side: THREE.DoubleSide,
+    });
+
+    objLoader.load(
+      '/assets/madara/Madara_Uchiha.obj',
+      (obj) => {
+        if (this.disposed) return;
+        const toRemove: THREE.Object3D[] = [];
+        obj.traverse((child) => {
+          const lowerName = (child.name || '').toLowerCase();
+          if (lowerName.includes('sphere_for_copying_normals')) {
+            toRemove.push(child);
+            return;
+          }
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            const assignMat = (srcMat: THREE.Material): THREE.Material => {
+              const matName = (srcMat.name || '').toLowerCase();
+              return matName.includes('eye') ? eyesMaterial : bodyMaterial;
+            };
+            if (Array.isArray(mesh.material)) {
+              mesh.material = mesh.material.map(assignMat);
+            } else if (mesh.material) {
+              mesh.material = assignMat(mesh.material);
+            } else {
+              mesh.material = bodyMaterial;
+            }
+          }
+        });
+        toRemove.forEach((n) => n.parent?.remove(n));
+
+        // Articulate Madara_Uchiha.obj as a SkinnedMesh skeleton, relax arms down, and ground sandals
+        this.madaraRig = buildMadaraSkeletonAndSkin(obj);
+
+        const pivot = new THREE.Group();
+        pivot.name = 'Madara_Locomotion_Pivot';
+        pivot.add(obj);
+
+        this.madaraModelGroup = pivot;
+        this.madaraActor.group.add(pivot);
+        this.madaraActor.loaded = true;
+        this.updateMadaraLocomotion(0);
+        this.syncVisibility();
+        onLoaded?.();
+      },
+      undefined,
+      (err) => console.error('Error loading Madara Uchiha model:', err)
     );
   }
 
@@ -277,6 +388,7 @@ export class CharacterController {
     this.root.visible = true;
     this.femaleActor.group.visible = this.activeCharacter === 'female';
     this.maleActor.group.visible = this.activeCharacter === 'male';
+    this.madaraActor.group.visible = this.activeCharacter === 'madara';
   }
 
   public setCharacter(type: CharacterType) {
@@ -289,7 +401,9 @@ export class CharacterController {
   }
 
   public switchCharacter(): CharacterType {
-    const next: CharacterType = this.activeCharacter === 'female' ? 'male' : 'female';
+    const order: CharacterType[] = ['female', 'male', 'madara'];
+    const idx = order.indexOf(this.activeCharacter);
+    const next: CharacterType = order[(idx + 1) % order.length];
     this.setCharacter(next);
     return next;
   }
@@ -362,9 +476,15 @@ export class CharacterController {
     }
 
     // Update active actor locomotion
-    const currentActor = isFemale ? this.femaleActor : this.maleActor;
-    if (currentActor.loaded) {
-      this.updateActorLocomotion(currentActor, time);
+    if (this.activeCharacter === 'madara') {
+      if (this.madaraActor.loaded) {
+        this.updateMadaraLocomotion(time);
+      }
+    } else {
+      const currentActor = isFemale ? this.femaleActor : this.maleActor;
+      if (currentActor.loaded) {
+        this.updateActorLocomotion(currentActor, time);
+      }
     }
 
     // Update camera position
@@ -598,15 +718,74 @@ export class CharacterController {
     }
   }
 
+  /**
+   * Drives Madara's procedurally rigged skeleton with the same bipedal walk/sprint
+   * kinematics and idle breathing used for Carla and Eric.
+   */
+  private updateMadaraLocomotion(time: number) {
+    if (!this.madaraRig) return;
+    if (this.madaraModelGroup) {
+      this.madaraModelGroup.position.set(0, 0, 0);
+      this.madaraModelGroup.rotation.set(0, 0, 0);
+    }
+
+    const phi = ((this.walkCycle / (Math.PI * 2)) % 1.0 + 1.0) % 1.0;
+    const leftPhi = phi;
+    const rightPhi = (phi + 0.5) % 1.0;
+    const sprint = this.sprintWeight;
+    const walk = this.walkWeight;
+
+    const leftLeg = this.calculateLegKinematics(leftPhi, false, sprint);
+    const rightLeg = this.calculateLegKinematics(rightPhi, false, sprint);
+
+    const bobMeters = 0.038 * (1.0 + sprint * 0.35) * walk;
+    const bobDropMeters = (1 + Math.cos(4 * Math.PI * phi)) * 0.5 * bobMeters;
+    const swayMeters = Math.sin(2 * Math.PI * phi) * 0.017 * (1.0 - sprint * 0.20) * walk;
+
+    const pelvisYaw = -Math.cos(2 * Math.PI * phi) * 0.055 * walk;
+    const pelvisRoll = Math.sin(2 * Math.PI * phi) * 0.024 * walk;
+    const spineCounterYaw = -pelvisYaw * 0.75;
+    const breath = Math.sin(time * 2.2) * 0.015 * (1.0 - walk * 0.7);
+    const spinePitch = (0.04 + sprint * 0.045) * walk + breath;
+
+    const armSwingAngle = THREE.MathUtils.lerp(0.50, 0.68, sprint) * walk;
+    const leftArmForward = -Math.cos(2 * Math.PI * phi) * armSwingAngle;
+    const rightArmForward = Math.cos(2 * Math.PI * phi) * armSwingAngle;
+
+    applyMadaraGait(this.madaraRig, {
+      moveWeight: walk,
+      sprintWeight: sprint,
+      hipBobMeters: -bobDropMeters + Math.sin(time * 2.2) * 0.002 * (1.0 - walk),
+      hipSwayMeters: swayMeters,
+      pelvisYaw,
+      pelvisRoll,
+      pelvisPitch: 0.02 * walk,
+      spineCounterYaw,
+      spinePitch,
+      headCounterYaw: -spineCounterYaw * 0.65,
+      leftThighForward: leftLeg.thighZ * walk,
+      leftKneeFlex: -leftLeg.kneeZ * walk + 0.035 * (1.0 - walk),
+      leftAnkleDorsi: leftLeg.ankleZ * walk,
+      leftToeLift: leftLeg.ballZ * walk,
+      rightThighForward: rightLeg.thighZ * walk,
+      rightKneeFlex: -rightLeg.kneeZ * walk + 0.035 * (1.0 - walk),
+      rightAnkleDorsi: rightLeg.ankleZ * walk,
+      rightToeLift: rightLeg.ballZ * walk,
+      leftArmForward,
+      leftElbowFlex: 0.16 + Math.max(0, leftArmForward) * 0.85,
+      rightArmForward,
+      rightElbowFlex: 0.16 + Math.max(0, rightArmForward) * 0.85,
+    });
+  }
+
   public updateCamera(
     camera: THREE.Camera,
     playerPosition: THREE.Vector3,
     yaw: number,
     pitch: number
   ) {
-    const isFemale = this.activeCharacter === 'female';
-    const targetHeight = isFemale ? 1.40 : 1.48;
-    const eyeHeight = isFemale ? 1.56 : 1.70;
+    const targetHeight = this.activeCharacter === 'female' ? 1.40 : 1.48;
+    const eyeHeight = this.activeCharacter === 'female' ? 1.56 : 1.70;
 
     if (this.isThirdPerson) {
       this.syncVisibility();
@@ -640,6 +819,9 @@ export class CharacterController {
   }
 
   public dispose() {
+    this.disposed = true;
+    this.madaraRig?.skeleton.dispose();
+    this.madaraRig = null;
     this.scene.remove(this.root);
     this.root.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {

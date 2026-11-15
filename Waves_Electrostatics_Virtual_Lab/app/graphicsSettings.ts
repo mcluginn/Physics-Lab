@@ -58,13 +58,62 @@ export const GRAPHICS_PRESETS: Record<Exclude<GraphicsPreset, 'custom'>, Graphic
 
 export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = { ...GRAPHICS_PRESETS.high };
 
+export const MOBILE_AUTO_GRAPHICS_SETTINGS: GraphicsSettings = {
+  ...GRAPHICS_PRESETS.medium,
+  resolutionScale: 1.0,
+  shadows: 'low',
+  lightingQuality: 'medium',
+  antialiasing: false,
+  bloomAndAtmosphere: false,
+};
+
+export function isMobileTouchDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+  const fineHover = window.matchMedia?.('(pointer: fine) and (hover: hover)')?.matches ?? false;
+  const touchUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    window.navigator.userAgent || ''
+  );
+  return (
+    touchUa ||
+    (coarsePointer && !fineHover) ||
+    ((window.navigator.maxTouchPoints || 0) > 0 && Math.min(window.innerWidth, window.innerHeight) <= 950)
+  );
+}
+
+export function subscribeMobileTouch(callback: () => void): () => void {
+  if (typeof window === 'undefined' || !window.matchMedia) return () => {};
+  const mql = window.matchMedia('(pointer: coarse)');
+  mql.addEventListener?.('change', callback);
+  window.addEventListener('resize', callback);
+  return () => {
+    mql.removeEventListener?.('change', callback);
+    window.removeEventListener('resize', callback);
+  };
+}
+
+export function getRecommendedGraphicsSettings(): GraphicsSettings {
+  return isMobileTouchDevice()
+    ? { ...MOBILE_AUTO_GRAPHICS_SETTINGS }
+    : { ...DEFAULT_GRAPHICS_SETTINGS };
+}
+
+export function getEffectivePixelRatio(requestedScale = 1.5): number {
+  if (typeof window === 'undefined') return 1;
+  const rawDpr = window.devicePixelRatio || 1;
+  if (isMobileTouchDevice()) {
+    return Math.min(rawDpr, Math.min(requestedScale, 1.25));
+  }
+  return Math.min(rawDpr, requestedScale);
+}
+
 const STORAGE_KEY = 'room3_graphics_settings';
 
 export function loadGraphicsSettings(): GraphicsSettings {
   if (typeof window === 'undefined') return { ...DEFAULT_GRAPHICS_SETTINGS };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_GRAPHICS_SETTINGS };
+    if (!raw) return getRecommendedGraphicsSettings();
     const parsed = JSON.parse(raw);
     return {
       preset: parsed.preset || 'high',

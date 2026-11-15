@@ -536,20 +536,24 @@ export function evaluateStepPrerequisites(
     }
     if (stationId === 'optics') {
       const focalV = (optics.objectDistance * 20.0) / Math.max(0.1, optics.objectDistance - 20.0);
-      const isSharp = Math.abs(optics.screenDistance * 100 - focalV) < 8.0;
+      const screenPos = optics.screenPositionCm ?? 45.0;
+      const isSharp =
+        optics.subMode === 'imaging'
+          ? Math.abs(screenPos - focalV) <= 2.5
+          : Math.abs(optics.screenDistance * 100 - focalV) < 8.0;
       if (!isSharp) {
         return {
           canAdvance: false,
           reason: 'Image not in sharp focus on screen.',
           remainingTasks: ['Slide observation screen until image achieves sharp focus'],
-          feedback: '⚠️ Slide screen along track until image sharpness is maximized.',
+          feedback: `⚠️ Screen at v = ${screenPos.toFixed(1)} cm is out of focus. Slide the screen carriage in 3D or adjust Screen Position v until the reticle is razor-sharp.`,
         };
       }
       return {
         canAdvance: true,
         reason: 'Screen focusing procedure verified.',
         remainingTasks: [],
-        feedback: '✓ Image sharpness verified at focal plane.',
+        feedback: `✓ Image sharpness verified at focal plane (v = ${screenPos.toFixed(1)} cm).`,
       };
     }
     if (stationId === 'relativity') {
@@ -673,24 +677,75 @@ export function validateLiveExperimentForTrial(
       };
     }
 
-    // Require multimeter in series ammeter mode or legitimate sensing
-    let measuredV = circuits.vs * (1 + (Math.sin(trialNumber * 13.7) * 0.0015));
-    if (dmmMode === 'v_dc' && dmmJack === 'v_ohm' && dmmReading.value !== null && Math.abs(dmmReading.value) > 0.5) {
-      measuredV = Math.abs(dmmReading.value);
+    if (dmmReading.tripFuse || dmmReading.displayString === 'FUSE') {
+      return {
+        isValid: false,
+        feedback: 'BLOWN FUSE HAZARD! You connected the ammeter in parallel or overloaded it. Reset the DMM fuse and re-wire probes properly.',
+      };
     }
-    const reqTheor = 330.0;
-    let measuredI_mA = ((measuredV / reqTheor) * 1000) * (1 + (Math.cos(trialNumber * 11.3) * 0.0018));
-    if ((dmmMode === 'a_dc' || dmmMode === 'a_ac') && dmmJack === 'ma_10a' && dmmReading.value !== null && Math.abs(dmmReading.value) > 0.0001) {
-      measuredI_mA = Math.abs(dmmReading.value) * 1000;
+
+    const isAmmeterActive =
+      (dmmMode === 'a_dc' || dmmMode === 'a_ac') &&
+      dmmJack === 'ma_10a' &&
+      !jumperClosed &&
+      dmmReading.isValidMeasurement &&
+      dmmReading.value !== null &&
+      Math.abs(dmmReading.value) > 0.0005;
+
+    const isVoltmeterActive =
+      (dmmMode === 'v_dc' || dmmMode === 'v_ac') &&
+      dmmJack === 'v_ohm' &&
+      jumperClosed &&
+      dmmReading.isValidMeasurement &&
+      dmmReading.value !== null &&
+      Math.abs(dmmReading.value) > 0.3;
+
+    if (!redTerminal || !blackTerminal || (!isAmmeterActive && !isVoltmeterActive)) {
+      return {
+        isValid: false,
+        feedback:
+          '⚠️ No active DMM measurement! Pick up & place both Red and Black 3D probes on the breadboard (Ammeter across Series Break with Jumper OPEN, or Voltmeter across component/PSU with Jumper CLOSED) to take a live reading first.',
+      };
     }
+
+    const r1Eff = (circuits.r1 || 100.0) * 0.996;
+    const r2Eff = (circuits.r2 || 220.0) * 1.004;
+    const r3Eff = (circuits.r3 || 330.0) * 0.997;
+    const reqLoop =
+      circuits.topology === 'parallel'
+        ? 1 / (1 / r1Eff + 1 / r2Eff + 1 / r3Eff)
+        : r1Eff + r2Eff + r3Eff;
+
+    let measuredV = circuits.vs * (1 + Math.sin(trialNumber * 13.7) * 0.0015);
+    let measuredI_mA = 0;
+    let expectedR = r3Eff;
+
+    if (isAmmeterActive) {
+      measuredI_mA = Math.abs(dmmReading.value!) * 1000;
+      expectedR = reqLoop;
+    } else {
+      measuredV = Math.abs(dmmReading.value!);
+      const isR1Probe =
+        (redTerminal === 'R1_A' && blackTerminal === 'R1_B') ||
+        (redTerminal === 'R1_B' && blackTerminal === 'R1_A');
+      const isR2Probe =
+        (redTerminal === 'R2_A' && blackTerminal === 'R2_B') ||
+        (redTerminal === 'R2_B' && blackTerminal === 'R2_A');
+      const isR3Probe =
+        (redTerminal === 'R3_A' && blackTerminal === 'R3_B') ||
+        (redTerminal === 'R3_B' && blackTerminal === 'R3_A');
+      expectedR = isR1Probe ? r1Eff : isR2Probe ? r2Eff : isR3Probe ? r3Eff : reqLoop;
+      measuredI_mA = ((measuredV / expectedR) * 1000) * (1 + Math.cos(trialNumber * 11.3) * 0.0015);
+    }
+
     const measuredI_A = measuredI_mA / 1000;
     const powerW = measuredV * measuredI_A;
-    const resistance = measuredI_mA > 0 ? (measuredV * 1000) / measuredI_mA : reqTheor;
-    const percentError = Math.abs((resistance - reqTheor) / reqTheor) * 100;
+    const resistance = measuredI_mA > 0 ? (measuredV * 1000) / measuredI_mA : expectedR;
+    const percentError = Math.abs((resistance - expectedR) / expectedR) * 100;
 
     return {
       isValid: true,
-      feedback: `✓ Valid 3D Circuit Measurement: Vs = ${measuredV.toFixed(2)} V, I = ${measuredI_mA.toFixed(2)} mA.`,
+      feedback: `✓ Valid 3D Circuit Measurement: V = ${measuredV.toFixed(2)} V, I = ${measuredI_mA.toFixed(2)} mA.`,
       measuredData: {
         trial: trialNumber,
         vs: assignedCondition.targetValue,
@@ -698,7 +753,7 @@ export function validateLiveExperimentForTrial(
         measuredI_mA: Number(measuredI_mA.toFixed(2)),
         measuredI_A: Number(measuredI_A.toFixed(5)),
         resistance: Number(resistance.toFixed(1)),
-        expectedR: reqTheor,
+        expectedR: Number(expectedR.toFixed(1)),
         powerW: Number(powerW.toFixed(4)),
         percentError: Number(percentError.toFixed(2)),
         mode: circuits.mode.toUpperCase(),
@@ -717,11 +772,17 @@ export function validateLiveExperimentForTrial(
         feedback: 'Laser is OFF! Energize the laser source to observe image formation.',
       };
     }
+    if (optics.subMode !== 'imaging') {
+      return {
+        isValid: false,
+        feedback: 'Switch the Optics Bench sub-mode to Thin Lenses (imaging) to collect the 5-trial Gaussian lens dataset.',
+      };
+    }
     // Check object distance match
     if (Math.abs(optics.objectDistance - assignedCondition.targetValue) > 2.0) {
       return {
         isValid: false,
-        feedback: `Object Distance mismatch: Trial ${trialNumber} requires u = ${assignedCondition.targetValue.toFixed(1)} cm, but the object is positioned at ${optics.objectDistance.toFixed(1)} cm. Adjust the object slider.`,
+        feedback: `Object Distance mismatch: Trial ${trialNumber} requires u = ${assignedCondition.targetValue.toFixed(1)} cm, but the lens is positioned at u = ${optics.objectDistance.toFixed(1)} cm. Adjust Object Distance u.`,
       };
     }
     // Prevent duplicate trial
@@ -737,7 +798,15 @@ export function validateLiveExperimentForTrial(
 
     const u = assignedCondition.targetValue;
     const theorV = (u * 20.0) / (u - 20.0);
-    const measuredV = theorV * (1 + (Math.sin(trialNumber * 7.9) * 0.003));
+    const screenPos = optics.screenPositionCm ?? 45.0;
+    if (Math.abs(screenPos - theorV) > 2.2) {
+      return {
+        isValid: false,
+        feedback: `⚠️ Image is still blurry on the ground-glass screen (v = ${screenPos.toFixed(1)} cm). Slide Screen Position v until Focus Sharpness reaches sharp focus (≥ 85%) before recording!`,
+      };
+    }
+
+    const measuredV = screenPos;
     const invU = 1 / u;
     const invV = 1 / measuredV;
     const f_exp = (u * measuredV) / (u + measuredV);

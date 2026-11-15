@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   INITIAL_ELECTRO,
   INITIAL_SOUND,
@@ -28,8 +28,9 @@ import {
 } from './labModel';
 import { LabGraph, computeRegressionData } from './LabGraph';
 import { createLabScene, type EquipmentInteraction, type LabSceneApi } from './labScene';
+import { isMobileTouchDevice, subscribeMobileTouch } from './graphicsSettings';
 import { createLaboratoryPdf } from './pdfReport';
-import { type CharacterType } from './characterController';
+import { CHARACTER_META, type CharacterType } from './characterController';
 
 const STORAGE_KEY = 'waveElectroVirtualLabProgressV1';
 
@@ -215,6 +216,7 @@ export default function LabExperience() {
   const [soundVolume, setSoundVolume] = useState(0.7);
   const [joystickKnob, setJoystickKnob] = useState({ x: 0, y: 0 });
   const [mobilePanel, setMobilePanel] = useState<'none' | 'objective' | 'controls'>('none');
+  const isTouchDevice = useSyncExternalStore(subscribeMobileTouch, isMobileTouchDevice, () => false);
 
   const station = STATIONS[stationId];
   const stationProgress = progress[stationId];
@@ -336,8 +338,7 @@ export default function LabExperience() {
         const next = sceneApi.current?.switchCharacter();
         if (next) {
           setActiveCharacter(next);
-          const name = next === 'female' ? 'Female (Carla)' : 'Male (Eric)';
-          setEquipmentMessage(`Character: ${name} (Press C to switch)`);
+          setEquipmentMessage(`Character: ${CHARACTER_META[next].label} (Press C to switch)`);
           try {
             window.localStorage.setItem('physics_lab_character_preference', next);
           } catch {}
@@ -392,13 +393,21 @@ export default function LabExperience() {
   };
 
   const startJoystick = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (joystickPointerId.current !== null && joystickPointerId.current !== event.pointerId) return;
     joystickPointerId.current = event.pointerId;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {}
     moveJoystick(event);
   };
 
   const releaseJoystick = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (joystickPointerId.current !== event.pointerId) return;
+    event.preventDefault();
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {}
     joystickPointerId.current = null;
     sceneApi.current?.setMoveVector(0, 0);
     setJoystickKnob({ x: 0, y: 0 });
@@ -412,8 +421,11 @@ export default function LabExperience() {
 
   const returnToApparatus = (message: string) => {
     setNotebookOpen(false);
+    setMobilePanel('none');
     setEquipmentMessage(message);
-    sceneApi.current?.requestPointerLock();
+    if (!isMobileTouchDevice()) {
+      sceneApi.current?.requestPointerLock();
+    }
   };
 
   const completeStep = (step: number) => {
@@ -1831,7 +1843,7 @@ export default function LabExperience() {
           )}
         </div>
       )}
-      {!pointerLocked && !notebookOpen && (
+      {!pointerLocked && !notebookOpen && !isTouchDevice && (
         <button className="enter-walk-mode" onClick={() => sceneApi.current?.requestPointerLock()}>
           <b>ENTER WALK MODE</b><span>Click to capture the mouse · ESC releases it</span>
         </button>
@@ -1857,11 +1869,24 @@ export default function LabExperience() {
         </aside>
       )}
       {interaction && !notebookOpen && (
-        <aside className="mobile-target-card" aria-live="polite">
+        <aside
+          className="mobile-target-card"
+          aria-live="polite"
+          role="button"
+          tabIndex={0}
+          onClick={() => sceneApi.current?.interact()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              sceneApi.current?.interact();
+            }
+          }}
+          style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+        >
           <b>{interaction.name}</b>
           <p>{interaction.description}</p>
           <span>{interaction.readout}</span>
-          <small><kbd>E</kbd> {interaction.action}</small>
+          <small><kbd>TAP</kbd> {interaction.action}</small>
         </aside>
       )}
       {equipmentMessage && <div className="equipment-toast" role="status">{equipmentMessage}</div>}
@@ -2083,7 +2108,7 @@ export default function LabExperience() {
                 }}
                 title="Switch Character (Key C)"
               >
-                <span>{activeCharacter === 'female' ? '👩 CARLA' : '👨 ERIC'}</span>
+                <span>{CHARACTER_META[activeCharacter].shortBadge}</span>
               </button>
               <button
                 type="button"

@@ -64,6 +64,7 @@ export type OpticsSettings = {
   theta1: number; // Incident angle in degrees (0.0 - 89.0 deg)
   focalLength: number; // cm (-50.0 to +50.0 cm)
   objectDistance: number; // cm (5.0 to 200.0 cm)
+  screenPositionCm?: number; // cm (15.0 to 120.0 cm along optical rail for imaging mode)
   slitWidth: number; // mm (0.01 to 0.50 mm)
   slitSeparation: number; // mm (0.05 to 2.00 mm)
   screenDistance: number; // m (0.50 to 5.00 m)
@@ -102,14 +103,14 @@ export const MASS_PRESETS: Record<RelativitySettings['massPreset'], { name: stri
 export const INITIAL_CIRCUITS: CircuitSettings = {
   mode: 'dc',
   topology: 'series',
-  vs: 24.0,
+  vs: 0.0,
   freq: 120.0, // 120 Hz: off-resonance (f0 ≈ 60 Hz) so XL and XC are unmasked
   r1: 100.0,
   r2: 220.0,
   r3: 330.0,
   inductance: 150.0, // 150 mH
   capacitance: 47.0, // 47 uF
-  powerOn: true,
+  powerOn: false,
 };
 
 export const INITIAL_OPTICS: OpticsSettings = {
@@ -119,11 +120,12 @@ export const INITIAL_OPTICS: OpticsSettings = {
   n2: 1.52, // Crown Glass baseline
   theta1: 30.0, // 30 degrees
   focalLength: 20.0, // +20 cm Converging Lens
-  objectDistance: 40.0, // 40 cm
+  objectDistance: 50.0, // 50 cm initial baseline so Step 5 guides to 2f = 40 cm
+  screenPositionCm: 55.0, // 55.0 cm initial screen carriage position along rail
   slitWidth: 0.08, // 0.08 mm
   slitSeparation: 0.25, // 0.25 mm
   screenDistance: 2.00, // 2.00 m
-  powerOn: true,
+  powerOn: false,
 };
 
 export const INITIAL_RELATIVITY: RelativitySettings = {
@@ -278,6 +280,9 @@ export type OpticsResult = {
   imageType: 'Real' | 'Virtual' | 'At Infinity';
   imageOrientation: 'Inverted' | 'Upright' | 'None';
   imageScale: 'Magnified' | 'Diminished' | 'Same size' | 'Infinite';
+  screenPositionCm: number;
+  focusSharpness: number; // 0 to 100 %
+  defocusBlurPx: number; // 0 to 18 px
   fringeSpacingMm: number;
   firstMaxPosMm: number;
   centralMaxMm: number;
@@ -383,6 +388,15 @@ export function calculateOptics(settings: OpticsSettings): OpticsResult {
     imageScale = absM > 1.05 ? 'Magnified' : absM < 0.95 ? 'Diminished' : 'Same size';
   }
 
+  const screenPositionCm = settings.screenPositionCm ?? 45.0;
+  let focusSharpness = 0;
+  let defocusBlurPx = 16;
+  if (imageDistanceCm !== null && imageDistanceCm > 0 && Number.isFinite(imageDistanceCm)) {
+    const focusErrorCm = Math.abs(screenPositionCm - imageDistanceCm);
+    focusSharpness = Number((Math.exp(-Math.pow(focusErrorCm / 4.2, 2)) * 100).toFixed(1));
+    defocusBlurPx = Number(Math.min(18, focusErrorCm * 1.35).toFixed(2));
+  }
+
   // 3. Diffraction & Interference
   const lambdaM = wavelength * 1e-9; // m
   const dM = Math.max(1e-6, slitSeparation * 1e-3); // m
@@ -410,6 +424,9 @@ export function calculateOptics(settings: OpticsSettings): OpticsResult {
     imageType,
     imageOrientation,
     imageScale,
+    screenPositionCm,
+    focusSharpness,
+    defocusBlurPx,
     fringeSpacingMm,
     firstMaxPosMm,
     centralMaxMm,
@@ -680,7 +697,7 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
       { title: 'Observations, Scientific Interpretation & Conclusion', prompt: 'Record optical observations of image distance, inversion, and focal behavior, interpret findings via Gaussian thin lens theory, and formulate a Claim–Evidence–Reasoning scientific conclusion.', target: 'Complete observations and submit Claim–Evidence–Reasoning conclusion.' },
     ],
     prediction: {
-      question: 'When light travels from an optically denser medium to a less dense medium (n₁ > n₂) at an incident angle exceeding the critical angle (θ₁ > θ_c), what optical phenomenon occurs?',
+      question: 'When light travels from an optically denser medium to a less dense medium (n₁ > n₂) at an incident angle exceeding the critical angle (θ₁ > θc), what optical phenomenon occurs?',
       options: [
         'The refracted beam travels along the normal at exactly 0° with zero deflection.',
         'Total Internal Reflection (TIR), where 100% of incident light reflects internally because sin θ₂ > 1 has no real solution in Snell\'s Law.',
@@ -688,7 +705,7 @@ export const ROOM3_STATIONS: Record<Room3StationId, StationDefinition> = {
         'Frequency doubling where light re-radiates at half its incident wavelength.',
       ],
       answer: 1,
-      explanation: 'According to Snell\'s Law (n₁ sin θ₁ = n₂ sin θ₂), when light propagates from a denser medium into a less dense medium (n₁ > n₂) and incident angle θ₁ exceeds the critical angle θ_c = arcsin(n₂/n₁), the required value for sin θ₂ exceeds 1.0. Because sin θ₂ > 1 has no real solution, refraction cannot occur and 100% of incident light undergoes Total Internal Reflection (TIR), perfectly conserving optical energy.',
+      explanation: 'According to Snell\'s Law (n₁ sin θ₁ = n₂ sin θ₂), when light propagates from a denser medium into a less dense medium (n₁ > n₂) and incident angle θ₁ exceeds the critical angle θc = arcsin(n₂/n₁), the required value for sin θ₂ exceeds 1.0. Because sin θ₂ > 1 has no real solution, refraction cannot occur and 100% of incident light undergoes Total Internal Reflection (TIR), perfectly conserving optical energy.',
     },
     errors: [
       'Diffraction spreading and finite beam divergence of the laser diode',
@@ -751,8 +768,8 @@ export const TRIAL_COLUMNS: Record<Room3StationId, Array<{ key: string; label: s
     { key: 'measuredV', label: 'Measured V (V)' },
     { key: 'measuredI_mA', label: 'Current (mA)' },
     { key: 'measuredI_A', label: 'Current (A)' },
-    { key: 'resistance', label: 'R_exp (Ω)' },
-    { key: 'expectedR', label: 'R_theor (Ω)' },
+    { key: 'resistance', label: 'Rexp (Ω)' },
+    { key: 'expectedR', label: 'Rtheor (Ω)' },
     { key: 'percentError', label: '% Error' },
   ],
   optics: [
@@ -761,8 +778,8 @@ export const TRIAL_COLUMNS: Record<Room3StationId, Array<{ key: string; label: s
     { key: 'v', label: 'Image v (cm)' },
     { key: 'invU', label: '1/u (cm⁻¹)' },
     { key: 'invV', label: '1/v (cm⁻¹)' },
-    { key: 'f_exp', label: 'f_exp (cm)' },
-    { key: 'f_nom', label: 'f_nom (cm)' },
+    { key: 'f_exp', label: 'fexp (cm)' },
+    { key: 'f_nom', label: 'fnom (cm)' },
     { key: 'percentError', label: '% Error' },
   ],
   relativity: [
@@ -790,25 +807,25 @@ export type AssignedTrialCondition = {
 
 export const ROOM3_ASSIGNED_TRIALS: Record<Room3StationId, AssignedTrialCondition[]> = {
   circuits: [
-    { trialIndex: 0, label: 'Trial 1', targetParam: 'Vs', targetValue: 2.0, unit: 'V', expectedSecondary: 6.06, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 2.0 V. Measure potential difference across nominal 330 Ω resistor and insert ammeter in series to measure loop current (expected: 6.06 mA, 0.0121 W).' },
-    { trialIndex: 1, label: 'Trial 2', targetParam: 'Vs', targetValue: 4.0, unit: 'V', expectedSecondary: 12.12, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 4.0 V. Measure potential difference across nominal 330 Ω resistor and insert ammeter in series to measure loop current (expected: 12.12 mA, 0.0485 W).' },
-    { trialIndex: 2, label: 'Trial 3', targetParam: 'Vs', targetValue: 6.0, unit: 'V', expectedSecondary: 18.18, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 6.0 V. Measure potential difference across nominal 330 Ω resistor and insert ammeter in series to measure loop current (expected: 18.18 mA, 0.1091 W).' },
-    { trialIndex: 3, label: 'Trial 4', targetParam: 'Vs', targetValue: 8.0, unit: 'V', expectedSecondary: 24.24, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 8.0 V. Measure potential difference across nominal 330 Ω resistor and insert ammeter in series to measure loop current (expected: 24.24 mA, 0.1939 W).' },
-    { trialIndex: 4, label: 'Trial 5', targetParam: 'Vs', targetValue: 10.0, unit: 'V', expectedSecondary: 30.30, secondaryUnit: 'mA', instruction: 'Set DC Power Supply to 10.0 V. Measure potential difference across nominal 330 Ω resistor and insert ammeter in series to measure loop current (expected: 30.30 mA, 0.3030 W).' },
+    { trialIndex: 0, label: 'Trial 1', targetParam: 'Vs', targetValue: 2.0, unit: 'V', expectedSecondary: 6.06, secondaryUnit: 'mA', instruction: 'Dial the 3D DC Power Supply knob to 2.0 V. Probe potential difference across R3 or insert the multimeter in series at the opened break to read loop current on the 3D LCD.' },
+    { trialIndex: 1, label: 'Trial 2', targetParam: 'Vs', targetValue: 4.0, unit: 'V', expectedSecondary: 12.12, secondaryUnit: 'mA', instruction: 'Dial the 3D DC Power Supply knob to 4.0 V. Read the live voltage/current from the 3D multimeter display before logging.' },
+    { trialIndex: 2, label: 'Trial 3', targetParam: 'Vs', targetValue: 6.0, unit: 'V', expectedSecondary: 18.18, secondaryUnit: 'mA', instruction: 'Dial the 3D DC Power Supply knob to 6.0 V. Verify steady-state 3D multimeter reading across the circuit before recording.' },
+    { trialIndex: 3, label: 'Trial 4', targetParam: 'Vs', targetValue: 8.0, unit: 'V', expectedSecondary: 24.24, secondaryUnit: 'mA', instruction: 'Dial the 3D DC Power Supply knob to 8.0 V. Measure and observe the live potential and current changes on the 3D bench instruments.' },
+    { trialIndex: 4, label: 'Trial 5', targetParam: 'Vs', targetValue: 10.0, unit: 'V', expectedSecondary: 30.30, secondaryUnit: 'mA', instruction: 'Dial the 3D DC Power Supply knob to 10.0 V. Obtain your fifth live multimeter measurement to complete the empirical dataset.' },
   ],
   optics: [
-    { trialIndex: 0, label: 'Trial 1', targetParam: 'u', targetValue: 30.0, unit: 'cm', expectedSecondary: 60.00, secondaryUnit: 'cm', instruction: 'Position object lamp at u = 30.0 cm. Slide observation screen until image achieves sharp focus (v ≈ 60.0 cm).' },
-    { trialIndex: 1, label: 'Trial 2', targetParam: 'u', targetValue: 35.0, unit: 'cm', expectedSecondary: 46.67, secondaryUnit: 'cm', instruction: 'Position object lamp at u = 35.0 cm. Slide observation screen until image achieves sharp focus (v ≈ 46.7 cm).' },
-    { trialIndex: 2, label: 'Trial 3', targetParam: 'u', targetValue: 40.0, unit: 'cm', expectedSecondary: 40.00, secondaryUnit: 'cm', instruction: 'Position object lamp at u = 40.0 cm (2f). Slide observation screen until image achieves sharp focus (v = 40.0 cm, M = -1.0×).' },
-    { trialIndex: 3, label: 'Trial 4', targetParam: 'u', targetValue: 50.0, unit: 'cm', expectedSecondary: 33.33, secondaryUnit: 'cm', instruction: 'Position object lamp at u = 50.0 cm. Slide observation screen until image achieves sharp focus (v ≈ 33.3 cm).' },
-    { trialIndex: 4, label: 'Trial 5', targetParam: 'u', targetValue: 60.0, unit: 'cm', expectedSecondary: 30.00, secondaryUnit: 'cm', instruction: 'Position object lamp at u = 60.0 cm (3f). Slide observation screen until image achieves sharp focus (v = 30.0 cm).' },
+    { trialIndex: 0, label: 'Trial 1', targetParam: 'u', targetValue: 30.0, unit: 'cm', expectedSecondary: 60.00, secondaryUnit: 'cm', instruction: 'Slide the object stage to u = 30.0 cm. Scroll or slide the 3D Observation Screen carriage along the rail until the projected reticle reaches sharp focus (≥ 85%).' },
+    { trialIndex: 1, label: 'Trial 2', targetParam: 'u', targetValue: 35.0, unit: 'cm', expectedSecondary: 46.67, secondaryUnit: 'cm', instruction: 'Position the object stage at u = 35.0 cm. Slide the 3D Observation Screen carriage until the inverted reticle comes into sharp focus.' },
+    { trialIndex: 2, label: 'Trial 3', targetParam: 'u', targetValue: 40.0, unit: 'cm', expectedSecondary: 40.00, secondaryUnit: 'cm', instruction: 'Position the object stage at u = 40.0 cm (2f). Slide the 3D Observation Screen until sharp focus is achieved on the vernier screen.' },
+    { trialIndex: 3, label: 'Trial 4', targetParam: 'u', targetValue: 50.0, unit: 'cm', expectedSecondary: 33.33, secondaryUnit: 'cm', instruction: 'Position the object stage at u = 50.0 cm. Slide the 3D Observation Screen carriage toward the lens until sharp focus is restored.' },
+    { trialIndex: 4, label: 'Trial 5', targetParam: 'u', targetValue: 60.0, unit: 'cm', expectedSecondary: 30.00, secondaryUnit: 'cm', instruction: 'Position the object stage at u = 60.0 cm (3f). Adjust the 3D Observation Screen to sharp focus and log the fifth image distance.' },
   ],
   relativity: [
-    { trialIndex: 0, label: 'Run 1', targetParam: 'β', targetValue: 0.10, unit: 'c', expectedSecondary: 1.0050, secondaryUnit: 'γ', instruction: 'Set relative velocity to β = 0.10c. Measure simulated dilated time (Δt = 6.705 ns) and contracted length (L = 9.950 m).' },
-    { trialIndex: 1, label: 'Run 2', targetParam: 'β', targetValue: 0.30, unit: 'c', expectedSecondary: 1.0483, secondaryUnit: 'γ', instruction: 'Set relative velocity to β = 0.30c. Measure simulated dilated time (Δt = 6.993 ns) and contracted length (L = 9.539 m).' },
-    { trialIndex: 2, label: 'Run 3', targetParam: 'β', targetValue: 0.50, unit: 'c', expectedSecondary: 1.1547, secondaryUnit: 'γ', instruction: 'Set relative velocity to β = 0.50c. Measure simulated dilated time (Δt = 7.703 ns) and contracted length (L = 8.660 m).' },
-    { trialIndex: 3, label: 'Run 4', targetParam: 'β', targetValue: 0.70, unit: 'c', expectedSecondary: 1.4003, secondaryUnit: 'γ', instruction: 'Set relative velocity to β = 0.70c. Measure simulated dilated time (Δt = 9.342 ns) and contracted length (L = 7.141 m).' },
-    { trialIndex: 4, label: 'Run 5', targetParam: 'β', targetValue: 0.90, unit: 'c', expectedSecondary: 2.2942, secondaryUnit: 'γ', instruction: 'Set relative velocity to β = 0.90c. Measure simulated dilated time (Δt = 15.305 ns) and contracted length (L = 4.359 m).' },
+    { trialIndex: 0, label: 'Run 1', targetParam: 'β', targetValue: 0.10, unit: 'c', expectedSecondary: 1.0050, secondaryUnit: 'γ', instruction: 'Set the 3D sled velocity dial to β = 0.10c with simulation active. Observe the photon clock tick and contracted rod in Frame S vs S\' before logging Run 1.' },
+    { trialIndex: 1, label: 'Run 2', targetParam: 'β', targetValue: 0.30, unit: 'c', expectedSecondary: 1.0483, secondaryUnit: 'γ', instruction: 'Dial relative velocity to β = 0.30c. Observe the diagonal photon bounce extension on the 3D bench and record simulated Run 2.' },
+    { trialIndex: 2, label: 'Run 3', targetParam: 'β', targetValue: 0.50, unit: 'c', expectedSecondary: 1.1547, secondaryUnit: 'γ', instruction: 'Dial relative velocity to β = 0.50c. Inspect the telemetry console readout for time dilation and rod contraction, then record Run 3.' },
+    { trialIndex: 3, label: 'Run 4', targetParam: 'β', targetValue: 0.70, unit: 'c', expectedSecondary: 1.4003, secondaryUnit: 'γ', instruction: 'Dial relative velocity to β = 0.70c. Observe stronger beamline length contraction between the laser gates and record Run 4.' },
+    { trialIndex: 4, label: 'Run 5', targetParam: 'β', targetValue: 0.90, unit: 'c', expectedSecondary: 2.2942, secondaryUnit: 'γ', instruction: 'Dial relative velocity to β = 0.90c. Observe extreme clock dilation and contracted rod length on the 3D sled and log Run 5.' },
   ],
 };
 
