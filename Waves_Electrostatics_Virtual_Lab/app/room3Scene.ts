@@ -2390,7 +2390,7 @@ export function createRoom3Scene(
           data[idx4] = 48;
           data[idx4 + 1] = 6;
           data[idx4 + 2] = 12;
-          data[idx4 + 3] = 255;
+          data[idx4 + 3] = 0;
           continue;
         }
 
@@ -2462,11 +2462,16 @@ export function createRoom3Scene(
           }
         }
 
-        const inkKeep = 1.0 - Math.min(1, ink) * 0.94;
+        const clampedInk = Math.min(1, ink);
+        const inkKeep = 1.0 - clampedInk * 0.94;
+        // Translucent crimson spell-glaze lets the underlying NASA crater texture shine through,
+        // while keeping the Rinne Sharingan pupil, rings, and tomoe crisp.
+        const baseRedAlpha = 0.28 + 0.14 * Math.pow(Math.max(0, nx), 0.5);
+        const combinedAlpha = Math.min(0.88, baseRedAlpha + clampedInk * (0.86 - baseRedAlpha));
         data[idx4] = Math.max(8, Math.min(255, Math.round(rCol * inkKeep)));
         data[idx4 + 1] = Math.max(4, Math.min(255, Math.round(gCol * inkKeep)));
         data[idx4 + 2] = Math.max(8, Math.min(255, Math.round(bCol * inkKeep)));
-        data[idx4 + 3] = 255;
+        data[idx4 + 3] = Math.round(combinedAlpha * 255);
       }
     }
 
@@ -2486,7 +2491,9 @@ export function createRoom3Scene(
     metalness: 0.05,
     emissive: new THREE.Color(0xff1e2d),
     emissiveMap: tsukuyomiTex,
-    emissiveIntensity: 0.85,
+    emissiveIntensity: 0.42,
+    transparent: true,
+    depthWrite: false,
     fog: false,
   });
 
@@ -2501,12 +2508,12 @@ export function createRoom3Scene(
   tsukuyomiMoonGroup.add(tsukuyomiSpinGroup);
 
   const tsukuyomiSphere = new THREE.Mesh(
-    new THREE.SphereGeometry(20.6, 64, 64),
+    new THREE.SphereGeometry(20.85, 64, 64),
     tsukuyomiMaterial
   );
   // Rotate sphere +X center (u=0.5, v=0.5) onto lookAt +Z axis
   tsukuyomiSphere.rotation.y = -Math.PI / 2;
-  tsukuyomiSphere.renderOrder = 0;
+  tsukuyomiSphere.renderOrder = 1;
   tsukuyomiSpinGroup.add(tsukuyomiSphere);
 
   const createTsukuyomiCoronaTexture = () => {
@@ -2630,9 +2637,11 @@ export function createRoom3Scene(
 
   // Toggle Infinite Tsukuyomi lunar state & atmospheric moonlight when Madara Uchiha is active
   applyInfiniteTsukuyomiState = (active: boolean) => {
-    moonGroup.visible = !active;
+    moonGroup.visible = true;
     tsukuyomiMoonGroup.visible = active;
     if (active) {
+      moonMaterial.emissive.setHex(0xffc2c7);
+      moonMaterial.emissiveIntensity = 0.56;
       moonCoronaMat.map = tsukuyomiCoronaTex;
       moonCoronaMat.needsUpdate = true;
       moonCorona.scale.set(98.0, 98.0, 1.0);
@@ -2643,6 +2652,8 @@ export function createRoom3Scene(
       skylightGlassMat.color.setHex(0xfecaca);
       skylightGlassMat.opacity = 0.075;
     } else {
+      moonMaterial.emissive.setHex(0xf1f5f9);
+      moonMaterial.emissiveIntensity = 0.45;
       moonCoronaMat.map = normalMoonCoronaTex;
       moonCoronaMat.needsUpdate = true;
       moonCorona.scale.set(88.0, 88.0, 1.0);
