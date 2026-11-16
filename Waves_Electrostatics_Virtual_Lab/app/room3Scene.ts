@@ -2464,10 +2464,10 @@ export function createRoom3Scene(
 
         const clampedInk = Math.min(1, ink);
         const inkKeep = 1.0 - clampedInk * 0.94;
-        // Translucent crimson spell-glaze lets the underlying NASA crater texture shine through,
-        // while keeping the Rinne Sharingan pupil, rings, and tomoe crisp.
-        const baseRedAlpha = 0.28 + 0.14 * Math.pow(Math.max(0, nx), 0.5);
-        const combinedAlpha = Math.min(0.88, baseRedAlpha + clampedInk * (0.86 - baseRedAlpha));
+        // Nearly transparent red tint over clear lunar rock so 100% of the underlying 2K NASA craters
+        // remain razor-sharp, while keeping the Rinne Sharingan rings and tomoe clearly etched across the Moon.
+        const baseRedAlpha = 0.05 + 0.03 * Math.pow(Math.max(0, nx), 0.5);
+        const combinedAlpha = Math.min(0.84, baseRedAlpha + clampedInk * (0.82 - baseRedAlpha));
         data[idx4] = Math.max(8, Math.min(255, Math.round(rCol * inkKeep)));
         data[idx4 + 1] = Math.max(4, Math.min(255, Math.round(gCol * inkKeep)));
         data[idx4 + 2] = Math.max(8, Math.min(255, Math.round(bCol * inkKeep)));
@@ -2483,15 +2483,8 @@ export function createRoom3Scene(
   };
 
   const tsukuyomiTex = createInfiniteTsukuyomiTexture();
-  const tsukuyomiMaterial = new THREE.MeshStandardMaterial({
+  const tsukuyomiMaterial = new THREE.MeshBasicMaterial({
     map: tsukuyomiTex,
-    bumpMap: moonBumpMap,
-    bumpScale: 0.06,
-    roughness: 0.82,
-    metalness: 0.05,
-    emissive: new THREE.Color(0xff1e2d),
-    emissiveMap: tsukuyomiTex,
-    emissiveIntensity: 0.42,
     transparent: true,
     depthWrite: false,
     fog: false,
@@ -2640,8 +2633,9 @@ export function createRoom3Scene(
     moonGroup.visible = true;
     tsukuyomiMoonGroup.visible = active;
     if (active) {
-      moonMaterial.emissive.setHex(0xffc2c7);
-      moonMaterial.emissiveIntensity = 0.56;
+      moonMaterial.color.setHex(0xff3846);
+      moonMaterial.emissive.setHex(0xc81422);
+      moonMaterial.emissiveIntensity = 0.72;
       moonCoronaMat.map = tsukuyomiCoronaTex;
       moonCoronaMat.needsUpdate = true;
       moonCorona.scale.set(98.0, 98.0, 1.0);
@@ -2652,6 +2646,7 @@ export function createRoom3Scene(
       skylightGlassMat.color.setHex(0xfecaca);
       skylightGlassMat.opacity = 0.075;
     } else {
+      moonMaterial.color.setHex(0xffffff);
       moonMaterial.emissive.setHex(0xf1f5f9);
       moonMaterial.emissiveIntensity = 0.45;
       moonCoronaMat.map = normalMoonCoronaTex;
