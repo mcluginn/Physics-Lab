@@ -359,7 +359,7 @@ export function Room3Graph({
       <div className="lab-graph-header">
         <div className="graph-title-group">
           <span className="graph-badge" style={{ borderColor: `${accentColor}55`, color: accentColor }}>
-            PHYSICS 300 REGRESSION ENGINE
+            PHYSICS 2 REGRESSION ENGINE
           </span>
           <h4 className="graph-title">{title}</h4>
         </div>

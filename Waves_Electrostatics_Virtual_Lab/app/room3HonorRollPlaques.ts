@@ -221,7 +221,7 @@ function createHonorRollTexture(part: PlaquePart): THREE.CanvasTexture {
   ctx.restore();
 
   drawChiseledText(
-    'PHYSICS III LABORATORY  ·  ROOM 03',
+    'PHYSICS 2 LABORATORY  ·  ROOM 03',
     W / 2,
     246,
     'bold 48px "Cinzel", "Times New Roman", Georgia, serif',
@@ -267,8 +267,8 @@ function createHonorRollTexture(part: PlaquePart): THREE.CanvasTexture {
   const isPart1 = part === 'part1';
   const roster = isPart1 ? ROOM3_HONOR_ROLL_PART_1 : ROOM3_HONOR_ROLL_PART_2;
   const subLabel = isPart1
-    ? '✦   S E C T I O N   R O L L   I   ( A – H )   ·   20   S C H O L A R S   ✦'
-    : '✦   S E C T I O N   R O L L   I I   ( L – T )   ·   19   S C H O L A R S   ✦';
+    ? '✦   S E C T I O N   R O L L   I   ( A – H )   ✦'
+    : '✦   S E C T I O N   R O L L   I I   ( L – T )   ✦';
 
   drawChiseledText(
     subLabel,
@@ -472,8 +472,8 @@ export function buildRoom3HonorRollPlaques(
       category: 'CLASS ROLL OF HONOR',
       name: isPart1 ? 'Class Roll of Honor · Part I (Aberde – Hodrial)' : 'Class Roll of Honor · Part II (Lacorte – Talatala)',
       description: isPart1
-        ? `Engraved 24K gold on burled mahogany listing 20 Physics III students: ${ROOM3_HONOR_ROLL_PART_1.join(' · ')}`
-        : `Engraved 24K gold on burled mahogany listing 19 Physics III students: ${ROOM3_HONOR_ROLL_PART_2.join(' · ')}`,
+        ? `Engraved 24K gold on burled mahogany listing Physics 2 students: ${ROOM3_HONOR_ROLL_PART_1.join(' · ')}`
+        : `Engraved 24K gold on burled mahogany listing Physics 2 students: ${ROOM3_HONOR_ROLL_PART_2.join(' · ')}`,
       action: 'Inspect Commemorative Class Roll Plaque',
       readout: isPart1
         ? 'Students 01–20 · Aberde through Hodrial (UPHSD Room 03)'

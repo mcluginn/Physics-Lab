@@ -481,8 +481,8 @@ export default function Room3Experience() {
   const [showCalcHint, setShowCalcHint] = useState(false);
   const [measurementWarning, setMeasurementWarning] = useState('');
   const [studentName, setStudentName] = useState('Student Physicist');
-  const [studentId, setStudentId] = useState('PHY-300-2026');
-  const [studentSection, setStudentSection] = useState('Physics Core III');
+  const [studentId, setStudentId] = useState('PHY-200-2026');
+  const [studentSection, setStudentSection] = useState('Physics 2');
   const [studentDatePerformed, setStudentDatePerformed] = useState(() =>
     typeof window !== 'undefined' ? new Date().toISOString().slice(0, 10) : '2026-11-16'
   );
@@ -492,10 +492,10 @@ export default function Room3Experience() {
   const hasAutoOpenedReportRef = useRef(false);
   const [reportMetadata, setReportMetadata] = useState<ReportMetadata>({
     studentName: 'Student Physicist',
-    studentId: 'PHY-300-2026',
-    section: 'Physics Core III',
+    studentId: 'PHY-200-2026',
+    section: 'Physics 2',
     instructorName: 'Physics Laboratory Instructor',
-    groupNumber: 'Group 1 · PHY-300',
+    groupNumber: 'Group 1 · PHY-200',
     datePerformed: '',
     dateSubmitted: '',
     scope: 'all',
@@ -865,7 +865,7 @@ export default function Room3Experience() {
       studentName,
       studentId,
       section: studentSection,
-      groupNumber: prev.groupNumber || `Group 1 · ${studentSection || 'PHY-300'}`,
+      groupNumber: prev.groupNumber || `Group 1 · ${studentSection || 'PHY-200'}`,
       datePerformed: studentDatePerformed || prev.datePerformed || todayIso,
       dateSubmitted: prev.dateSubmitted || todayIso,
     }));
@@ -1483,8 +1483,8 @@ export default function Room3Experience() {
       playTone(587.33, 'sine', 0.16, 0.25);
       setEquipmentMessage(
         id === 'room3-honor-roll-left'
-          ? '🏆 Class Roll of Honor · Part I (Aberde – Hodrial · 20 Scholars Inscribed in 24K Gold)'
-          : '🏆 Class Roll of Honor · Part II (Lacorte – Talatala · 19 Scholars Inscribed in 24K Gold)'
+          ? '🏆 Class Roll of Honor · Part I (Aberde – Hodrial)'
+          : '🏆 Class Roll of Honor · Part II (Lacorte – Talatala)'
       );
       return;
     }
@@ -4935,7 +4935,7 @@ export default function Room3Experience() {
 
             {/* Student & Session Info Strip */}
             <div className="student-strip">
-              <span><b>Student:</b> {studentName.trim() || 'Physics Student'} · <b>Section:</b> {studentSection.trim() || 'PHY-300'}</span>
+              <span><b>Student:</b> {studentName.trim() || 'Physics Student'} · <b>Section:</b> {studentSection.trim() || 'PHY-200'}</span>
               <span><b>Student ID:</b> {studentId} · <b>Calibration:</b> {studentId.slice(-4)}</span>
               <span><b>Station:</b> {station.number} · {station.shortName}</span>
             </div>
@@ -6557,7 +6557,7 @@ export default function Room3Experience() {
                   <div className="certification-card" style={{ marginTop: '20px' }}>
                     <div className="cert-header">
                       <span className="cert-seal">🎓</span>
-                      <h5>Physics 300 Certified Experimental Record</h5>
+                      <h5>Physics 2 Certified Experimental Record</h5>
                     </div>
 
                     <div className="student-metadata-fields student-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '12px', margin: '14px 0' }}>

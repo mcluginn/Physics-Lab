@@ -177,7 +177,7 @@ export const ROOM3_EQUIPMENT_DESCRIPTIONS: Record<string, string> = {
 
   // Environmental Casework & Hallway Exit
   'campus-door': 'Solid mahogany double doors leading back to the University Science Hallway. Walk through or press [E] to return.',
-  'physics-whiteboard': 'Master Physics III lecture whiteboard detailing DC/AC circuit derivations, Snell\'s law & diffraction, and Lorentz spacetime equations.',
+  'physics-whiteboard': 'Master Physics 2 lecture whiteboard detailing DC/AC circuit derivations, Snell\'s law & diffraction, and Lorentz spacetime equations.',
   'lab-cabinet': 'Reinforced laboratory display cabinet storing precision optical lenses, dielectric prisms, and high-voltage calibration tools.',
   'lab-eyewash': 'Emergency eye wash and safety drench station. ANSI Z358.1 compliant for chemical and laser safety.',
   'lab-fire-station': 'Emergency dry chemical Class ABC fire extinguisher and safety inspection tag.',
@@ -920,7 +920,7 @@ export function createRoom3Scene(
     // Handwritten Lecture Board Header
     ctx.fillStyle = '#0f172a';
     ctx.font = `bold 34px ${HAND_FONT}`;
-    ctx.fillText('Experimental Physics III: Electricity, Optics & Special Relativity', 52, 62);
+    ctx.fillText('Experimental Physics 2: Electricity, Optics & Special Relativity', 52, 62);
     ctx.fillStyle = '#475569';
     ctx.font = `19px ${HAND_FONT}`;
     ctx.fillText('Lab 03 — Governing Equations, Sketches & Derivations', 54, 98);
@@ -2970,10 +2970,10 @@ export function createRoom3Scene(
     id: 'physics-whiteboard',
     stationId: 'circuits',
     category: 'LECTURE DERIVATIONS',
-    name: 'Physics III Master Lecture Whiteboard',
+    name: 'Physics 2 Master Lecture Whiteboard',
     description: ROOM3_EQUIPMENT_DESCRIPTIONS['physics-whiteboard'],
     action: 'Study Governing Equations & Derivations',
-    readout: 'Physics III Theory: RLC Phasors · Snell\'s Law & Diffraction · Lorentz Spacetime',
+    readout: 'Physics 2 Theory: RLC Phasors · Snell\'s Law & Diffraction · Lorentz Spacetime',
   });
 
   // -------------------------------------------------------------

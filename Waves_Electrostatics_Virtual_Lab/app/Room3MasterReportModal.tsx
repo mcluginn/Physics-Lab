@@ -889,7 +889,7 @@ export default function Room3MasterReportModal({
                 type="text"
                 value={metadata.studentId}
                 onChange={(e) => updateMetaField('studentId', e.target.value)}
-                placeholder="PHY-300-2026"
+                placeholder="PHY-200-2026"
               />
             </label>
             <label>
@@ -898,7 +898,7 @@ export default function Room3MasterReportModal({
                 type="text"
                 value={metadata.groupNumber}
                 onChange={(e) => updateMetaField('groupNumber', e.target.value)}
-                placeholder="Group 1 · PHY-300"
+                placeholder="Group 1 · PHY-200"
               />
             </label>
             <label>
