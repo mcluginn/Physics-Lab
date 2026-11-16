@@ -1,6 +1,14 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import {
+  buildRoom3ArchitectureDecor,
+  createBenchBankerLamp,
+  createWallPlasterTexture,
+  isCollidingWithDecor,
+} from './room3ArchitectureDecor';
 import {
   type CircuitSettings,
   type OpticsSettings,
@@ -84,6 +92,7 @@ export type Room3SceneApi = {
   zoomCloseup?: (deltaFactor: number) => number;
   resetCloseupCamera?: () => void;
   getCloseupZoom?: () => number;
+  stepEquipment?: (interactionId: string, dir: 1 | -1) => boolean;
   setLabelsVisible?: (visible: boolean) => void;
   getLabelsVisible?: () => boolean;
   setCameraYawPitch?: (targetYaw: number, targetPitch?: number) => void;
@@ -121,7 +130,7 @@ export type Room3SceneCallbacks = {
   onJumperChange?: (closed: boolean) => void;
   onProbePlaced?: (probe: 'red' | 'black', terminal: TerminalId | null) => void;
   onActiveProbeChange?: (probe: 'red' | 'black') => void;
-  onCloseupHover?: (text: string | null) => void;
+  onCloseupHover?: (text: string | null, interactionId?: string | null) => void;
   onStationProximityChange?: (station: Room3StationId | null) => void;
   onPerfStatsChange?: (fps: number, frameTimeMs: number) => void;
   onGuidanceIndicator?: (info: { screenX: number; screenY: number; isBehind: boolean; angleDeg: number; distanceM: number } | null) => void;
@@ -203,11 +212,11 @@ export function createRoom3Scene(
   scene.background = new THREE.Color(0x040814);
   scene.fog = new THREE.Fog(0x040814, 48, 280);
 
-  const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 360);
+  const camera = new THREE.PerspectiveCamera(54, 1, 0.05, 360);
   let activeStation: Room3StationId = 'circuits';
   const eyeHeight = 1.70;
-  // Student initially stands on the central inlaid brass compass rose medallion, facing north toward the workbenches
-  const playerPosition = new THREE.Vector3(0, eyeHeight, 3.8);
+  // Student initially stands in front of the workbench medallion, facing north toward the workbenches
+  const playerPosition = new THREE.Vector3(0, eyeHeight, 2.85);
   let yaw = 0;
   let pitch = -0.06;
   const movement = { forward: false, backward: false, left: false, right: false };
@@ -221,8 +230,9 @@ export function createRoom3Scene(
   let doorTargetAngle = 0;
   let isDoorOpening = false;
   let doorOpenedCallback: (() => void) | null = null;
-  let leftExitLeaf: THREE.Mesh | null = null;
-  let rightExitLeaf: THREE.Mesh | null = null;
+  let leftExitLeaf: THREE.Object3D | null = null;
+  let rightExitLeaf: THREE.Object3D | null = null;
+  let doorUsesFbxAxis = true;
 
   // Character Controller - Default Third-Person Character Camera for Immersive Exploration (matching Room 04)
   let applyInfiniteTsukuyomiState: ((active: boolean) => void) | null = null;
@@ -240,8 +250,8 @@ export function createRoom3Scene(
     },
   });
 
-  // Walk-mode 3rd-person distance (~4.40m wide full-body default; scroll-wheel adjusts 2.20m - 6.50m)
-  let walkExtraPullback = 2.25;
+  // Walk-mode 3rd-person distance (~2.30m default over-the-shoulder view; scroll-wheel adjusts 1.60m - 4.95m)
+  let walkExtraPullback = 0.15;
   const walkPullbackVec = new THREE.Vector3();
   const applyWalkCameraPullback = () => {
     if (!character.isThirdPerson || cameraMode === 'closeup') return;
@@ -283,11 +293,20 @@ export function createRoom3Scene(
     ? THREE.BasicShadowMap
     : THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.15;
+  renderer.toneMappingExposure = 0.98;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.domElement.style.background = '#040814';
   renderer.domElement.style.touchAction = 'none';
   container.appendChild(renderer.domElement);
+
+  // Subtle PMREM studio reflection environment so antique brass trims, optical rails & metal bezels gleam
+  const pmremGenerator = new THREE.PMREMGenerator(renderer);
+  const envRoom = new RoomEnvironment();
+  const roomEnvRT = pmremGenerator.fromScene(envRoom, 0.04);
+  scene.environment = roomEnvRT.texture;
+  scene.environmentIntensity = 0.22;
+  envRoom.dispose();
+  pmremGenerator.dispose();
 
   const handleContextLost = (event: Event) => {
     event.preventDefault();
@@ -331,10 +350,10 @@ export function createRoom3Scene(
       keyLight.shadow.map = null;
     }
 
-    // 3. Lighting Quality
+    // 3. Lighting Quality (essential 6-zone overhead fill & bench task lights stay active on all presets)
     sconceLights.forEach((light) => {
       light.visible = currentGraphicsSettings.lightingQuality !== 'simple';
-      light.intensity = currentGraphicsSettings.lightingQuality === 'medium' ? 0.30 : 0.45;
+      light.intensity = currentGraphicsSettings.lightingQuality === 'medium' ? 0.42 : 0.58;
     });
     downlights.forEach((light) => {
       light.visible = currentGraphicsSettings.lightingQuality === 'full';
@@ -438,6 +457,39 @@ export function createRoom3Scene(
     roughness: 0.45,
     metalness: 0.82,
   });
+
+  const doorSteelMat = new THREE.MeshStandardMaterial({
+    color: 0x94a3b8,
+    roughness: 0.24,
+    metalness: 0.92,
+  });
+
+  const applyEntranceDoorMaterials = (model: THREE.Object3D) => {
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        const remap = (mat: THREE.Material): THREE.Material => {
+          const name = (mat.name || '').toLowerCase();
+          if (name.includes('brass') || name.includes('gold')) {
+            return name.includes('antique') || name.includes('dark') ? doorDarkBrassMat : doorBrassMat;
+          }
+          if (name.includes('steel') || name.includes('metal') || name.includes('960')) {
+            return doorSteelMat;
+          }
+          return doorMahoganyMat;
+        };
+
+        if (Array.isArray(mesh.material)) {
+          mesh.material = mesh.material.map(remap);
+        } else if (mesh.material) {
+          mesh.material = remap(mesh.material);
+        }
+      }
+    });
+  };
 
   // Clean synthesized audio tone generator for multimeter beeps and mechanical clicks
   const playTone = (freq: number, type: OscillatorType = 'sine', duration = 0.1, vol = 0.15) => {
@@ -1531,13 +1583,13 @@ export function createRoom3Scene(
   const relativityPosterTex = createRelativityPosterTexture();
 
   // -------------------------------------------------------------
-  // 4. Lighting & Architectural Illumination (Warm Maroon & Mahogany Atmosphere)
+  // 4. Lighting & Architectural Illumination (Physically Balanced Evening Observatory)
   // -------------------------------------------------------------
-  // Balanced warm sky and rich wood floor bounce light (matching Room 04's warm palette)
-  const hemiLight = new THREE.HemisphereLight(0xfff3e0, 0x482218, 2.2);
+  // Subtle night-dome sky vs dark wood floor bounce so natural shadows define depth
+  const hemiLight = new THREE.HemisphereLight(0x9fc2eb, 0x1a1114, 0.58);
   scene.add(hemiLight);
 
-  const keyLight = new THREE.DirectionalLight(0xfffaed, 1.85);
+  const keyLight = new THREE.DirectionalLight(0xfff5e4, 1.05);
   keyLight.position.set(5, 10, 7);
   keyLight.castShadow = currentGraphicsSettings.shadows !== 'off';
   const initShadowSize = currentGraphicsSettings.shadows === 'low' ? 512 : currentGraphicsSettings.shadows === 'medium' ? 1024 : 2048;
@@ -1553,9 +1605,19 @@ export function createRoom3Scene(
   keyLight.shadow.normalBias = 0.04;
   scene.add(keyLight);
 
-  const stationLight = new THREE.PointLight(STATION_COLOR.circuits, 16, 12, 1.8);
-  stationLight.position.set(STATION_X.circuits, 4.2, 1.5);
+  const stationLight = new THREE.PointLight(STATION_COLOR.circuits, 7.5, 11, 2.0);
+  stationLight.position.set(STATION_X.circuits, 4.3, 1.8);
   scene.add(stationLight);
+
+  // 6-Zone Overhead Ambient Pools (physically attenuated warm fill preserving real contrast)
+  [
+    [-6.0, -4.5], [0.0, -4.5], [6.0, -4.5],
+    [-6.0, 2.5], [0.0, 2.5], [6.0, 2.5],
+  ].forEach(([lx, lz]) => {
+    const studioFillLight = new THREE.PointLight(0xffe9d2, 1.15, 10, 2.0);
+    studioFillLight.position.set(lx, ROOM2_CONFIG.room.height - 0.25, lz);
+    scene.add(studioFillLight);
+  });
 
   // -------------------------------------------------------------
   // 5. In-World Guidance Marker (Matching Room 02 Exact Composite)
@@ -1678,10 +1740,12 @@ export function createRoom3Scene(
   });
 
   // Architectural Materials
+  const wallPlasterTexture = createWallPlasterTexture();
   const wallMaroonMaterial = new THREE.MeshStandardMaterial({
-    color: 0x581c2c, // Deep Maroon primary architectural color
-    roughness: 0.74,
-    metalness: 0.10,
+    color: 0xffffff, // Tinted through woven plaster texture
+    map: wallPlasterTexture,
+    roughness: 0.78,
+    metalness: 0.06,
   });
   const wallBurgundyMaterial = new THREE.MeshStandardMaterial({
     color: 0x35121d, // Dark Burgundy
@@ -1777,7 +1841,7 @@ export function createRoom3Scene(
   const addWallSegment = (width: number, height: number, x: number, y: number, z: number) => {
     const wall = new THREE.Mesh(new THREE.BoxGeometry(width, height, ROOM2_CONFIG.room.wallThickness), wallMaroonMaterial);
     wall.position.set(x, y, z);
-    wall.receiveShadow = false;
+    wall.receiveShadow = true;
     scene.add(wall);
     return wall;
   };
@@ -1811,7 +1875,7 @@ export function createRoom3Scene(
   const frontZ = -ROOM2_CONFIG.room.backZ;
   const southWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, ROOM2_CONFIG.room.height, ROOM2_CONFIG.room.wallThickness), wallMaroonMaterial);
   southWall.position.set(0, ROOM2_CONFIG.room.height / 2, frontZ);
-  southWall.receiveShadow = false;
+  southWall.receiveShadow = true;
   scene.add(southWall);
 
   const southWainscot = new THREE.Mesh(new THREE.BoxGeometry(ROOM2_CONFIG.room.width, 1.15, 0.04), mahoganyDeskMaterial);
@@ -1847,8 +1911,8 @@ export function createRoom3Scene(
     scene.add(rMullion);
   }
 
-  // Cool celestial starlight illumination streaming in through the observatory windows
-  const celestialMoonlight = new THREE.DirectionalLight(0x7dd3fc, 1.85);
+  // Soft nocturnal moonlight streaming in through the observatory windows
+  const celestialMoonlight = new THREE.DirectionalLight(0xbcd8ff, 0.55);
   celestialMoonlight.position.set(18, 14, -10);
   celestialMoonlight.target.position.set(0, 1.0, 0);
   scene.add(celestialMoonlight);
@@ -1865,7 +1929,7 @@ export function createRoom3Scene(
     // A. Solid Wall Base (below Y = 1.15m, full length 14.8m)
     const baseWall = new THREE.Mesh(new THREE.BoxGeometry(0.32, 1.15, ROOM2_CONFIG.room.depth), wallMaroonMaterial);
     baseWall.position.set(x, 0.575, 0);
-    baseWall.receiveShadow = false;
+    baseWall.receiveShadow = true;
     scene.add(baseWall);
 
     const sideWainscot = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.15, ROOM2_CONFIG.room.depth), mahoganyDeskMaterial);
@@ -1883,7 +1947,7 @@ export function createRoom3Scene(
     // B. Solid Wall Header (above Y = 3.65m, full length 14.8m)
     const headerWall = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.55, ROOM2_CONFIG.room.depth), wallMaroonMaterial);
     headerWall.position.set(x, 3.925, 0);
-    headerWall.receiveShadow = false;
+    headerWall.receiveShadow = true;
     scene.add(headerWall);
 
     const sideFrieze = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.22, ROOM2_CONFIG.room.depth), mahoganyDeskMaterial);
@@ -1905,7 +1969,7 @@ export function createRoom3Scene(
     pierDefs.forEach((p) => {
       const pier = new THREE.Mesh(new THREE.BoxGeometry(0.32, 2.50, p.length), wallMaroonMaterial);
       pier.position.set(x, 2.40, p.centerZ);
-      pier.receiveShadow = false;
+      pier.receiveShadow = true;
       scene.add(pier);
 
       if (p.hasPilaster) {
@@ -2477,7 +2541,7 @@ export function createRoom3Scene(
   scene.add(moonCorona);
 
   // Dedicated Moonlight streaming down through the glass dome into the lab
-  const moonPointLight = new THREE.PointLight(0xdbeafe, 2.6, 52, 1.1);
+  const moonPointLight = new THREE.PointLight(0xbcd8ff, 1.15, 48, 1.4);
   moonPointLight.position.set(5.0, 12.0, -4.5);
   scene.add(moonPointLight);
 
@@ -2573,19 +2637,19 @@ export function createRoom3Scene(
       moonCoronaMat.needsUpdate = true;
       moonCorona.scale.set(98.0, 98.0, 1.0);
       celestialMoonlight.color.setHex(0xff4d5a);
-      celestialMoonlight.intensity = 2.05;
+      celestialMoonlight.intensity = 0.85;
       moonPointLight.color.setHex(0xf87171);
-      moonPointLight.intensity = 2.85;
+      moonPointLight.intensity = 1.45;
       skylightGlassMat.color.setHex(0xfecaca);
       skylightGlassMat.opacity = 0.075;
     } else {
       moonCoronaMat.map = normalMoonCoronaTex;
       moonCoronaMat.needsUpdate = true;
       moonCorona.scale.set(88.0, 88.0, 1.0);
-      celestialMoonlight.color.setHex(0x7dd3fc);
-      celestialMoonlight.intensity = 1.85;
+      celestialMoonlight.color.setHex(0xbcd8ff);
+      celestialMoonlight.intensity = 0.55;
       moonPointLight.color.setHex(0xdbeafe);
-      moonPointLight.intensity = 2.6;
+      moonPointLight.intensity = 1.15;
       skylightGlassMat.color.setHex(0xdbeafe);
       skylightGlassMat.opacity = 0.055;
     }
@@ -2762,7 +2826,7 @@ export function createRoom3Scene(
 
     ceilingGroup.add(sconceSpot);
 
-    const perimeterLight = new THREE.PointLight(0xffecd1, 1.35, 14, 1.6);
+    const perimeterLight = new THREE.PointLight(0xffdfba, 0.65, 9.5, 2.0);
     const inDir = new THREE.Vector3(cfg.aimX - cfg.x, -1.6, cfg.aimZ - cfg.z).normalize();
     perimeterLight.position.set(cfg.x, domeBaseH - 0.32, cfg.z).addScaledVector(inDir, 0.45);
     scene.add(perimeterLight);
@@ -2913,59 +2977,218 @@ export function createRoom3Scene(
   });
 
   // -------------------------------------------------------------
-  // 9. North Wall Double Entrance Doors & Carved Wood Sign
+  // 9. North Wall 3D Mahogany Double Exit Doors & Transom Sign
   // -------------------------------------------------------------
   const doorWidth = ROOM2_CONFIG.door.width;
   const doorHeight = ROOM2_CONFIG.door.height;
-  const leafWidth = doorWidth / 2 - 0.03;
 
   const doorGroup = new THREE.Group();
-  doorGroup.position.set(ROOM2_CONFIG.door.x, 0, ROOM2_CONFIG.room.backZ + 0.16);
-
-  const doorFrameMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(doorWidth + 0.24, doorHeight + 0.12, 0.28),
-    doorDarkBrassMat
-  );
-  doorFrameMesh.position.set(0, doorHeight / 2, 0);
-  doorGroup.add(doorFrameMesh);
-
-  leftExitLeaf = new THREE.Mesh(new THREE.BoxGeometry(leafWidth, doorHeight, 0.09), doorMahoganyMat);
-  leftExitLeaf.position.set(-leafWidth / 2, doorHeight / 2, 0);
-  leftExitLeaf.castShadow = true;
-  doorGroup.add(leftExitLeaf);
-
-  rightExitLeaf = new THREE.Mesh(new THREE.BoxGeometry(leafWidth, doorHeight, 0.09), doorMahoganyMat);
-  rightExitLeaf.position.set(leafWidth / 2, doorHeight / 2, 0);
-  rightExitLeaf.castShadow = true;
-  doorGroup.add(rightExitLeaf);
-
-  const handleL = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.35, 16), doorBrassMat);
-  handleL.position.set(-0.15, 1.2, 0.08);
-  doorGroup.add(handleL);
-
-  const handleR = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.35, 16), doorBrassMat);
-  handleR.position.set(0.15, 1.2, 0.08);
-  doorGroup.add(handleR);
-
-  // Carved Mahogany Wood Door Sign (Above Doors)
-  const woodSign = new THREE.Mesh(
-    new THREE.BoxGeometry(3.6, 0.90, 0.08),
-    new THREE.MeshStandardMaterial({ map: doorSignTexture, roughness: 0.38, metalness: 0.06 })
-  );
-  woodSign.position.set(0, doorHeight + 0.60, 0.06);
-  doorGroup.add(woodSign);
-
+  doorGroup.name = 'Room03DoorGroup';
+  doorGroup.position.set(ROOM2_CONFIG.door.x, 0, ROOM2_CONFIG.door.z);
   scene.add(doorGroup);
 
-  registerInteractable([leftExitLeaf, rightExitLeaf, woodSign], {
+  // Pitch-black doorway interior cavity / corridor void behind the exit door
+  const blackExitPortal = new THREE.Mesh(
+    new THREE.BoxGeometry(doorWidth, doorHeight, 1.2),
+    new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide })
+  );
+  blackExitPortal.position.set(0, doorHeight / 2, -0.60);
+  doorGroup.add(blackExitPortal);
+
+  // Black doorway threshold floor extension into the dark corridor void
+  const blackExitFloor = new THREE.Mesh(
+    new THREE.PlaneGeometry(doorWidth, 1.2),
+    new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
+  );
+  blackExitFloor.rotation.x = -Math.PI / 2;
+  blackExitFloor.position.set(0, 0.001, -0.60);
+  doorGroup.add(blackExitFloor);
+
+  // Pitch-black backdrop right behind the closed door leaves
+  const blackExitBackdrop = new THREE.Mesh(
+    new THREE.PlaneGeometry(doorWidth, doorHeight),
+    new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
+  );
+  blackExitBackdrop.position.set(0, doorHeight / 2, -0.02);
+  doorGroup.add(blackExitBackdrop);
+
+  // Polished Brass Threshold Plate & Floor Inlay (proud of room-side wall face z = -7.24)
+  const threshold = new THREE.Mesh(
+    new THREE.BoxGeometry(2.92, 0.016, 0.28),
+    doorBrassMat
+  );
+  threshold.position.set(0, 0.008, 0.20);
+  doorGroup.add(threshold);
+
+  const brassInlay = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.86, 0.035),
+    doorDarkBrassMat
+  );
+  brassInlay.rotation.x = -Math.PI / 2;
+  brassInlay.position.set(0, 0.003, 0.38);
+  doorGroup.add(brassInlay);
+
+  // Overhead Engraved Mahogany Laboratory Transom Sign
+  const signMat = new THREE.MeshStandardMaterial({
+    map: doorSignTexture,
+    roughness: 0.38,
+    metalness: 0.06,
+    emissive: 0x221204,
+    emissiveIntensity: 0.02,
+  });
+
+  const signBoard = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.46, 0.06), signMat);
+  signBoard.position.set(0, 3.64, 0.21);
+  doorGroup.add(signBoard);
+
+  const signOuterFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(2.04, 0.52, 0.10),
+    doorMahoganyMat
+  );
+  signOuterFrame.position.set(0, 3.64, 0.17);
+  doorGroup.add(signOuterFrame);
+
+  const signInnerTrim = new THREE.Mesh(
+    new THREE.BoxGeometry(1.98, 0.49, 0.08),
+    doorDarkBrassMat
+  );
+  signInnerTrim.position.set(0, 3.64, 0.18);
+  doorGroup.add(signInnerTrim);
+
+  const luminaireGroup = new THREE.Group();
+  luminaireGroup.position.set(0, 3.90, 0.22);
+  const lampHood = new THREE.Mesh(
+    new THREE.BoxGeometry(1.40, 0.04, 0.08),
+    doorBrassMat
+  );
+  lampHood.position.set(0, -0.02, 0.14);
+  luminaireGroup.add(lampHood);
+  [-0.42, 0.42].forEach((armX) => {
+    const arm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.010, 0.010, 0.18),
+      doorBrassMat
+    );
+    arm.rotation.x = Math.PI / 4;
+    arm.position.set(armX, 0, 0.07);
+    luminaireGroup.add(arm);
+  });
+  doorGroup.add(luminaireGroup);
+
+  const transomSpot = new THREE.SpotLight(0xfff5e4, 1.6, 5.5, Math.PI / 3, 0.4, 1.8);
+  transomSpot.position.set(ROOM2_CONFIG.door.x, 3.88, ROOM2_CONFIG.door.z + 0.52);
+  transomSpot.target = signBoard;
+  scene.add(transomSpot);
+
+  // Digital Access Terminal at right jamb (proud of wall face)
+  const terminalGroup = new THREE.Group();
+  terminalGroup.position.set(1.65, 1.55, 0.18);
+  const terminalBack = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.44, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.3 })
+  );
+  terminalGroup.add(terminalBack);
+  const terminalLED = new THREE.Mesh(
+    new THREE.SphereGeometry(0.025, 12, 12),
+    new THREE.MeshBasicMaterial({ color: 0x10b981 })
+  );
+  terminalLED.position.set(0, 0.14, 0.03);
+  terminalGroup.add(terminalLED);
+  doorGroup.add(terminalGroup);
+
+  const sconceLight = new THREE.SpotLight(0xfff8eb, 2.4, 6.5, Math.PI / 4, 0.4, 1.7);
+  sconceLight.position.set(ROOM2_CONFIG.door.x, 4.1, ROOM2_CONFIG.door.z + 0.72);
+  sconceLight.target = doorGroup;
+  scene.add(sconceLight);
+
+  const doorInteractMeta = {
     id: 'campus-door',
-    stationId: 'hallway',
+    stationId: 'hallway' as const,
     category: 'CAMPUS DIRECTORY',
     name: 'Corridor Double Mahogany Exit Doors',
     description: ROOM3_EQUIPMENT_DESCRIPTIONS['campus-door'],
     action: 'Return to Main Laboratory Hallway',
     readout: 'Main Science Hallway · Room 03 Exit Doorway',
-  });
+  };
+
+  const interactiveDoorTargets: THREE.Object3D[] = [signBoard, threshold, terminalGroup];
+  registerInteractable(interactiveDoorTargets, doorInteractMeta);
+
+  // Load 3D double mahogany FBX entrance door matching Room 02 & Campus Hallway
+  const doorFbxLoader = new FBXLoader(loadingManager);
+  doorFbxLoader.setResourcePath('/assets/door/maps/');
+  doorFbxLoader.load(
+    '/assets/door/export/Entrance_Door__vray.fbx',
+    (doorFbx) => {
+      if (isDisposed) return;
+      applyEntranceDoorMaterials(doorFbx);
+      doorFbx.scale.setScalar(0.016);
+      doorFbx.position.set(0, 0, 0);
+
+      // Re-pivot door leaves onto their outer jamb hinges
+      const leftHingeX = -79.18;
+      const rightHingeX = 79.19;
+      const hingeY = -4.5;
+
+      const leftTemplate = doorFbx.getObjectByName('Entrance_Door_002') as THREE.Mesh | null;
+      const rightTemplate = doorFbx.getObjectByName('Entrance_Door_003') as THREE.Mesh | null;
+
+      if (leftTemplate && rightTemplate) {
+        leftTemplate.geometry.translate(-leftHingeX, -hingeY, 0);
+        leftTemplate.position.set(leftHingeX, hingeY, 0);
+
+        rightTemplate.geometry.translate(-rightHingeX, -hingeY, 0);
+        rightTemplate.position.set(rightHingeX, hingeY, 0);
+      }
+
+      leftExitLeaf = leftTemplate;
+      rightExitLeaf = rightTemplate;
+      doorUsesFbxAxis = true;
+      doorGroup.add(doorFbx);
+
+      const fbxMeshes: THREE.Object3D[] = [];
+      doorFbx.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          fbxMeshes.push(child);
+        }
+      });
+      if (fbxMeshes.length > 0) {
+        registerInteractable(fbxMeshes, doorInteractMeta);
+      }
+    },
+    undefined,
+    (err) => {
+      console.error('Error loading Room 3 entrance door FBX asset:', err);
+      // Hollow perimeter frame + properly outer-hinged procedural fallback leaves
+      const jambLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, doorHeight, 0.28), doorDarkBrassMat);
+      jambLeft.position.set(-doorWidth / 2 - 0.06, doorHeight / 2, 0.08);
+      const jambRight = new THREE.Mesh(new THREE.BoxGeometry(0.12, doorHeight, 0.28), doorDarkBrassMat);
+      jambRight.position.set(doorWidth / 2 + 0.06, doorHeight / 2, 0.08);
+      const jambTop = new THREE.Mesh(new THREE.BoxGeometry(doorWidth + 0.24, 0.12, 0.28), doorDarkBrassMat);
+      jambTop.position.set(0, doorHeight + 0.06, 0.08);
+      doorGroup.add(jambLeft, jambRight, jambTop);
+
+      const leafWidth = doorWidth / 2 - 0.03;
+      const leftHinge = new THREE.Group();
+      leftHinge.position.set(-doorWidth / 2, 0, 0.08);
+      const leftLeafMesh = new THREE.Mesh(new THREE.BoxGeometry(leafWidth, doorHeight, 0.09), doorMahoganyMat);
+      leftLeafMesh.position.set(leafWidth / 2, doorHeight / 2, 0);
+      leftLeafMesh.castShadow = true;
+      leftHinge.add(leftLeafMesh);
+
+      const rightHinge = new THREE.Group();
+      rightHinge.position.set(doorWidth / 2, 0, 0.08);
+      const rightLeafMesh = new THREE.Mesh(new THREE.BoxGeometry(leafWidth, doorHeight, 0.09), doorMahoganyMat);
+      rightLeafMesh.position.set(-leafWidth / 2, doorHeight / 2, 0);
+      rightLeafMesh.castShadow = true;
+      rightHinge.add(rightLeafMesh);
+
+      doorGroup.add(leftHinge, rightHinge);
+      leftExitLeaf = leftHinge;
+      rightExitLeaf = rightHinge;
+      doorUsesFbxAxis = false;
+      registerInteractable([leftLeafMesh, rightLeafMesh], doorInteractMeta);
+    }
+  );
 
   // -------------------------------------------------------------
   // 10. Heavy Scientific Workbenches (addBench matching Room 02)
@@ -3078,8 +3301,8 @@ export function createRoom3Scene(
       group.add(stud);
     });
 
-    // Dedicated warm-white overhead benchtop task light for instrument crispness under open skylight
-    const benchTaskLight = new THREE.PointLight(0xfff7ed, 1.5, 4.2, 1.5);
+    // Warm task lighting over benchtop apparatus for instrument & label legibility against rich room ambiance
+    const benchTaskLight = new THREE.PointLight(0xfff2de, 1.65, 4.4, 1.8);
     benchTaskLight.position.set(0, ROOM2_CONFIG.table.topHeight + 1.45, 0.12);
     group.add(benchTaskLight);
 
@@ -3142,23 +3365,13 @@ export function createRoom3Scene(
       group.add(pull);
     });
 
-    // 7. Status Indicator Beacon Lamp mounted on Antique Brass Pedestal
-    const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.03, 20), brassTrimMaterial);
-    lampBase.position.set(-1.50, ROOM2_CONFIG.table.topHeight + ROOM2_CONFIG.table.thickness / 2 + 0.015, 0.75);
-    group.add(lampBase);
-
-    const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.38, 16), brassTrimMaterial);
-    lampPole.position.set(-1.50, ROOM2_CONFIG.table.topHeight + ROOM2_CONFIG.table.thickness / 2 + 0.20, 0.75);
-    group.add(lampPole);
-
-    const lampMaterial = material(color, { emissive: color, emissiveIntensity: 2.3 });
-    const lamp = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.14, 18), lampMaterial);
-    lamp.rotation.x = Math.PI;
-    lamp.position.set(-1.50, ROOM2_CONFIG.table.topHeight + ROOM2_CONFIG.table.thickness / 2 + 0.44, 0.75);
-    group.add(lamp);
+    // 7. Articulated Brass & Tinted-Glass Bench Banker's Task Lamp
+    const bankerLamp = createBenchBankerLamp(color, brassTrimMaterial);
+    bankerLamp.group.position.set(-1.50, ROOM2_CONFIG.table.topHeight + ROOM2_CONFIG.table.thickness / 2, 0.72);
+    group.add(bankerLamp.group);
 
     scene.add(group);
-    return { group, lampMaterial };
+    return { group, lampMaterial: bankerLamp.bulbMaterial };
   }
 
   const circuitsBench = addBench(STATION_X.circuits, STATION_COLOR.circuits);
@@ -3214,7 +3427,7 @@ export function createRoom3Scene(
     lampShade.position.set(0, 0.82, 0.3);
     placardGroup.add(lampShade);
 
-    const spot = new THREE.SpotLight(0xfff5e6, 2.5, 4.0, Math.PI / 4, 0.4);
+    const spot = new THREE.SpotLight(0xfff5e6, 1.65, 4.0, Math.PI / 4, 0.45, 1.6);
     spot.position.set(x, 3.95, ROOM2_CONFIG.room.backZ + 0.55);
     spot.target.position.set(x, 3.15, ROOM2_CONFIG.room.backZ + 0.19);
     scene.add(spot);
@@ -3257,6 +3470,31 @@ export function createRoom3Scene(
   relativityFace.position.set(0, 0, 0.03);
   relativityPosterGroup.add(relativityFace);
   scene.add(relativityPosterGroup);
+
+  // Exterior Conservatory Balcony Terrace, Recessed Cream Wall Bays & Perimeter Lab Casework
+  const decorResult = buildRoom3ArchitectureDecor(
+    scene,
+    {
+      roomWidth: ROOM2_CONFIG.room.width,
+      roomDepth: ROOM2_CONFIG.room.depth,
+      roomHeight: ROOM2_CONFIG.room.height,
+      backZ: ROOM2_CONFIG.room.backZ,
+      sideX: ROOM2_CONFIG.room.sideX,
+      doorX: ROOM2_CONFIG.door.x,
+      doorWidth: ROOM2_CONFIG.door.width,
+      stationsX: STATION_X,
+      benchDepth: ROOM2_CONFIG.table.depth,
+    },
+    {
+      wallMaroon: wallMaroonMaterial,
+      creamPanel: creamPanelMaterial,
+      mahogany: mahoganyDeskMaterial,
+      walnut: walnutMaterial,
+      brass: brassTrimMaterial,
+    },
+    ROOM3_EQUIPMENT_DESCRIPTIONS,
+    registerInteractable
+  );
 
   const BENCH_MAT_TOP_Y = 0.9324;
 
@@ -5137,12 +5375,15 @@ export function createRoom3Scene(
   let pathCount = 0;
   let clockBounceMinY = 0.058;
   let clockBounceMaxY = 0.357;
+  let photonClockGlbObj: THREE.Object3D | null = null;
+  let telemetryConsoleGlbObj: THREE.Object3D | null = null;
 
   // Load High-Fidelity Photon Clock GLB Model (sole photon-clock cavity on sled)
   loadSanitizedGlb('/assets/room-3/relativity/photon_clock.glb', (model) => {
     model.name = 'PhotonClock_GLB';
     model.scale.setScalar(0.85);
     model.position.set(0, 0.025, -0.045);
+    photonClockGlbObj = model;
     sledGroup.add(model);
     sledGroup.updateMatrixWorld(true);
 
@@ -5202,6 +5443,7 @@ export function createRoom3Scene(
     model.name = 'ReferenceFrameDisplay_GLB';
     model.scale.setScalar(1.15);
     model.position.set(-0.65, 0, -0.40);
+    telemetryConsoleGlbObj = model;
     model.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh) {
         if (obj.name === 'Display_Frame_S_Lab') {
@@ -5452,6 +5694,7 @@ export function createRoom3Scene(
   // 15. Guidance Marker Positioning Targets
   // -------------------------------------------------------------
   const guidanceBoxHelper = new THREE.Box3();
+  const guidanceMeshBoxHelper = new THREE.Box3();
   const guidanceCenterHelper = new THREE.Vector3();
 
   const setFromObjectTopCenter = (
@@ -5461,7 +5704,26 @@ export function createRoom3Scene(
   ): boolean => {
     if (!obj) return false;
     obj.updateWorldMatrix(true, true);
-    guidanceBoxHelper.setFromObject(obj);
+    guidanceBoxHelper.makeEmpty();
+    const visitVisible = (node: THREE.Object3D) => {
+      if (!node.visible) return;
+      if ((node as THREE.Mesh).isMesh) {
+        const mesh = node as THREE.Mesh;
+        const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+        const isHiddenProxy = mat && mat.transparent && mat.opacity === 0;
+        if (!isHiddenProxy && mesh.geometry) {
+          if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+          if (mesh.geometry.boundingBox && !mesh.geometry.boundingBox.isEmpty()) {
+            guidanceMeshBoxHelper.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
+            guidanceBoxHelper.union(guidanceMeshBoxHelper);
+          }
+        }
+      }
+      for (let i = 0; i < node.children.length; i++) {
+        visitVisible(node.children[i]);
+      }
+    };
+    visitVisible(obj);
     if (!guidanceBoxHelper.isEmpty()) {
       guidanceBoxHelper.getCenter(guidanceCenterHelper);
       out.set(guidanceCenterHelper.x, guidanceBoxHelper.max.y + extraY, guidanceCenterHelper.z);
@@ -5595,17 +5857,18 @@ export function createRoom3Scene(
         out.set(STATION_X.relativity, 3.40, ROOM2_CONFIG.room.backZ + 0.25);
         return true;
       case 'relativity-velocity-dial':
-        if (setFromObjectTopCenter(sledBody, out, 0.015)) return true;
-        if (setFromObjectTopCenter(interactionToObjectMap.get('relativity-velocity-dial'), out, 0.015)) return true;
-        out.set(relativityBenchX - 0.6, 1.24, -0.35);
+      case 'relativity-telemetry-console':
+        if (telemetryConsoleGlbObj && setFromObjectTopCenter(telemetryConsoleGlbObj, out, 0.015)) return true;
+        if (setFromObjectTopCenter(interactionToObjectMap.get('relativity-telemetry-console'), out, 0.015)) return true;
+        out.set(relativityBenchX - 0.65, 1.24, -0.40);
         return true;
       case 'relativity-contracting-rod':
         if (setFromObjectTopCenter(interactionToObjectMap.get('relativity-contracting-rod'), out, 0.015)) return true;
         out.set(relativityBenchX, 1.14, 0.12);
         return true;
       case 'relativity-light-clock':
+        if (photonClockGlbObj && setFromObjectTopCenter(photonClockGlbObj, out, 0.015)) return true;
         if (setFromObjectTopCenter(interactionToObjectMap.get('relativity-light-clock'), out, 0.015)) return true;
-        if (setFromObjectTopCenter(photonPulse, out, 0.015)) return true;
         out.set(relativityBenchX, 1.32, -0.045);
         return true;
       case 'relativity-accelerator':
@@ -5645,79 +5908,16 @@ export function createRoom3Scene(
   };
 
   // -------------------------------------------------------------
-  // 15B. In-World Characters: Lab Assistant Carla & Senior Professor
-  // -------------------------------------------------------------
-  const assistantGroup = new THREE.Group();
-  assistantGroup.name = 'LabAssistant_Carla';
-  assistantGroup.position.set(8.50, 0, -4.50);
-  assistantGroup.rotation.y = -Math.PI / 4;
-  scene.add(assistantGroup);
-
-  const assistantSpot = new THREE.SpotLight(0xfff8ee, 3.8, 7.5, Math.PI / 4, 0.5, 1.2);
-  assistantSpot.position.set(8.50, 4.1, -4.50);
-  assistantSpot.target = assistantGroup;
-  scene.add(assistantSpot);
-
-  loadSanitizedGlb('/assets/character_student.glb', (model) => {
-    model.name = 'Carla_Assistant_Model';
-    model.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        if (mesh.material && !Array.isArray(mesh.material)) {
-          const mat = mesh.material as THREE.MeshStandardMaterial;
-          mat.roughness = 0.65;
-          mat.metalness = 0.05;
-        }
-      }
-    });
-    const box = new THREE.Box3().setFromObject(model);
-    const rawHeight = Math.max(0.1, box.max.y - box.min.y);
-    const scale = 1.76 / rawHeight;
-    model.scale.setScalar(scale);
-    const scaledBox = new THREE.Box3().setFromObject(model);
-    model.position.set(0, -scaledBox.min.y, 0);
-    assistantGroup.add(model);
-  }, 'Assistant');
-
-  const professorGroup = new THREE.Group();
-  professorGroup.name = 'Senior_Professor';
-  professorGroup.position.set(-8.50, 0, -4.50);
-  professorGroup.rotation.y = Math.PI / 4;
-  scene.add(professorGroup);
-
-  const professorSpot = new THREE.SpotLight(0xfff8ee, 3.8, 7.5, Math.PI / 4, 0.5, 1.2);
-  professorSpot.position.set(-8.50, 4.1, -4.50);
-  professorSpot.target = professorGroup;
-  scene.add(professorSpot);
-
-  loadSanitizedGlb('/assets/character_professor.glb', (model) => {
-    model.name = 'Professor_Model';
-    model.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        if (mesh.material && !Array.isArray(mesh.material)) {
-          const mat = mesh.material as THREE.MeshStandardMaterial;
-          mat.roughness = 0.70;
-          mat.metalness = 0.05;
-        }
-      }
-    });
-    const box = new THREE.Box3().setFromObject(model);
-    const rawHeight = Math.max(0.1, box.max.y - box.min.y);
-    const scale = 1.82 / rawHeight;
-    model.scale.setScalar(scale);
-    const scaledBox = new THREE.Box3().setFromObject(model);
-    model.position.set(0, -scaledBox.min.y, 0);
-    professorGroup.add(model);
-  }, 'Professor');
-
-  // -------------------------------------------------------------
   // 16. Collision Detection & Walking Bounds
   // -------------------------------------------------------------
   const checkCollision = (x: number, z: number) => {
-    // Room perimeter boundary
+    // Room perimeter boundary (allow stepping into the doorway cavity once door is open)
     if (x < -ROOM2_CONFIG.room.sideX + 1.1 || x > ROOM2_CONFIG.room.sideX - 1.1) return true;
-    if (z < ROOM2_CONFIG.room.backZ + 1.2 || z > frontZ - 1.2) return true;
+    const inOpenDoorway =
+      doorOpen &&
+      Math.abs(x - ROOM2_CONFIG.door.x) < ROOM2_CONFIG.door.width / 2 - 0.35 &&
+      z > ROOM2_CONFIG.door.z - 0.25;
+    if (!inOpenDoorway && (z < ROOM2_CONFIG.room.backZ + 1.2 || z > frontZ - 1.2)) return true;
 
     // Bench Collisions (Station Benches at z = 0m, 3.4m wide x 1.76m deep)
     const benchesX = [STATION_X.circuits, STATION_X.optics, STATION_X.relativity];
@@ -5727,6 +5927,9 @@ export function createRoom3Scene(
 
     // South Credenza & Counters Collision
     if (z > frontZ - 1.6 && Math.abs(x) < 8.0) return true;
+
+    // Perimeter Wall Cabinets, Safety Stations, Planters, Lab Stools & Utility Carts
+    if (isCollidingWithDecor(x, z, decorResult.colliders)) return true;
 
     return false;
   };
@@ -5842,10 +6045,32 @@ export function createRoom3Scene(
   const closeupPanOffset = new THREE.Vector3();
   const closeupDeltaHelper = new THREE.Vector3();
 
+  // Keep desktop horizontal FOV fixed (54° vert @ >=1.05 aspect) while widening
+  // vertical FOV smoothly on narrow portrait phones so benches are never cropped.
+  const syncResponsiveCameraFov = () => {
+    const aspect = camera.aspect || 1;
+    const targetFov = aspect < 1.05
+      ? THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(0.45 / Math.max(aspect, 0.42))), 54, 86)
+      : 54;
+    if (Math.abs(camera.fov - targetFov) > 0.05) {
+      camera.fov = targetFov;
+    }
+  };
+
+  const getPortraitCloseupDistanceFactor = () => {
+    const aspect = camera.aspect || 1;
+    if (aspect >= 0.85) return 1.0;
+    const narrowScale = THREE.MathUtils.clamp((0.85 - aspect) / 0.42, 0, 1);
+    const focusWeight = currentCloseupFocus === 'station' ? 1.0 : 0.42;
+    return 1.0 + narrowScale * 0.78 * focusWeight;
+  };
+
   const recomputeCloseupCameraTargets = () => {
     targetCloseupCamLookAt.copy(baseCloseupCamLookAt).add(closeupPanOffset);
     closeupDeltaHelper.copy(baseCloseupCamPos).sub(baseCloseupCamLookAt);
-    targetCloseupCamPos.copy(targetCloseupCamLookAt).addScaledVector(closeupDeltaHelper, closeupZoomFactor);
+    targetCloseupCamPos
+      .copy(targetCloseupCamLookAt)
+      .addScaledVector(closeupDeltaHelper, closeupZoomFactor * getPortraitCloseupDistanceFactor());
   };
 
   const zoomCloseup = (deltaFactor: number): number => {
@@ -5879,6 +6104,8 @@ export function createRoom3Scene(
     }
     baseCloseupCamPos.copy(t.pos);
     baseCloseupCamLookAt.copy(t.lookAt);
+    syncResponsiveCameraFov();
+    camera.updateProjectionMatrix();
     closeupZoomFactor = 1.0;
     closeupPanOffset.set(0, 0, 0);
     recomputeCloseupCameraTargets();
@@ -5904,6 +6131,8 @@ export function createRoom3Scene(
       stationLight.color.setHex(STATION_COLOR[activeStation]);
       stationLight.position.x = STATION_X[activeStation];
 
+      syncResponsiveCameraFov();
+      camera.updateProjectionMatrix();
       const t = CLOSEUP_TARGETS[targetStation] || CLOSEUP_TARGETS.circuits;
       baseCloseupCamPos.copy(t.pos);
       baseCloseupCamLookAt.copy(t.lookAt);
@@ -6223,7 +6452,7 @@ export function createRoom3Scene(
       isOverview: true,
       sprite: createCalloutSprite('PHOTON CLOCK', 'Click: Toggle Frame S / S\''),
       offset: [0, 0.04, 0],
-      getTarget: (out) => setFromObjectTopCenter(interactionToObjectMap.get('relativity-light-clock'), out, 0.02),
+      getTarget: (out) => setFromObjectTopCenter(photonClockGlbObj || interactionToObjectMap.get('relativity-light-clock'), out, 0.02),
     },
     {
       station: 'relativity',
@@ -6238,10 +6467,10 @@ export function createRoom3Scene(
       station: 'relativity',
       focuses: ['console', 'clock'],
       instrumentGroup: 'console',
-      guidanceIds: ['relativity-velocity-dial'],
+      guidanceIds: ['relativity-velocity-dial', 'relativity-telemetry-console'],
       sprite: createCalloutSprite('VELOCITY DIAL (β)', 'Click/Scroll: Tune β = v/c'),
       offset: [0, 0.035, 0],
-      getTarget: (out) => setFromObjectTopCenter(interactionToObjectMap.get('relativity-velocity-dial'), out, 0.02),
+      getTarget: (out) => setFromObjectTopCenter(telemetryConsoleGlbObj || interactionToObjectMap.get('relativity-telemetry-console'), out, 0.02),
     },
     {
       station: 'relativity',
@@ -6309,7 +6538,10 @@ export function createRoom3Scene(
       }
       spec.sprite.position.copy(calloutPosHelper);
       const dist = camera.position.distanceTo(calloutPosHelper);
-      const badgeW = THREE.MathUtils.clamp(dist * 0.145, 0.075, 0.22);
+      const isCompactHeight = window.innerHeight <= 540;
+      const badgeW = isCompactHeight
+        ? THREE.MathUtils.clamp(dist * 0.105, 0.055, 0.145)
+        : THREE.MathUtils.clamp(dist * 0.145, 0.075, 0.22);
       spec.sprite.scale.set(badgeW, badgeW * (112 / 420), 1);
     }
   };
@@ -6552,7 +6784,7 @@ export function createRoom3Scene(
         currentObj = currentObj.parent;
       }
       if (inter) {
-        const maxDist = (inter.id.includes('placard') || inter.id === 'physics-whiteboard' || inter.id === 'campus-door' || inter.id.includes('assistant') || inter.id.includes('professor')) ? 14.0 : 8.5;
+        const maxDist = (inter.id.includes('placard') || inter.id.includes('honor-roll') || inter.id === 'physics-whiteboard' || inter.id === 'campus-door') ? 14.0 : 8.5;
         if (hit.distance <= maxDist) {
           foundInteraction = inter;
           break;
@@ -6588,26 +6820,41 @@ export function createRoom3Scene(
   let prevMouseX = 0;
   let prevMouseY = 0;
 
-  const interactAtScreenPoint = (clientX: number, clientY: number): boolean => {
-    const rect = renderer.domElement.getBoundingClientRect();
-    const pointer = new THREE.Vector2(
-      ((clientX - rect.left) / rect.width) * 2 - 1,
-      -((clientY - rect.top) / rect.height) * 2 + 1,
-    );
-    raycaster.setFromCamera(pointer, camera);
-    const intersects = raycaster.intersectObjects(interactableObjects, true);
-    for (const hit of intersects) {
-      let currentObj: THREE.Object3D | null = hit.object;
-      let inter: EquipmentInteraction | undefined = undefined;
-      while (currentObj && !inter) {
-        inter = objectToInteractionMap.get(currentObj) || currentObj.userData.equipmentInteraction;
-        currentObj = currentObj.parent;
+  const getTapSampleOffsets = (isTouchTap: boolean): ReadonlyArray<readonly [number, number]> => {
+    if (!isTouchTap) return [[0, 0]];
+    const offsets: Array<readonly [number, number]> = [[0, 0]];
+    for (const r of [12, 20]) {
+      for (let i = 0; i < 8; i++) {
+        const ang = (i * Math.PI) / 4;
+        offsets.push([Math.round(Math.cos(ang) * r), Math.round(Math.sin(ang) * r)]);
       }
-      if (inter) {
-        const maxDist = (inter.id.includes('placard') || inter.id === 'physics-whiteboard' || inter.id === 'campus-door' || inter.id.includes('assistant') || inter.id.includes('professor')) ? 14.0 : 8.5;
-        if (hit.distance <= maxDist) {
-          triggerEquipmentAction(inter.id);
-          return true;
+    }
+    return offsets;
+  };
+
+  const interactAtScreenPoint = (clientX: number, clientY: number, isTouchTap = false): boolean => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    for (const [ox, oy] of getTapSampleOffsets(isTouchTap)) {
+      const pointer = new THREE.Vector2(
+        ((clientX + ox - rect.left) / rect.width) * 2 - 1,
+        -((clientY + oy - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(pointer, camera);
+      const intersects = raycaster.intersectObjects(interactableObjects, true);
+      for (const hit of intersects) {
+        let currentObj: THREE.Object3D | null = hit.object;
+        let inter: EquipmentInteraction | undefined = undefined;
+        while (currentObj && !inter) {
+          inter = objectToInteractionMap.get(currentObj) || currentObj.userData.equipmentInteraction;
+          currentObj = currentObj.parent;
+        }
+        if (inter) {
+          const maxDist = (inter.id.includes('placard') || inter.id.includes('honor-roll') || inter.id === 'physics-whiteboard' || inter.id === 'campus-door') ? 14.0 : 8.5;
+          if (hit.distance <= maxDist) {
+            triggerEquipmentAction(inter.id);
+            return true;
+          }
         }
       }
     }
@@ -6639,34 +6886,39 @@ export function createRoom3Scene(
   const closeupPanRight = new THREE.Vector3();
   const closeupPanUp = new THREE.Vector3();
 
-  const triggerCloseupAtClientPoint = (clientX: number, clientY: number) => {
+  const triggerCloseupAtClientPoint = (clientX: number, clientY: number, isTouchTap = false) => {
     if (!renderer.domElement) return;
     const rect = renderer.domElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    const tapPointer = new THREE.Vector2(
-      ((clientX - rect.left) / rect.width) * 2 - 1,
-      -((clientY - rect.top) / rect.height) * 2 + 1
-    );
 
-    if (activeStation === 'circuits') {
-      raycaster.setFromCamera(tapPointer, camera);
-      const hits = raycaster.intersectObjects(multimeter3d.interactableMeshes, true);
-      if (hits.length > 0) {
-        callbacks.onCloseupHover?.(formatMultimeterMeshTooltip(hits[0].object));
+    for (const [ox, oy] of getTapSampleOffsets(isTouchTap)) {
+      const sx = clientX + ox;
+      const sy = clientY + oy;
+      const tapPointer = new THREE.Vector2(
+        ((sx - rect.left) / rect.width) * 2 - 1,
+        -((sy - rect.top) / rect.height) * 2 + 1
+      );
+
+      if (activeStation === 'circuits') {
+        raycaster.setFromCamera(tapPointer, camera);
+        const hits = raycaster.intersectObjects(multimeter3d.interactableMeshes, true);
+        if (hits.length > 0) {
+          callbacks.onCloseupHover?.(formatMultimeterMeshTooltip(hits[0].object));
+        }
+        if (handleCloseupProbePlacement(sx, sy)) {
+          return;
+        }
       }
-      if (handleCloseupProbePlacement(clientX, clientY)) {
+
+      const inter = findInteractableHit(tapPointer);
+      if (inter) {
+        callbacks.onCloseupHover?.(getCloseupTooltip(inter));
+        triggerEquipmentAction(inter.id);
+        playTone(550, 'triangle', 0.06, 0.16);
         return;
       }
     }
-
-    const inter = findInteractableHit(tapPointer);
-    if (inter) {
-      callbacks.onCloseupHover?.(getCloseupTooltip(inter));
-      triggerEquipmentAction(inter.id);
-      playTone(550, 'triangle', 0.06, 0.16);
-    } else {
-      callbacks.onCloseupHover?.(null);
-    }
+    callbacks.onCloseupHover?.(null);
   };
 
   const onPointerDown = (e: PointerEvent) => {
@@ -6674,16 +6926,19 @@ export function createRoom3Scene(
 
     if (e.pointerType === 'touch') {
       activeCanvasTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (activeCanvasTouches.size >= 2) {
+        const pts = Array.from(activeCanvasTouches.values());
+        lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        isPinching = true;
+        isCloseupPanning = false;
+        closeupPanPointerId = null;
+        closeupDragTravel = 999;
+        isPointerDown = false;
+        lookPointerId = null;
+        dragTravel = 999;
+        return;
+      }
       if (cameraMode === 'closeup') {
-        if (activeCanvasTouches.size >= 2) {
-          const pts = Array.from(activeCanvasTouches.values());
-          lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-          isPinching = true;
-          isCloseupPanning = false;
-          closeupPanPointerId = null;
-          closeupDragTravel = 999;
-          return;
-        }
         isPinching = false;
         lastPinchDist = null;
         isCloseupPanning = true;
@@ -6698,6 +6953,8 @@ export function createRoom3Scene(
       }
 
       if (lookPointerId !== null && lookPointerId !== e.pointerId) return;
+      isPinching = false;
+      lastPinchDist = null;
       lookPointerId = e.pointerId;
       isPointerDown = true;
       dragTravel = 0;
@@ -6904,13 +7161,19 @@ export function createRoom3Scene(
       if (activeCanvasTouches.has(e.pointerId)) {
         activeCanvasTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       }
-      if (cameraMode === 'closeup' && activeCanvasTouches.size >= 2) {
+      if (activeCanvasTouches.size >= 2) {
         const pts = Array.from(activeCanvasTouches.values());
         const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
         if (lastPinchDist !== null && dist > 1) {
           const deltaDist = dist - lastPinchDist;
-          zoomCloseup(-deltaDist * 0.0045);
-          closeupDragTravel = 999;
+          if (cameraMode === 'closeup') {
+            zoomCloseup(-deltaDist * 0.0045);
+            closeupDragTravel = 999;
+          } else if (character.isThirdPerson) {
+            walkExtraPullback = THREE.MathUtils.clamp(walkExtraPullback - deltaDist * 0.008, -0.55, 2.80);
+            updateCamera();
+            dragTravel = 999;
+          }
         }
         lastPinchDist = dist;
         return;
@@ -6931,11 +7194,12 @@ export function createRoom3Scene(
         closeupDragTravel += Math.hypot(dx, dy);
         prevCloseupX = e.clientX;
         prevCloseupY = e.clientY;
-        if (closeupDragTravel >= 4) {
+        const panThreshold = e.pointerType === 'touch' ? 12 : 4;
+        if (closeupDragTravel >= panThreshold) {
           camera.updateMatrixWorld();
           closeupPanRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
           closeupPanUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-          const panSpeed = 0.0014 * closeupZoomFactor;
+          const panSpeed = 0.0014 * closeupZoomFactor * getPortraitCloseupDistanceFactor();
           closeupPanOffset.addScaledVector(closeupPanRight, -dx * panSpeed);
           closeupPanOffset.addScaledVector(closeupPanUp, dy * panSpeed);
           closeupPanOffset.x = THREE.MathUtils.clamp(closeupPanOffset.x, -0.85, 0.85);
@@ -6978,10 +7242,13 @@ export function createRoom3Scene(
       dragTravel += Math.hypot(dx, dy);
       prevMouseX = e.clientX;
       prevMouseY = e.clientY;
-      const lookGain = e.pointerType === 'touch' ? 0.0038 : 0.0032;
-      yaw -= dx * lookGain;
-      pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch - dy * lookGain));
-      updateCamera();
+      const lookThreshold = e.pointerType === 'touch' ? 10 : 3;
+      if (dragTravel >= lookThreshold) {
+        const lookGain = e.pointerType === 'touch' ? 0.0042 : 0.0032;
+        yaw -= dx * lookGain;
+        pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch - dy * lookGain));
+        updateCamera();
+      }
     }
   };
 
@@ -7020,24 +7287,33 @@ export function createRoom3Scene(
           return;
         }
         if (e.pointerId === closeupPanPointerId) {
-          const wasTap = e.type === 'pointerup' && closeupDragTravel < 20;
+          const wasTap = e.type === 'pointerup' && closeupDragTravel < (e.pointerType === 'touch' ? 24 : 18);
           closeupPanPointerId = null;
           isCloseupPanning = false;
           if (wasTap) {
             lastTouchUpTime = performance.now();
-            triggerCloseupAtClientPoint(e.clientX, e.clientY);
+            triggerCloseupAtClientPoint(e.clientX, e.clientY, true);
           }
         }
         return;
       }
 
+      if (isPinching) {
+        if (activeCanvasTouches.size === 0) {
+          isPinching = false;
+        }
+        lookPointerId = null;
+        isPointerDown = false;
+        return;
+      }
+
       if (e.pointerId === lookPointerId) {
-        const wasTap = e.type === 'pointerup' && dragTravel < 20;
+        const wasTap = e.type === 'pointerup' && dragTravel < (e.pointerType === 'touch' ? 24 : 18);
         lookPointerId = null;
         isPointerDown = false;
         if (cameraMode === 'walk' && wasTap) {
           lastTouchUpTime = performance.now();
-          interactAtScreenPoint(e.clientX, e.clientY);
+          interactAtScreenPoint(e.clientX, e.clientY, true);
         }
       }
       return;
@@ -7075,7 +7351,7 @@ export function createRoom3Scene(
 
     const hitObj = hits[0].object;
     if (hitObj.userData.action === 'select_probe') {
-      const picked = (hitObj.userData.probe as 'red' | 'black') || 'red';
+      const picked = ((hitObj.userData.probeColor || hitObj.userData.probe) as 'red' | 'black') || 'red';
       multimeter3d.setActiveProbe(picked);
       callbacks.onEquipmentInteract?.('circuits-multimeter');
       playTone(picked === 'red' ? 760 : 540, 'sine', 0.05, 0.14);
@@ -7160,15 +7436,170 @@ export function createRoom3Scene(
     }
   };
 
+  const stepEquipmentControl = (interactionId: string, dir: 1 | -1): boolean => {
+    if (activeStation === 'circuits') {
+      if (interactionId === 'circuits-voltage-knob') {
+        const step = dir > 0 ? 0.5 : -0.5;
+        const newVs = Math.max(0, Math.min(30, Math.round((currentCircuits.vs + step) * 10) / 10));
+        if (newVs !== currentCircuits.vs) {
+          currentCircuits.vs = newVs;
+          updatePsuKnobRotation(newVs);
+          updatePsuTexture(newVs, currentCircuits.freq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
+          updateFgenDisplay();
+          multimeter3d.updateCircuitParameters({ sourceVoltage: newVs });
+          callbacks.onCircuitsChange?.({ vs: newVs });
+          playTone(480 + (newVs / 30) * 240, 'sine', 0.03, 0.08);
+        }
+        return true;
+      }
+
+      if (interactionId === 'circuits-fgen-freq-knob') {
+        const step = dir > 0 ? 10 : -10;
+        const newFreq = Math.max(10, Math.min(1000, Math.round(currentCircuits.freq + step)));
+        if (newFreq !== currentCircuits.freq) {
+          currentCircuits.freq = newFreq;
+          updateFgenDisplay();
+          updatePsuTexture(currentCircuits.vs, newFreq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
+          multimeter3d.updateCircuitParameters({ frequency: newFreq });
+          callbacks.onCircuitsChange?.({ freq: newFreq });
+          playTone(400 + (newFreq / 1000) * 320, 'sine', 0.03, 0.08);
+        }
+        return true;
+      }
+
+      if (interactionId === 'circuits-osc-time-knob') {
+        const curIdx = TIME_DIV_OPTIONS.indexOf(currentOscilloscope.timePerDivMs);
+        const nextIdx = dir > 0
+          ? Math.min(TIME_DIV_OPTIONS.length - 1, curIdx + 1)
+          : Math.max(0, curIdx - 1);
+        const nextTime = TIME_DIV_OPTIONS[nextIdx];
+        if (nextTime !== currentOscilloscope.timePerDivMs) {
+          currentOscilloscope.timePerDivMs = nextTime;
+          updateOscKnobRotations();
+          callbacks.onOscilloscopeChange?.({ timePerDivMs: nextTime });
+          playTone(520, 'triangle', 0.03, 0.08);
+        }
+        return true;
+      }
+
+      if (interactionId === 'circuits-osc-ch1-knob') {
+        const curIdx = CH1_VOLTS_DIV_OPTIONS.indexOf(currentOscilloscope.ch1VoltsPerDiv);
+        const nextIdx = dir > 0
+          ? Math.min(CH1_VOLTS_DIV_OPTIONS.length - 1, curIdx + 1)
+          : Math.max(0, curIdx - 1);
+        const nextVal = CH1_VOLTS_DIV_OPTIONS[nextIdx];
+        if (nextVal !== currentOscilloscope.ch1VoltsPerDiv) {
+          currentOscilloscope.ch1VoltsPerDiv = nextVal;
+          updateOscKnobRotations();
+          callbacks.onOscilloscopeChange?.({ ch1VoltsPerDiv: nextVal });
+          playTone(580, 'triangle', 0.03, 0.08);
+        }
+        return true;
+      }
+
+      if (interactionId === 'circuits-osc-ch2-knob') {
+        const curIdx = CH2_VOLTS_DIV_OPTIONS.indexOf(currentOscilloscope.ch2VoltsPerDiv);
+        const nextIdx = dir > 0
+          ? Math.min(CH2_VOLTS_DIV_OPTIONS.length - 1, curIdx + 1)
+          : Math.max(0, curIdx - 1);
+        const nextVal = CH2_VOLTS_DIV_OPTIONS[nextIdx];
+        if (nextVal !== currentOscilloscope.ch2VoltsPerDiv) {
+          currentOscilloscope.ch2VoltsPerDiv = nextVal;
+          updateOscKnobRotations();
+          callbacks.onOscilloscopeChange?.({ ch2VoltsPerDiv: nextVal });
+          playTone(640, 'triangle', 0.03, 0.08);
+        }
+        return true;
+      }
+    }
+
+    if (activeStation === 'optics') {
+      if (interactionId === 'optics-laser') {
+        const nextWavelength = THREE.MathUtils.clamp(currentOptics.wavelength + dir * 10, 400, 700);
+        if (nextWavelength !== currentOptics.wavelength) {
+          currentOptics.wavelength = nextWavelength;
+          updateOpticsBenchGeometry();
+          updateScreenTexture();
+          callbacks.onOpticsChange?.({ wavelength: nextWavelength });
+          playTone(500 + (700 - nextWavelength), 'sine', 0.03, 0.08);
+        }
+        return true;
+      }
+      if (interactionId === 'optics-angle-dial') {
+        const nextTheta = THREE.MathUtils.clamp(Math.round(currentOptics.theta1 + dir), 0, 80);
+        if (nextTheta !== currentOptics.theta1) {
+          currentOptics.theta1 = nextTheta;
+          updateOpticsBenchGeometry();
+          updateScreenTexture();
+          callbacks.onOpticsChange?.({ theta1: nextTheta });
+          playTone(540, 'triangle', 0.03, 0.08);
+        }
+        return true;
+      }
+      if (
+        interactionId === 'optics-lens-carrier' ||
+        interactionId === 'optics-object-target' ||
+        (interactionId === 'optics-rail' && currentOptics.subMode === 'imaging')
+      ) {
+        const nextU = THREE.MathUtils.clamp(Math.round((currentOptics.objectDistance + dir) * 10) / 10, 25, 80);
+        if (nextU !== currentOptics.objectDistance) {
+          currentOptics.objectDistance = nextU;
+          updateOpticsBenchGeometry();
+          updateScreenTexture();
+          callbacks.onOpticsChange?.({ objectDistance: nextU });
+          playTone(600, 'sine', 0.03, 0.08);
+        }
+        return true;
+      }
+      if (interactionId === 'optics-screen') {
+        if (currentOptics.subMode === 'imaging') {
+          const curV = currentOptics.screenPositionCm ?? 45.0;
+          const nextV = THREE.MathUtils.clamp(Math.round((curV + dir * 0.5) * 10) / 10, 15, 120);
+          if (nextV !== curV) {
+            currentOptics.screenPositionCm = nextV;
+            updateOpticsBenchGeometry();
+            updateScreenTexture();
+            callbacks.onOpticsChange?.({ screenPositionCm: nextV });
+            playTone(680, 'sine', 0.03, 0.08);
+          }
+          return true;
+        }
+        if (currentOptics.subMode === 'diffraction') {
+          const nextL = THREE.MathUtils.clamp(Math.round((currentOptics.screenDistance + dir * 0.05) * 100) / 100, 0.5, 3.0);
+          if (nextL !== currentOptics.screenDistance) {
+            currentOptics.screenDistance = nextL;
+            updateOpticsBenchGeometry();
+            updateScreenTexture();
+            callbacks.onOpticsChange?.({ screenDistance: nextL });
+            playTone(680, 'sine', 0.03, 0.08);
+          }
+          return true;
+        }
+      }
+    }
+
+    if (activeStation === 'relativity' && interactionId.startsWith('relativity-')) {
+      const nextBeta = THREE.MathUtils.clamp(Math.round((currentRelativity.beta + dir * 0.02) * 100) / 100, 0.05, 0.99);
+      if (nextBeta !== currentRelativity.beta) {
+        currentRelativity.beta = nextBeta;
+        callbacks.onRelativityChange?.({ beta: nextBeta });
+        playTone(460 + nextBeta * 400, 'sine', 0.03, 0.08);
+      }
+      return true;
+    }
+
+    return false;
+  };
+
   const onCanvasWheel = (e: WheelEvent) => {
     if (!renderer.domElement) return;
     if (cameraMode === 'walk') {
       if (character.isThirdPerson) {
         e.preventDefault();
         walkExtraPullback = THREE.MathUtils.clamp(
-          walkExtraPullback + (e.deltaY > 0 ? 0.28 : -0.28),
-          0.05,
-          4.35
+          walkExtraPullback + (e.deltaY > 0 ? 0.25 : -0.25),
+          -0.55,
+          2.80
         );
         updateCamera();
       }
@@ -7182,164 +7613,9 @@ export function createRoom3Scene(
     const hoverPointer = new THREE.Vector2(mouseX, mouseY);
     const inter = findInteractableHit(hoverPointer);
 
-    if (inter && activeStation === 'circuits') {
-      if (inter.id === 'circuits-voltage-knob') {
-        e.preventDefault();
-        const step = e.deltaY < 0 ? 0.5 : -0.5;
-        const newVs = Math.max(0, Math.min(30, Math.round((currentCircuits.vs + step) * 10) / 10));
-        if (newVs !== currentCircuits.vs) {
-          currentCircuits.vs = newVs;
-          updatePsuKnobRotation(newVs);
-          updatePsuTexture(newVs, currentCircuits.freq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
-          updateFgenDisplay();
-          multimeter3d.updateCircuitParameters({ sourceVoltage: newVs });
-          callbacks.onCircuitsChange?.({ vs: newVs });
-          playTone(480 + (newVs / 30) * 240, 'sine', 0.03, 0.08);
-        }
-        return;
-      }
-
-      if (inter.id === 'circuits-fgen-freq-knob') {
-        e.preventDefault();
-        const step = e.deltaY < 0 ? 10 : -10;
-        const newFreq = Math.max(10, Math.min(1000, Math.round(currentCircuits.freq + step)));
-        if (newFreq !== currentCircuits.freq) {
-          currentCircuits.freq = newFreq;
-          updateFgenDisplay();
-          updatePsuTexture(currentCircuits.vs, newFreq, currentCircuits.mode === 'ac', currentCircuits.powerOn !== false);
-          multimeter3d.updateCircuitParameters({ frequency: newFreq });
-          callbacks.onCircuitsChange?.({ freq: newFreq });
-          playTone(400 + (newFreq / 1000) * 320, 'sine', 0.03, 0.08);
-        }
-        return;
-      }
-
-      if (inter.id === 'circuits-osc-time-knob') {
-        e.preventDefault();
-        const curIdx = TIME_DIV_OPTIONS.indexOf(currentOscilloscope.timePerDivMs);
-        const nextIdx = e.deltaY < 0
-          ? Math.min(TIME_DIV_OPTIONS.length - 1, curIdx + 1)
-          : Math.max(0, curIdx - 1);
-        const nextTime = TIME_DIV_OPTIONS[nextIdx];
-        if (nextTime !== currentOscilloscope.timePerDivMs) {
-          currentOscilloscope.timePerDivMs = nextTime;
-          updateOscKnobRotations();
-          callbacks.onOscilloscopeChange?.({ timePerDivMs: nextTime });
-          playTone(520, 'triangle', 0.03, 0.08);
-        }
-        return;
-      }
-
-      if (inter.id === 'circuits-osc-ch1-knob') {
-        e.preventDefault();
-        const curIdx = CH1_VOLTS_DIV_OPTIONS.indexOf(currentOscilloscope.ch1VoltsPerDiv);
-        const nextIdx = e.deltaY < 0
-          ? Math.min(CH1_VOLTS_DIV_OPTIONS.length - 1, curIdx + 1)
-          : Math.max(0, curIdx - 1);
-        const nextVal = CH1_VOLTS_DIV_OPTIONS[nextIdx];
-        if (nextVal !== currentOscilloscope.ch1VoltsPerDiv) {
-          currentOscilloscope.ch1VoltsPerDiv = nextVal;
-          updateOscKnobRotations();
-          callbacks.onOscilloscopeChange?.({ ch1VoltsPerDiv: nextVal });
-          playTone(580, 'triangle', 0.03, 0.08);
-        }
-        return;
-      }
-
-      if (inter.id === 'circuits-osc-ch2-knob') {
-        e.preventDefault();
-        const curIdx = CH2_VOLTS_DIV_OPTIONS.indexOf(currentOscilloscope.ch2VoltsPerDiv);
-        const nextIdx = e.deltaY < 0
-          ? Math.min(CH2_VOLTS_DIV_OPTIONS.length - 1, curIdx + 1)
-          : Math.max(0, curIdx - 1);
-        const nextVal = CH2_VOLTS_DIV_OPTIONS[nextIdx];
-        if (nextVal !== currentOscilloscope.ch2VoltsPerDiv) {
-          currentOscilloscope.ch2VoltsPerDiv = nextVal;
-          updateOscKnobRotations();
-          callbacks.onOscilloscopeChange?.({ ch2VoltsPerDiv: nextVal });
-          playTone(640, 'triangle', 0.03, 0.08);
-        }
-        return;
-      }
-    }
-
-    if (inter && activeStation === 'optics') {
-      const dir = e.deltaY < 0 ? 1 : -1;
-      if (inter.id === 'optics-laser') {
-        e.preventDefault();
-        const nextWavelength = THREE.MathUtils.clamp(currentOptics.wavelength + dir * 10, 400, 700);
-        if (nextWavelength !== currentOptics.wavelength) {
-          currentOptics.wavelength = nextWavelength;
-          updateOpticsBenchGeometry();
-          updateScreenTexture();
-          callbacks.onOpticsChange?.({ wavelength: nextWavelength });
-          playTone(500 + (700 - nextWavelength), 'sine', 0.03, 0.08);
-        }
-        return;
-      }
-      if (inter.id === 'optics-angle-dial') {
-        e.preventDefault();
-        const nextTheta = THREE.MathUtils.clamp(Math.round(currentOptics.theta1 + dir), 0, 80);
-        if (nextTheta !== currentOptics.theta1) {
-          currentOptics.theta1 = nextTheta;
-          updateOpticsBenchGeometry();
-          updateScreenTexture();
-          callbacks.onOpticsChange?.({ theta1: nextTheta });
-          playTone(540, 'triangle', 0.03, 0.08);
-        }
-        return;
-      }
-      if (
-        inter.id === 'optics-lens-carrier' ||
-        inter.id === 'optics-object-target' ||
-        (inter.id === 'optics-rail' && currentOptics.subMode === 'imaging')
-      ) {
-        e.preventDefault();
-        const nextU = THREE.MathUtils.clamp(Math.round((currentOptics.objectDistance + dir) * 10) / 10, 25, 80);
-        if (nextU !== currentOptics.objectDistance) {
-          currentOptics.objectDistance = nextU;
-          updateOpticsBenchGeometry();
-          updateScreenTexture();
-          callbacks.onOpticsChange?.({ objectDistance: nextU });
-          playTone(600, 'sine', 0.03, 0.08);
-        }
-        return;
-      }
-      if (inter.id === 'optics-screen') {
-        e.preventDefault();
-        if (currentOptics.subMode === 'imaging') {
-          const curV = currentOptics.screenPositionCm ?? 45.0;
-          const nextV = THREE.MathUtils.clamp(Math.round((curV + dir * 0.5) * 10) / 10, 15, 120);
-          if (nextV !== curV) {
-            currentOptics.screenPositionCm = nextV;
-            updateOpticsBenchGeometry();
-            updateScreenTexture();
-            callbacks.onOpticsChange?.({ screenPositionCm: nextV });
-            playTone(680, 'sine', 0.03, 0.08);
-          }
-        } else if (currentOptics.subMode === 'diffraction') {
-          const nextL = THREE.MathUtils.clamp(Math.round((currentOptics.screenDistance + dir * 0.05) * 100) / 100, 0.5, 3.0);
-          if (nextL !== currentOptics.screenDistance) {
-            currentOptics.screenDistance = nextL;
-            updateOpticsBenchGeometry();
-            updateScreenTexture();
-            callbacks.onOpticsChange?.({ screenDistance: nextL });
-            playTone(680, 'sine', 0.03, 0.08);
-          }
-        }
-        return;
-      }
-    }
-
-    if (inter && activeStation === 'relativity' && inter.id.startsWith('relativity-')) {
+    if (inter && stepEquipmentControl(inter.id, e.deltaY < 0 ? 1 : -1)) {
       e.preventDefault();
-      const dir = e.deltaY < 0 ? 1 : -1;
-      const nextBeta = THREE.MathUtils.clamp(Math.round((currentRelativity.beta + dir * 0.02) * 100) / 100, 0.05, 0.99);
-      if (nextBeta !== currentRelativity.beta) {
-        currentRelativity.beta = nextBeta;
-        callbacks.onRelativityChange?.({ beta: nextBeta });
-        playTone(460 + nextBeta * 400, 'sine', 0.03, 0.08);
-      }
+      callbacks.onCloseupHover?.(getCloseupTooltip(inter), inter.id);
       return;
     }
 
@@ -7396,7 +7672,11 @@ export function createRoom3Scene(
       const height = entry.contentRect.height || container.clientHeight;
       if (width > 0 && height > 0) {
         camera.aspect = width / height;
+        syncResponsiveCameraFov();
         camera.updateProjectionMatrix();
+        if (cameraMode === 'closeup') {
+          recomputeCloseupCameraTargets();
+        }
         const pixelRatio = getEffectivePixelRatio(currentGraphicsSettings.resolutionScale);
         renderer.setPixelRatio(pixelRatio);
         renderer.setSize(width, height, false);
@@ -7415,7 +7695,8 @@ export function createRoom3Scene(
     if (cameraMode === 'closeup' && isStationChange) {
       setCameraMode('walk');
     }
-    playerPosition.set(STATION_X[station], eyeHeight, 3.2);
+    walkExtraPullback = 0.15;
+    playerPosition.set(STATION_X[station], eyeHeight, 2.85);
     yaw = 0;
     pitch = -0.06;
     character.root.position.x = playerPosition.x;
@@ -7494,9 +7775,14 @@ export function createRoom3Scene(
 
     // Door opening animation
     if (isDoorOpening && leftExitLeaf && rightExitLeaf) {
-      doorAnimAngle = THREE.MathUtils.lerp(doorAnimAngle, doorTargetAngle, delta * 3.5);
-      leftExitLeaf.rotation.y = -doorAnimAngle;
-      rightExitLeaf.rotation.y = doorAnimAngle;
+      doorAnimAngle = THREE.MathUtils.lerp(doorAnimAngle, doorTargetAngle, Math.min(1, delta * 3.5));
+      if (doorUsesFbxAxis) {
+        leftExitLeaf.rotation.z = -doorAnimAngle;
+        rightExitLeaf.rotation.z = doorAnimAngle;
+      } else {
+        leftExitLeaf.rotation.y = doorAnimAngle;
+        rightExitLeaf.rotation.y = -doorAnimAngle;
+      }
       if (Math.abs(doorAnimAngle - doorTargetAngle) < 0.02) {
         isDoorOpening = false;
         doorOpenedCallback?.();
@@ -7590,9 +7876,6 @@ export function createRoom3Scene(
 
       updateOscilloscope(delta);
       updateRelativityApparatus(delta);
-
-      assistantGroup.position.y = Math.sin(elapsed * 1.5) * 0.003;
-      professorGroup.position.y = Math.sin(elapsed * 1.2) * 0.003;
 
       // Station beacon lamp pulsing
       stationLamps[activeStation].emissiveIntensity = 2.4 + Math.sin(elapsed * 2.5) * 0.5;
@@ -7699,6 +7982,7 @@ export function createRoom3Scene(
       mahoganyDoorTex.dispose();
       lightBrassTex.dispose();
       darkBrassTex.dispose();
+      doorSteelMat.dispose();
       circuitsPosterTex.dispose();
       relativityPosterTex.dispose();
       whiteboardTexture.dispose();
@@ -7726,6 +8010,10 @@ export function createRoom3Scene(
       normalMoonCoronaTex.dispose();
       tsukuyomiCoronaTex.dispose();
       moonCoronaMat.dispose();
+      wallPlasterTexture.dispose();
+      roomEnvRT.dispose();
+      decorResult.disposableTextures.forEach((tex) => tex.dispose());
+      decorResult.disposableMaterials.forEach((mat) => mat.dispose());
       renderer.dispose();
       if (renderer.domElement.parentElement) {
         renderer.domElement.parentElement.removeChild(renderer.domElement);
@@ -7834,6 +8122,32 @@ export function createRoom3Scene(
     zoomCloseup,
     resetCloseupCamera,
     getCloseupZoom: () => closeupZoomFactor,
+    stepEquipment: (interactionId: string, dir: 1 | -1) => {
+      const changed = stepEquipmentControl(interactionId, dir);
+      if (changed) {
+        const matchObj = interactableObjects.find((obj) => {
+          let cur: THREE.Object3D | null = obj;
+          while (cur) {
+            const inter = objectToInteractionMap.get(cur) || cur.userData.equipmentInteraction;
+            if (inter?.id === interactionId) return true;
+            cur = cur.parent;
+          }
+          return false;
+        });
+        if (matchObj) {
+          let cur: THREE.Object3D | null = matchObj;
+          while (cur) {
+            const inter = objectToInteractionMap.get(cur) || cur.userData.equipmentInteraction;
+            if (inter) {
+              callbacks.onCloseupHover?.(getCloseupTooltip(inter), inter.id);
+              break;
+            }
+            cur = cur.parent;
+          }
+        }
+      }
+      return changed;
+    },
     setLabelsVisible: (visible: boolean) => {
       labelsVisible = visible;
       updateCalloutBadges();

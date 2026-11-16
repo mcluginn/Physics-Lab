@@ -26,6 +26,28 @@ import {
   type SpaceMovementId,
 } from './spaceSoundscape';
 
+const ASTRO_HUD_COLLAPSED_STORAGE_KEY = 'uphsd_astro_hud_collapsed';
+const ASTRO_HUD_PREF_EVENT = 'uphsd-astro-hud-pref';
+
+function subscribeAstroHudPref(onStoreChange: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const handler = () => onStoreChange();
+  window.addEventListener('storage', handler);
+  window.addEventListener(ASTRO_HUD_PREF_EVENT, handler);
+  return () => {
+    window.removeEventListener('storage', handler);
+    window.removeEventListener(ASTRO_HUD_PREF_EVENT, handler);
+  };
+}
+
+function getAstroHudPrefSnapshot(): string | null {
+  try {
+    return window.localStorage.getItem(ASTRO_HUD_COLLAPSED_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 // Procedural Astrophotography Canvas Simulator
 function renderAstroCanvas(
   canvas: HTMLCanvasElement,
@@ -142,7 +164,7 @@ export default function AstroExperience() {
 
   // Exploration, HUD & Modal State
   const [exploration, setExploration] = useState<ExplorationState>({ visitedStations: [], surveySubmitted: false });
-  const [hudCollapsed, setHudCollapsed] = useState(false);
+  const [hudOverride, setHudOverride] = useState<boolean | null>(null);
   const [activeModal, setActiveModal] = useState<AstroActivityId | 'door' | 'guide' | null>(null);
   const [interaction, setInteraction] = useState<AstroInteraction | null>(null);
   const [pointerLocked, setPointerLocked] = useState(false);
@@ -177,25 +199,32 @@ export default function AstroExperience() {
   const [surveyData, setSurveyData] = useState<SurveyResponses>(INITIAL_SURVEY_RESPONSES);
   const [surveyStep, setSurveyStep] = useState<'questions' | 'contact' | 'completed'>('questions');
   const isTouchDevice = useSyncExternalStore(subscribeMobileTouch, isMobileTouchDevice, () => false);
+  const storedHudPref = useSyncExternalStore(
+    subscribeAstroHudPref,
+    getAstroHudPrefSnapshot,
+    () => null,
+  );
+  const hudCollapsed =
+    hudOverride ??
+    (storedHudPref === 'true'
+      ? true
+      : storedHudPref === 'false'
+        ? false
+        : isTouchDevice);
 
-  // Load exploration and HUD state from localStorage on mount
+  // Load exploration state from localStorage on mount
   useEffect(() => {
     const saved = loadExplorationState();
     setExploration(saved);
-    try {
-      const savedHud = window.localStorage.getItem('uphsd_astro_hud_collapsed');
-      if (savedHud === 'true') setHudCollapsed(true);
-    } catch {}
   }, []);
 
   const toggleHud = () => {
-    setHudCollapsed((prev) => {
-      const next = !prev;
-      try {
-        window.localStorage.setItem('uphsd_astro_hud_collapsed', String(next));
-      } catch {}
-      return next;
-    });
+    const next = !hudCollapsed;
+    setHudOverride(next);
+    try {
+      window.localStorage.setItem(ASTRO_HUD_COLLAPSED_STORAGE_KEY, String(next));
+      window.dispatchEvent(new Event(ASTRO_HUD_PREF_EVENT));
+    } catch {}
   };
 
   // Redraw astrophotography simulation canvas
@@ -1342,7 +1371,7 @@ export default function AstroExperience() {
                       onChange={(e) => setStackFrames(Number(e.target.value))}
                       aria-label="Stacking Light Frames"
                     />
-                    <small style={{ fontSize: '10.5px', color: '#64748b' }}>Averages out random thermal noise (SNR ∝ √N)</small>
+                    <small style={{ fontSize: '12px', color: '#64748b' }}>Averages out random thermal noise (SNR ∝ √N)</small>
                   </div>
 
                   <div className="astro-sim-slider-group">
@@ -1359,7 +1388,7 @@ export default function AstroExperience() {
                       onChange={(e) => setExposureStretch(Number(e.target.value))}
                       aria-label="Exposure Stretch"
                     />
-                    <small style={{ fontSize: '10.5px', color: '#64748b' }}>Boosts faint ionized hydrogen & oxygen filaments</small>
+                    <small style={{ fontSize: '12px', color: '#64748b' }}>Boosts faint ionized hydrogen & oxygen filaments</small>
                   </div>
 
                   <div className="astro-sim-slider-group">
@@ -1376,7 +1405,7 @@ export default function AstroExperience() {
                       onChange={(e) => setContrastPoint(Number(e.target.value))}
                       aria-label="Contrast Point"
                     />
-                    <small style={{ fontSize: '10.5px', color: '#64748b' }}>Removes light pollution and defines dark dust lanes</small>
+                    <small style={{ fontSize: '12px', color: '#64748b' }}>Removes light pollution and defines dark dust lanes</small>
                   </div>
                 </div>
               </div>

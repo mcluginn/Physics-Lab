@@ -86,6 +86,14 @@ import {
   subscribeMobileTouch,
 } from './graphicsSettings';
 import { Room3GraphicsModal } from './Room3GraphicsModal';
+import { KatexMath } from './KatexMath';
+import Room3MasterReportModal from './Room3MasterReportModal';
+import {
+  createEmptyReportOverrides,
+  hydrateMasterReportFromStorage,
+  type ReportMetadata,
+  type ReportOverrides,
+} from './labManualReport';
 
 const STORAGE_KEY = 'physics_lab_room_3_progress';
 
@@ -475,6 +483,25 @@ export default function Room3Experience() {
   const [studentName, setStudentName] = useState('Student Physicist');
   const [studentId, setStudentId] = useState('PHY-300-2026');
   const [studentSection, setStudentSection] = useState('Physics Core III');
+  const [studentDatePerformed, setStudentDatePerformed] = useState(() =>
+    typeof window !== 'undefined' ? new Date().toISOString().slice(0, 10) : '2026-11-16'
+  );
+  const [masterReportOpen, setMasterReportOpen] = useState(false);
+  const [masterReportDoorExit, setMasterReportDoorExit] = useState(false);
+  const [reportRefreshNonce, setReportRefreshNonce] = useState(0);
+  const hasAutoOpenedReportRef = useRef(false);
+  const [reportMetadata, setReportMetadata] = useState<ReportMetadata>({
+    studentName: 'Student Physicist',
+    studentId: 'PHY-300-2026',
+    section: 'Physics Core III',
+    instructorName: 'Physics Laboratory Instructor',
+    groupNumber: 'Group 1 · PHY-300',
+    datePerformed: '',
+    dateSubmitted: '',
+    scope: 'all',
+    includeAnswerKey: true,
+  });
+  const [reportOverrides, setReportOverrides] = useState<ReportOverrides>(createEmptyReportOverrides);
   const [joystickKnob, setJoystickKnob] = useState({ x: 0, y: 0 });
   const [mobilePanel, setMobilePanel] = useState<'none' | 'objective' | 'controls'>('none');
   const [runSettling, setRunSettling] = useState(false);
@@ -504,7 +531,13 @@ export default function Room3Experience() {
   const [closeupHoverText, setCloseupHoverText] = useState<string | null>(null);
   const [closeupFocus, setCloseupFocus] = useState<Room3CloseupFocus>('station');
   const [closeupZoom, setCloseupZoom] = useState(1.0);
-  const [labelsVisible, setLabelsVisible] = useState(true);
+  const isTouchDevice = useSyncExternalStore(subscribeMobileTouch, isMobileTouchDevice, () => false);
+  const [labelsOverride, setLabelsOverride] = useState<boolean | null>(null);
+  const labelsVisible = labelsOverride ?? !isTouchDevice;
+  const [closeupHudExpanded, setCloseupHudExpanded] = useState(false);
+  const [inspectorExpanded, setInspectorExpanded] = useState(false);
+  const [lastTappedControlId, setLastTappedControlId] = useState<string | null>(null);
+  const [walkHudCompact, setWalkHudCompact] = useState(false);
 
   useEffect(() => {
     sceneApi.current?.setLabelsVisible?.(labelsVisible);
@@ -514,7 +547,6 @@ export default function Room3Experience() {
   const [graphicsSettings, setGraphicsSettingsState] = useState<GraphicsSettings>(() => {
     return loadGraphicsSettings();
   });
-  const isTouchDevice = useSyncExternalStore(subscribeMobileTouch, isMobileTouchDevice, () => false);
   const [graphicsModalOpen, setGraphicsModalOpen] = useState(false);
   const [perfStats, setPerfStats] = useState({ fps: 60, frameTimeMs: 16.6 });
 
@@ -526,6 +558,7 @@ export default function Room3Experience() {
 
   const handleSetCloseupFocus = (focus: Room3CloseupFocus) => {
     setMobilePanel('none');
+    setCloseupHudExpanded(false);
     setCloseupFocus(focus);
     setCloseupZoom(1.0);
     sceneApi.current?.setCloseupFocus?.(focus);
@@ -575,7 +608,7 @@ export default function Room3Experience() {
       <button
         type="button"
         className={`cam-focus-btn ${labelsVisible ? 'active' : ''}`}
-        onClick={() => setLabelsVisible((v) => !v)}
+        onClick={() => setLabelsOverride((v) => !(v ?? !isTouchDevice))}
         title="Toggle 3D Floating Equipment Labels"
       >
         🏷️ Labels: {labelsVisible ? 'ON' : 'OFF'}
@@ -816,6 +849,47 @@ export default function Room3Experience() {
   const totalScore = (Object.keys(progress) as Room3StationId[]).reduce(
     (total, id) => total + stationScore(progress[id]),
     0
+  );
+  const completedStationsCount = (['circuits', 'optics', 'relativity'] as Room3StationId[]).filter((id) =>
+    isStationFinished(progress[id])
+  ).length;
+  const allRoom3StationsComplete = completedStationsCount === 3;
+
+  const openMasterReport = (doorExit = false) => {
+    if (document.pointerLockElement) {
+      document.exitPointerLock?.();
+    }
+    const todayIso = new Date().toISOString().slice(0, 10);
+    setReportMetadata((prev) => ({
+      ...prev,
+      studentName,
+      studentId,
+      section: studentSection,
+      groupNumber: prev.groupNumber || `Group 1 · ${studentSection || 'PHY-300'}`,
+      datePerformed: studentDatePerformed || prev.datePerformed || todayIso,
+      dateSubmitted: prev.dateSubmitted || todayIso,
+    }));
+    setReportRefreshNonce((n) => n + 1);
+    setMasterReportDoorExit(doorExit);
+    setMasterReportOpen(true);
+  };
+
+  const handleMasterReportMetadataChange = (next: ReportMetadata) => {
+    setReportMetadata(next);
+    if (next.studentName !== studentName) setStudentName(next.studentName);
+    if (next.studentId !== studentId) setStudentId(next.studentId);
+    if (next.section !== studentSection) setStudentSection(next.section);
+    if (next.datePerformed !== studentDatePerformed) setStudentDatePerformed(next.datePerformed);
+  };
+
+  const masterReportState = useMemo(
+    () =>
+      masterReportOpen
+        ? hydrateMasterReportFromStorage(progress, circuits, optics, relativity)
+        : null,
+    // reportRefreshNonce forces a fresh localStorage read for Room 1 & Room 2 when Sync is clicked
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [masterReportOpen, reportRefreshNonce, progress, circuits, optics, relativity]
   );
 
   const missingInspection = INSPECTION_TARGETS[stationId]?.find((id) => !stationProgress.inspected.includes(id));
@@ -1118,7 +1192,10 @@ export default function Room3Experience() {
       const api = createRoom3Scene(sceneContainer.current, {
         onAssetProgress: (loaded, total) => setAssetProgress({ loaded, total: Math.max(1, total) }),
         onAssetsReady: () => setAssetsReady(true),
-        onEquipmentInteract: (id) => equipmentActionRef.current(id),
+        onEquipmentInteract: (id) => {
+          setLastTappedControlId(id);
+          equipmentActionRef.current(id);
+        },
         onCircuitsChange: (patch) => {
           setCircuits((prev) => ({ ...prev, ...patch }));
         },
@@ -1144,7 +1221,14 @@ export default function Room3Experience() {
           if (probe === 'red') setRedTerminalState(term);
           else setBlackTerminalState(term);
         },
-        onCloseupHover: (text) => setCloseupHoverText(text),
+        onCloseupHover: (text, hoveredId) => {
+          setCloseupHoverText(text);
+          if (hoveredId !== undefined) setLastTappedControlId(hoveredId);
+          if (!text) {
+            setInspectorExpanded(false);
+            if (hoveredId === undefined) setLastTappedControlId(null);
+          }
+        },
         onPointerLockChange: setPointerLocked,
         onStationProximityChange: (st) => setProximateStation(st),
         onPerfStatsChange: (fps, frameTimeMs) => setPerfStats({ fps, frameTimeMs }),
@@ -1253,16 +1337,21 @@ export default function Room3Experience() {
   };
 
   const handleSetCloseup = (mode: 'walk' | 'closeup') => {
+    if (mode === cameraMode) {
+      if (mode === 'closeup') setMobilePanel('none');
+      return;
+    }
     setCameraMode(mode);
+    setCloseupHudExpanded(false);
+    setInspectorExpanded(false);
     if (mode === 'closeup') {
       setMobilePanel('none');
-    }
-    if (mode === 'closeup') {
       setCloseupFocus('station');
       setCloseupZoom(1.0);
       sceneApi.current?.setLabelsVisible?.(labelsVisible);
     } else {
       setCloseupHoverText(null);
+      setLastTappedControlId(null);
     }
     sceneApi.current?.setCameraMode(mode, stationId);
     playTone(mode === 'closeup' ? 660 : 440, 'triangle', 0.08, 0.15);
@@ -1365,9 +1454,7 @@ export default function Room3Experience() {
   const handleEquipmentAction = (id: string) => {
     playTone(440, 'triangle', 0.08, 0.2);
     if (id === 'campus-door') {
-      sceneApi.current?.openDoor(() => {
-        window.location.href = '/';
-      });
+      openMasterReport(true);
       return;
     }
 
@@ -1375,14 +1462,30 @@ export default function Room3Experience() {
     handleInspectApparatus(id);
 
     if (id === 'circuits-oscilloscope') {
-      handleSetCloseup('closeup');
-      handleSetCloseupFocus('oscilloscope');
+      if (cameraMode !== 'closeup') {
+        handleSetCloseup('closeup');
+        handleSetCloseupFocus('oscilloscope');
+      } else if (closeupFocus !== 'oscilloscope') {
+        handleSetCloseupFocus('oscilloscope');
+      }
       return;
     }
 
     if (id.startsWith('circuits-osc-')) {
-      handleSetCloseup('closeup');
-      handleSetCloseupFocus('oscilloscope');
+      if (cameraMode !== 'closeup') {
+        handleSetCloseup('closeup');
+        handleSetCloseupFocus('oscilloscope');
+      }
+      return;
+    }
+
+    if (id === 'room3-honor-roll-left' || id === 'room3-honor-roll-right') {
+      playTone(587.33, 'sine', 0.16, 0.25);
+      setEquipmentMessage(
+        id === 'room3-honor-roll-left'
+          ? '🏆 Class Roll of Honor · Part I (Aberde – Hodrial · 20 Scholars Inscribed in 24K Gold)'
+          : '🏆 Class Roll of Honor · Part II (Lacorte – Talatala · 19 Scholars Inscribed in 24K Gold)'
+      );
       return;
     }
 
@@ -1450,6 +1553,8 @@ export default function Room3Experience() {
         }
       } else if (e.key.toLowerCase() === 'g') {
         setGraphicsModalOpen((prev) => !prev);
+      } else if (e.key.toLowerCase() === 'h' && cameraMode === 'walk') {
+        setWalkHudCompact((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyNav);
@@ -1770,7 +1875,19 @@ export default function Room3Experience() {
     setConclusionFeedback('✓ Scientific Claim–Evidence–Reasoning submission approved! Full 100/100 points station mastery awarded.');
     playSuccessChime();
     completeStep(8); // Step 9 completed (+30 pts)
-    setEquipmentMessage('🏆 Station 100% Mastered! Official Certified PDF Report is now unlocked.');
+
+    const allRoom3NowDone = (['circuits', 'optics', 'relativity'] as Room3StationId[]).every((id) =>
+      id === stationId ? true : isStationFinished(progress[id])
+    );
+
+    if (allRoom3NowDone && !hasAutoOpenedReportRef.current) {
+      hasAutoOpenedReportRef.current = true;
+      setNotebookOpen(false);
+      openMasterReport(false);
+      setEquipmentMessage('🏆 All 3 Room 03 Stations Complete! Automated Laboratory Report generated.');
+    } else {
+      setEquipmentMessage('🏆 Station 100% Mastered! Official Certified PDF & Master Report unlocked.');
+    }
   };
 
   // Step 6 Guide Questions Handler
@@ -1811,6 +1928,7 @@ export default function Room3Experience() {
       `Student Investigator: ${studentName}`,
       `Student ID: ${studentId}`,
       `Academic Section: ${studentSection}`,
+      `Date Performed: ${studentDatePerformed || new Date().toISOString().slice(0, 10)}`,
       `Date & Time: ${new Date().toLocaleString()}`,
       `Station: Room 03 — ${station.title}`,
       `Achieved Station Mastery Score: ${stationScore(stationProgress)} / 100 Points`,
@@ -1892,6 +2010,9 @@ export default function Room3Experience() {
       className="lab-shell room3-shell"
       data-room="room-3"
       data-station={stationId}
+      data-camera-mode={cameraMode}
+      data-walk-hud={walkHudCompact ? 'compact' : 'full'}
+      data-workspace-view={activeWorkspaceView}
       style={{ '--station-accent': station.accent } as CSSProperties}
     >
       {/* 3D WebGL Canvas */}
@@ -1934,7 +2055,7 @@ export default function Room3Experience() {
 
       {/* VIEW B: INTERACTIVE CIRCUIT WORKSPACE (DCACLab Concept) */}
       {stationId === 'circuits' && activeWorkspaceView === 'circuit_workspace' && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 12 }}>
+        <div style={{ position: 'absolute', inset: 0, zIndex: 45 }}>
           <Room3CircuitWorkspace
             circuits={circuits}
             circuitResult={circuitResult}
@@ -2002,8 +2123,83 @@ export default function Room3Experience() {
         </div>
       )}
 
-      {cameraMode === 'closeup' && !notebookOpen && activeWorkspaceView === '3d' && (
-        <div className="closeup-hud-banner" role="status">
+      {cameraMode === 'closeup' && !notebookOpen && activeWorkspaceView === '3d' && (() => {
+        const focusLabelMap: Record<Room3CloseupFocus, string> = {
+          station: stationId === 'circuits' ? 'Workbench' : stationId === 'optics' ? 'Optics Bench' : 'Track',
+          board: 'Resistor Board',
+          multimeter: 'Multimeter',
+          psu: 'Power Supply',
+          oscilloscope: 'Oscilloscope',
+          laser: 'Diode Laser',
+          lens: 'Lens / Mount',
+          screen: 'Screen',
+          clock: 'Photon Clock',
+          rod: 'Meter Rod',
+          console: 'Console',
+        };
+        const focusTitle = focusLabelMap[closeupFocus] || 'Close-Up';
+        const showTrialRecordingRow =
+          activeStepIdx >= 5 ||
+          stationProgress.currentStep >= 5 ||
+          stationProgress.trials.length > 0;
+        const nextTrialTarget =
+          stationProgress.trials.length < TOTAL_TRIALS
+            ? ROOM3_ASSIGNED_TRIALS[stationId][stationProgress.trials.length]
+            : null;
+        return (
+        <div className={`closeup-hud-banner ${closeupHudExpanded ? 'mobile-expanded' : 'mobile-collapsed'}`} role="status">
+          {/* Compact 1-Line Mobile Status Chip (keeps 80%+ of phone screen open for 3D device) */}
+          <div className="closeup-mobile-summary-bar">
+            <span className="closeup-mobile-chip-badge">
+              🔬 {focusTitle} · Step {activeStepIdx + 1}/8 · {stationProgress.trials.length}/5
+              {nextTrialTarget ? ` (${nextTrialTarget.targetValue}${nextTrialTarget.unit})` : ''}
+            </span>
+            <div className="closeup-mobile-summary-actions">
+              {stationId === 'circuits' && (activeStepIdx >= 3 || stationProgress.currentStep >= 3) && (
+                <button
+                  type="button"
+                  className="closeup-mobile-mini-btn"
+                  onClick={() => handleSelectActiveProbe(activeProbe === 'red' ? 'black' : 'red')}
+                  title="Switch active test probe lead"
+                >
+                  {activeProbe === 'red' ? '🔴 Red' : '⚫ Black'}
+                </button>
+              )}
+              {showTrialRecordingRow && (
+                <button
+                  type="button"
+                  className="closeup-mobile-mini-btn accent"
+                  onClick={() => {
+                    if (stationProgress.trials.length >= TOTAL_TRIALS) {
+                      setNotebookOpen(true);
+                      setNotebookStep(7);
+                    } else {
+                      recordCurrentTrial();
+                    }
+                  }}
+                >
+                  {stationProgress.trials.length >= TOTAL_TRIALS ? '✓ Step 8' : '📝 Record'}
+                </button>
+              )}
+              <button
+                type="button"
+                className={`closeup-mobile-mini-btn ${closeupHudExpanded ? 'active' : ''}`}
+                onClick={() => setCloseupHudExpanded((v) => !v)}
+                aria-expanded={closeupHudExpanded}
+              >
+                {closeupHudExpanded ? '▴ Less' : '▾ Tools'}
+              </button>
+              <button
+                type="button"
+                className="closeup-mobile-mini-btn exit"
+                onClick={() => handleSetCloseup('walk')}
+              >
+                ✕ Exit
+              </button>
+            </div>
+          </div>
+
+          <div className="closeup-hud-body">
           <div className="closeup-hud-header">
             <div className="closeup-hud-badge">🔬 WORKBENCH CLOSE-UP</div>
             {stationId === 'circuits' && (
@@ -2120,6 +2316,39 @@ export default function Room3Experience() {
                 {renderCloseupUtilityButtons()}
               </div>
             )}
+            <div className="closeup-mobile-drawer-extras">
+              <button
+                type="button"
+                className="cam-focus-btn"
+                onClick={() => {
+                  setCloseupHudExpanded(false);
+                  setMobilePanel('controls');
+                }}
+              >
+                🎛️ Sliders &amp; Controls
+              </button>
+              <button
+                type="button"
+                className="cam-focus-btn"
+                onClick={() => {
+                  setCloseupHudExpanded(false);
+                  setNotebookStep(stationProgress.currentStep);
+                  setNotebookOpen(true);
+                }}
+              >
+                ▣ Notebook
+              </button>
+              <button
+                type="button"
+                className="cam-focus-btn"
+                onClick={() => {
+                  setCloseupHudExpanded(false);
+                  setGraphicsModalOpen(true);
+                }}
+              >
+                ⚙️ Graphics
+              </button>
+            </div>
             <button
               type="button"
               className="closeup-exit-button"
@@ -2131,10 +2360,6 @@ export default function Room3Experience() {
 
           {/* 3D Data Collection & Hands-On Instrument Bar */}
           {(() => {
-            const showTrialRecordingRow =
-              activeStepIdx >= 5 ||
-              stationProgress.currentStep >= 5 ||
-              stationProgress.trials.length > 0;
             const showProbeLeadRow =
               stationId === 'circuits' &&
               (activeStepIdx >= 3 ||
@@ -2153,17 +2378,14 @@ export default function Room3Experience() {
                 flexWrap: 'wrap',
               }}>
                 {showTrialRecordingRow && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '12px', fontWeight: 800, color: '#fef08a' }}>
                       📊 3D TRIALS: {stationProgress.trials.length} / {TOTAL_TRIALS}
                     </span>
                     {stationProgress.trials.length < TOTAL_TRIALS && (
-                      <span style={{ fontSize: '11px', color: '#e2e8f0', background: 'rgba(53, 18, 29, 0.85)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
+                      <span style={{ fontSize: '12px', color: '#e2e8f0', background: 'rgba(53, 18, 29, 0.85)', padding: '3px 8px', borderRadius: '4px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
                         Target #{stationProgress.trials.length + 1}: <b style={{ color: '#fef08a' }}>
-                          {(() => {
-                            const tgt = ROOM3_ASSIGNED_TRIALS[stationId][stationProgress.trials.length];
-                            return tgt ? `${tgt.targetParam} = ${tgt.targetValue} ${tgt.unit}` : '';
-                          })()}
+                          {nextTrialTarget ? `${nextTrialTarget.targetParam} = ${nextTrialTarget.targetValue} ${nextTrialTarget.unit}` : ''}
                         </b>
                       </span>
                     )}
@@ -2174,21 +2396,21 @@ export default function Room3Experience() {
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                   {showProbeLeadRow && (
                     <>
-                      <span style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>Active Lead:</span>
+                      <span style={{ fontSize: '12px', color: '#cbd5e1', textTransform: 'uppercase' }}>Lead:</span>
                       <button
                         type="button"
                         style={{
                           background: activeProbe === 'red' ? 'rgba(220, 38, 38, 0.9)' : 'rgba(35, 12, 20, 0.75)',
                           color: '#fffbeb',
                           border: `1.5px solid ${activeProbe === 'red' ? '#f87171' : 'rgba(220, 38, 38, 0.5)'}`,
-                          borderRadius: '4px',
-                          padding: '2px 8px',
-                          fontSize: '11px',
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          fontSize: '12px',
                           fontWeight: 700,
                           cursor: 'pointer',
                         }}
                         onClick={() => handleSelectActiveProbe('red')}
-                        title="Select Red (+) Lead, then Left-Click any breadboard socket in 3D"
+                        title="Select Red (+) Lead, then tap any breadboard socket in 3D"
                       >
                         🔴 Red (+) {redTerminal ? `→ ${redTerminal}` : '(Parked)'}
                       </button>
@@ -2198,16 +2420,16 @@ export default function Room3Experience() {
                           background: activeProbe === 'black' ? '#334155' : 'rgba(35, 12, 20, 0.75)',
                           color: '#fffbeb',
                           border: `1.5px solid ${activeProbe === 'black' ? '#94a3b8' : 'rgba(148, 163, 184, 0.45)'}`,
-                          borderRadius: '4px',
-                          padding: '2px 8px',
-                          fontSize: '11px',
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          fontSize: '12px',
                           fontWeight: 700,
                           cursor: 'pointer',
                         }}
                         onClick={() => handleSelectActiveProbe('black')}
-                        title="Select Black (COM) Lead, then Left-Click or Right-Click any breadboard socket in 3D"
+                        title="Select Black (COM) Lead, then tap any breadboard socket in 3D"
                       >
-                        ⚫ Black (COM) {blackTerminal ? `→ ${blackTerminal}` : '(Parked)'}
+                        ⚫ Black {blackTerminal ? `→ ${blackTerminal}` : '(Parked)'}
                       </button>
                       <button
                         type="button"
@@ -2215,9 +2437,9 @@ export default function Room3Experience() {
                           background: 'rgba(15, 23, 42, 0.8)',
                           color: '#cbd5e1',
                           border: '1px solid rgba(148, 163, 184, 0.35)',
-                          borderRadius: '4px',
-                          padding: '2px 7px',
-                          fontSize: '11px',
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          fontSize: '12px',
                           cursor: 'pointer',
                         }}
                         onClick={() => handleQuickProbe('park')}
@@ -2228,12 +2450,12 @@ export default function Room3Experience() {
                     </>
                   )}
                   {showTrialRecordingRow && stationId === 'optics' && (
-                    <span style={{ fontSize: '11px', color: '#e2e8f0', background: 'rgba(15, 23, 42, 0.8)', padding: '3px 8px', borderRadius: '4px', border: '1px solid rgba(56, 189, 248, 0.35)' }}>
-                      u = <b>{optics.objectDistance.toFixed(1)} cm</b> · Screen v = <b>{(optics.screenPositionCm ?? 45).toFixed(1)} cm</b> · Sharpness: <b style={{ color: opticsResult.focusSharpness >= 85 ? '#34d399' : '#f59e0b' }}>{opticsResult.focusSharpness.toFixed(0)}%</b>
+                    <span style={{ fontSize: '12px', color: '#e2e8f0', background: 'rgba(15, 23, 42, 0.8)', padding: '4px 8px', borderRadius: '4px', border: '1px solid rgba(56, 189, 248, 0.35)' }}>
+                      u = <b>{optics.objectDistance.toFixed(1)} cm</b> · v = <b>{(optics.screenPositionCm ?? 45).toFixed(1)} cm</b> · Sharpness: <b style={{ color: opticsResult.focusSharpness >= 85 ? '#34d399' : '#f59e0b' }}>{opticsResult.focusSharpness.toFixed(0)}%</b>
                     </span>
                   )}
                   {showTrialRecordingRow && stationId === 'relativity' && (
-                    <span style={{ fontSize: '11px', color: '#e2e8f0', background: 'rgba(15, 23, 42, 0.8)', padding: '3px 8px', borderRadius: '4px', border: '1px solid rgba(250, 204, 21, 0.35)' }}>
+                    <span style={{ fontSize: '12px', color: '#e2e8f0', background: 'rgba(15, 23, 42, 0.8)', padding: '4px 8px', borderRadius: '4px', border: '1px solid rgba(250, 204, 21, 0.35)' }}>
                       Frame: <b>{(relativity.referenceFrame ?? 'lab') === 'lab' ? 'Lab S' : 'Sled S\''}</b> · β = <b>{relativity.beta.toFixed(2)}c</b> · γ = <b>{relativityResult.gamma.toFixed(3)}</b>
                     </span>
                   )}
@@ -2250,7 +2472,7 @@ export default function Room3Experience() {
                         borderColor: stationProgress.trials.length >= TOTAL_TRIALS ? '#10b981' : '#fef08a',
                         fontWeight: 800,
                         fontSize: '12px',
-                        padding: '5px 12px',
+                        padding: '6px 12px',
                         cursor: 'pointer',
                       }}
                       onClick={() => {
@@ -2263,7 +2485,7 @@ export default function Room3Experience() {
                       }}
                     >
                       {stationProgress.trials.length >= TOTAL_TRIALS
-                        ? '✓ 5 Trials Done · Open Step 8 Computation →'
+                        ? '✓ 5 Trials Done · Open Step 8 →'
                         : `📝 Record 3D Trial (${stationProgress.trials.length + 1} / 5)`}
                     </button>
                   </div>
@@ -2280,7 +2502,7 @@ export default function Room3Experience() {
               border: '1.5px solid #ef4444',
               borderRadius: '6px',
               color: '#fef2f2',
-              fontSize: '11px',
+              fontSize: '12px',
               fontWeight: 600,
               display: 'flex',
               alignItems: 'center',
@@ -2291,14 +2513,16 @@ export default function Room3Experience() {
               <button
                 type="button"
                 onClick={() => setMeasurementWarning('')}
-                style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: '13px', fontWeight: 800 }}
+                style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: '14px', fontWeight: 800 }}
               >
                 ✕
               </button>
             </div>
           )}
+          </div>
         </div>
-      )}
+        );
+      })()}
 
       {cameraMode === 'closeup' && !notebookOpen && activeWorkspaceView === '3d' && closeupHoverText && (() => {
         const parts = closeupHoverText.split('|').map((p) => p.trim());
@@ -2306,35 +2530,102 @@ export default function Room3Experience() {
         const purpose = parts[1];
         const liveValue = parts[2];
         const controls = parts[3];
+        const isStepAdjustable = Boolean(
+          lastTappedControlId &&
+          (
+            [
+              'circuits-voltage-knob',
+              'circuits-fgen-freq-knob',
+              'circuits-osc-time-knob',
+              'circuits-osc-ch1-knob',
+              'circuits-osc-ch2-knob',
+              'optics-laser',
+              'optics-angle-dial',
+              'optics-lens-carrier',
+              'optics-object-target',
+              'optics-screen',
+              'relativity-velocity-dial',
+              'relativity-light-clock',
+              'relativity-contracting-rod',
+              'relativity-telemetry-console',
+              'relativity-accelerator',
+            ].includes(lastTappedControlId) ||
+            (lastTappedControlId === 'optics-rail' && optics.subMode === 'imaging')
+          )
+        );
         return (
-          <div className="closeup-hover-pill closeup-inspector-card" role="status" aria-live="polite">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '12.5px', color: '#fde68a' }}>
+          <div className={`closeup-hover-pill closeup-inspector-card ${inspectorExpanded ? 'mobile-expanded' : ''}`} role="status" aria-live="polite">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '13px', color: '#fde68a' }}>
                 <span>⚡</span>
                 <span>{title}</span>
               </span>
-              {liveValue && (
-                <span style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  color: '#6ee7b7',
-                  background: 'rgba(6, 78, 59, 0.55)',
-                  border: '1px solid rgba(52, 211, 153, 0.45)',
-                  padding: '2px 8px',
-                  borderRadius: '999px',
-                  fontFamily: 'ui-monospace, monospace',
-                }}>
-                  {liveValue}
-                </span>
-              )}
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+                {isStepAdjustable && lastTappedControlId && (
+                  <div className="closeup-inspector-stepper" role="group" aria-label={`Adjust ${title}`}>
+                    <button
+                      type="button"
+                      className="closeup-step-btn"
+                      onClick={() => sceneApi.current?.stepEquipment?.(lastTappedControlId, -1)}
+                      aria-label={`Decrease ${title}`}
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      className="closeup-step-btn"
+                      onClick={() => sceneApi.current?.stepEquipment?.(lastTappedControlId, 1)}
+                      aria-label={`Increase ${title}`}
+                    >
+                      +
+                    </button>
+                  </div>
+                )}
+                {liveValue && (
+                  <span style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#6ee7b7',
+                    background: 'rgba(6, 78, 59, 0.6)',
+                    border: '1px solid rgba(52, 211, 153, 0.45)',
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    fontFamily: 'ui-monospace, monospace',
+                  }}>
+                    {liveValue}
+                  </span>
+                )}
+                {(purpose || controls) && (
+                  <button
+                    type="button"
+                    className="closeup-inspector-toggle-btn"
+                    onClick={() => setInspectorExpanded((v) => !v)}
+                    aria-label={inspectorExpanded ? 'Hide details' : 'Show details'}
+                  >
+                    {inspectorExpanded ? '▴' : 'ⓘ'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="closeup-inspector-toggle-btn"
+                  onClick={() => {
+                    setInspectorExpanded(false);
+                    setCloseupHoverText(null);
+                    setLastTappedControlId(null);
+                  }}
+                  aria-label="Dismiss readout"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
             {purpose && (
-              <div style={{ fontSize: '11.5px', lineHeight: 1.38, color: '#f8fafc', opacity: 0.94 }}>
+              <div className="closeup-inspector-detail" style={{ fontSize: '12px', lineHeight: 1.4, color: '#f8fafc', opacity: 0.94 }}>
                 {purpose}
               </div>
             )}
             {controls && (
-              <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#fcd34d', letterSpacing: '0.02em', opacity: 0.92 }}>
+              <div className="closeup-inspector-detail" style={{ fontSize: '12px', fontWeight: 700, color: '#fcd34d', letterSpacing: '0.02em', opacity: 0.92 }}>
                 🎮 {controls}
               </div>
             )}
@@ -2394,6 +2685,16 @@ export default function Room3Experience() {
             <b>Graphics</b>
             <kbd>G</kbd>
           </button>
+          <button
+            type="button"
+            className={`room3-dock-btn ${walkHudCompact ? 'active' : ''}`}
+            onClick={() => setWalkHudCompact((prev) => !prev)}
+            title="Toggle Clean View / Hide Side Panels [Key H]"
+          >
+            <span>{walkHudCompact ? '👁️' : '◫'}</span>
+            <b>{walkHudCompact ? 'Show HUD' : 'Clean View'}</b>
+            <kbd>H</kbd>
+          </button>
         </div>
       )}
 
@@ -2421,29 +2722,23 @@ export default function Room3Experience() {
       {/* Station Approach Proximity Card during Third-Person Walk */}
       {!interaction && proximateStation && !notebookOpen && cameraMode === 'walk' && (
         <aside className="room3-proximity-card" role="region" aria-label="Station Approach Prompt">
-          <div className="proximity-badge-row">
-            <span className="proximity-icon">
-              {proximateStation === 'circuits' ? '⚡' : proximateStation === 'optics' ? '🔬' : '⏱️'}
-            </span>
-            <span className="proximity-cat">
-              STATION 0{proximateStation === 'circuits' ? '1' : proximateStation === 'optics' ? '2' : '3'} PROXIMITY
-            </span>
-            <span className="proximity-badge">APPROACH WORKBENCH</span>
+          <div className="proximity-info-group">
+            <div className="proximity-badge-row">
+              <span className="proximity-icon">
+                {proximateStation === 'circuits' ? '⚡' : proximateStation === 'optics' ? '🔬' : '⏱️'}
+              </span>
+              <span className="proximity-cat">
+                STATION 0{proximateStation === 'circuits' ? '1' : proximateStation === 'optics' ? '2' : '3'} READY
+              </span>
+            </div>
+            <h3 className="proximity-title">
+              {proximateStation === 'circuits'
+                ? 'DC & AC Electrical Circuits Station'
+                : proximateStation === 'optics'
+                  ? 'Geometric & Physical Optics Bench'
+                  : 'Special Theory of Relativity Station'}
+            </h3>
           </div>
-          <h3 className="proximity-title">
-            {proximateStation === 'circuits'
-              ? 'DC & AC Electrical Circuits Station'
-              : proximateStation === 'optics'
-                ? 'Geometric & Physical Optics Bench'
-                : 'Special Theory of Relativity Station'}
-          </h3>
-          <p className="proximity-desc">
-            {proximateStation === 'circuits'
-              ? "Step up to the solderless breadboard to conduct Ohm's Law and 5-trial impedance measurements."
-              : proximateStation === 'optics'
-                ? "Inspect Snell's Law refraction, thin lens imaging, and laser wave diffraction fringes."
-                : 'Examine Lorentz length contraction, relativistic time dilation, and momentum mass energy.'}
-          </p>
           <button
             type="button"
             className="proximity-action-btn"
@@ -2453,17 +2748,30 @@ export default function Room3Experience() {
             }}
           >
             <kbd>E</kbd>
-            <span>Enter First-Person Experiment Mode</span>
+            <span>Enter Workbench</span>
           </button>
         </aside>
       )}
 
       {interaction && !notebookOpen && (
-        <aside className="mobile-target-card" aria-live="polite">
+        <aside
+          className="mobile-target-card"
+          aria-live="polite"
+          role="button"
+          tabIndex={0}
+          onClick={() => sceneApi.current?.interact()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              sceneApi.current?.interact();
+            }
+          }}
+          style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+        >
           <b>{interaction.name}</b>
           <p>{interaction.description}</p>
           <span>{interaction.readout}</span>
-          <small><kbd>E</kbd> {interaction.action}</small>
+          <small><kbd>TAP</kbd> {interaction.action}</small>
         </aside>
       )}
 
@@ -2521,6 +2829,17 @@ export default function Room3Experience() {
             <span className="btn-label">Graphics</span>
             <kbd>G</kbd>
           </button>
+          <button
+            type="button"
+            className={`room3-master-report-btn ${allRoom3StationsComplete ? 'ready' : ''}`}
+            onClick={() => openMasterReport(false)}
+            title="Open Automated Laboratory Manual & Report (.pdf / .docx)"
+          >
+            <span className="btn-icon">📄</span>
+            <span className="btn-label">
+              {allRoom3StationsComplete ? 'Final Report ✓' : 'Lab Report'}
+            </span>
+          </button>
         </nav>
       </header>
 
@@ -2560,6 +2879,14 @@ export default function Room3Experience() {
           title="Open Laboratory Notebook"
         >
           ▣ Notebook
+        </button>
+        <button
+          type="button"
+          className={`mobile-tab-btn report ${allRoom3StationsComplete ? 'ready' : ''}`}
+          onClick={() => openMasterReport(false)}
+          title="Automated Laboratory Manual & Report (.pdf / .docx)"
+        >
+          📄 Report
         </button>
       </div>
 
@@ -2633,7 +2960,7 @@ export default function Room3Experience() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <b style={{ color: '#fef08a' }}>IN-WORLD GUIDE ACTIVE</b>
                   {guidanceIndicator && (
-                    <span style={{ fontSize: '10px', color: '#38bdf8', fontWeight: 700 }}>
+                    <span style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 700 }}>
                       {guidanceIndicator.isBehind
                         ? '↻ Behind you'
                         : guidanceIndicator.screenX < -0.15
@@ -2777,7 +3104,7 @@ export default function Room3Experience() {
                     <p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#fef08a' }}>
                       🔍 Apparatus Checklist ({stationProgress.inspected.filter((id) => INSPECTION_TARGETS[stationId].includes(id)).length} / {INSPECTION_TARGETS[stationId].length} Verified)
                     </p>
-                    <span style={{ fontSize: '10px', color: '#d4af37', fontWeight: 700 }}>+{STEP_POINTS[0]} pts</span>
+                    <span style={{ fontSize: '12px', color: '#d4af37', fontWeight: 700 }}>+{STEP_POINTS[0]} pts</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                     {INSPECTION_TARGETS[stationId].map((tgt) => {
@@ -2793,7 +3120,7 @@ export default function Room3Experience() {
                             alignItems: 'center',
                             justifyContent: 'space-between',
                             padding: '6px 8px',
-                            fontSize: '11px',
+                            fontSize: '12px',
                             textAlign: 'left',
                             background: isInspected ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.06)',
                             borderColor: isInspected ? '#10b981' : 'rgba(212,175,55,0.4)',
@@ -2812,11 +3139,11 @@ export default function Room3Experience() {
                     })}
                   </div>
                   {!allInspected ? (
-                    <div style={{ color: '#fef08a', fontSize: '11px', marginTop: '6px' }}>
+                    <div style={{ color: '#fef08a', fontSize: '12px', marginTop: '6px' }}>
                       Click &ldquo;Locate 3D&rdquo; to aim at an instrument, then click the flashing 3D apparatus on the bench to verify it.
                     </div>
                   ) : (
-                    <div style={{ color: '#34d399', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>
+                    <div style={{ color: '#34d399', fontSize: '12px', marginTop: '6px', fontWeight: 600 }}>
                       ✓ All instruments inspected! Step 1 Complete (+{STEP_POINTS[0]} pts).
                     </div>
                   )}
@@ -2847,7 +3174,7 @@ export default function Room3Experience() {
                           key={oIdx}
                           type="button"
                           className="secondary-button"
-                          style={{ textAlign: 'left', padding: '6px 10px', fontSize: '11px', background: btnBg, borderColor }}
+                          style={{ textAlign: 'left', padding: '6px 10px', fontSize: '12px', background: btnBg, borderColor }}
                           onClick={() => verifyPrediction(oIdx)}
                         >
                           <MathText text={opt} /> {stationProgress.completed[1] && isCorrectChoice ? `✓ (+${STEP_POINTS[1]} pts)` : ''}
@@ -2856,12 +3183,12 @@ export default function Room3Experience() {
                     })}
                   </div>
                   {predictionStatus === 'correct' && (
-                    <div style={{ color: '#34d399', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>
+                    <div style={{ color: '#34d399', fontSize: '12px', marginTop: '6px', fontWeight: 600 }}>
                       ✓ Correct prediction! +{STEP_POINTS[1]} Points awarded.
                     </div>
                   )}
                   {predictionStatus === 'incorrect' && (
-                    <div style={{ color: '#f87171', fontSize: '11px', marginTop: '6px' }}>
+                    <div style={{ color: '#f87171', fontSize: '12px', marginTop: '6px' }}>
                       ❌ Incorrect prediction. Review the theory placard and try again.
                     </div>
                   )}
@@ -2880,7 +3207,7 @@ export default function Room3Experience() {
                   <div style={{ marginTop: '10px', background: 'rgba(56,189,248,0.1)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(56,189,248,0.4)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                       <b style={{ color: '#38bdf8', fontSize: '12px' }}>📊 5-Trial Data Collection ({curTrialIdx}/{TOTAL_TRIALS} Logged)</b>
-                      <span style={{ fontSize: '11px', color: '#fef08a', fontWeight: 700 }}>+25 pts</span>
+                      <span style={{ fontSize: '12px', color: '#fef08a', fontWeight: 700 }}>+25 pts</span>
                     </div>
 
                     {/* Progress Pills for the 5 Conditions */}
@@ -2895,7 +3222,7 @@ export default function Room3Experience() {
                               padding: '5px 2px',
                               textAlign: 'center',
                               borderRadius: '4px',
-                              fontSize: '10px',
+                              fontSize: '12px',
                               fontWeight: 700,
                               background: isLogged ? 'rgba(16,185,129,0.25)' : isTarget ? 'rgba(56,189,248,0.3)' : 'rgba(255,255,255,0.05)',
                               border: isLogged ? '1px solid #10b981' : isTarget ? '1.5px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
@@ -2903,7 +3230,7 @@ export default function Room3Experience() {
                             }}
                           >
                             <div>{isLogged ? '✓ ' : isTarget ? '🎯 ' : ''}T{idx + 1}</div>
-                            <div style={{ fontSize: '9px' }}>{cond.targetValue}{cond.unit}</div>
+                            <div style={{ fontSize: '12px' }}>{cond.targetValue}{cond.unit}</div>
                           </div>
                         );
                       })}
@@ -2915,14 +3242,14 @@ export default function Room3Experience() {
                       </div>
                     ) : (
                       <>
-                        <div style={{ padding: '8px 10px', background: 'rgba(15, 23, 42, 0.75)', borderRadius: '6px', border: '1px solid rgba(234, 179, 8, 0.35)', marginBottom: '8px', fontSize: '11px' }}>
+                        <div style={{ padding: '8px 10px', background: 'rgba(15, 23, 42, 0.75)', borderRadius: '6px', border: '1px solid rgba(234, 179, 8, 0.35)', marginBottom: '8px', fontSize: '12px' }}>
                           <div style={{ color: '#fef08a', fontWeight: 700, marginBottom: '3px' }}>
                             🎯 Target Condition #{trialNum}: {assigned.targetParam} = {assigned.targetValue} {assigned.unit}
                           </div>
-                          <div style={{ color: '#cbd5e1', fontSize: '10px', lineHeight: 1.4, marginBottom: '4px' }}>
+                          <div style={{ color: '#cbd5e1', fontSize: '12px', lineHeight: 1.4, marginBottom: '4px' }}>
                             {assigned.instruction}
                           </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#93c5fd', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '4px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#93c5fd', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '4px' }}>
                             {stationId === 'circuits' && (
                               <>
                                 <span>Live Vs: <b>{circuits.vs.toFixed(1)} V</b></span>
@@ -2945,12 +3272,12 @@ export default function Room3Experience() {
                         </div>
 
                         {validation && !validation.isValid && (
-                          <div style={{ color: '#fca5a5', background: 'rgba(127,29,29,0.3)', padding: '6px 8px', borderRadius: '4px', border: '1px solid #ef4444', fontSize: '10px', marginBottom: '8px', lineHeight: 1.3 }}>
+                          <div style={{ color: '#fca5a5', background: 'rgba(127,29,29,0.3)', padding: '6px 8px', borderRadius: '4px', border: '1px solid #ef4444', fontSize: '12px', marginBottom: '8px', lineHeight: 1.3 }}>
                             {validation.feedback}
                           </div>
                         )}
                         {validation && validation.isValid && (
-                          <div style={{ color: '#34d399', background: 'rgba(16,185,129,0.2)', padding: '6px 8px', borderRadius: '4px', border: '1px solid #10b981', fontSize: '10px', marginBottom: '8px', fontWeight: 600 }}>
+                          <div style={{ color: '#34d399', background: 'rgba(16,185,129,0.2)', padding: '6px 8px', borderRadius: '4px', border: '1px solid #10b981', fontSize: '12px', marginBottom: '8px', fontWeight: 600 }}>
                             ✓ Condition matched! Ready to record trial into lab dataset.
                           </div>
                         )}
@@ -2975,22 +3302,22 @@ export default function Room3Experience() {
                 <div style={{ marginTop: '10px', background: 'rgba(16,185,129,0.1)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.4)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <b style={{ color: '#34d399', fontSize: '12px' }}>🧮 Step 8: Computation & Scientific Analysis</b>
-                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>
                       {stationProgress.trials.length} / 5 Trials
                     </span>
                   </div>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#cbd5e1', lineHeight: '1.5' }}>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#cbd5e1', lineHeight: '1.5' }}>
                     {stationId === 'circuits' ? (
                       <>
-                        Compute experimental resistance <span className="math-expr">R = <Frac num="V" den="I" /></span> for each trial. Theoretical series resistance <span className="math-inline">R<sub>eq</sub> = 650.0 Ω</span>.
+                        Compute experimental resistance <KatexMath math="R = \frac{V}{I}" /> for each trial. Theoretical series resistance <KatexMath math="R_{\text{eq}} = 650.0\;\Omega" />.
                       </>
                     ) : stationId === 'optics' ? (
                       <>
-                        Compute experimental focal length <span className="math-expr">f = <Frac num="u · v" den="u + v" /></span> using the thin-lens equation. Theoretical focal length <span className="math-inline">f = 20.0 cm</span>.
+                        Compute experimental focal length <KatexMath math="f = \frac{u \cdot v}{u + v}" /> using the thin-lens equation. Theoretical focal length <KatexMath math="f = 20.0\;\text{cm}" />.
                       </>
                     ) : (
                       <>
-                        Compute Lorentz dilation factor <span className="math-expr">γ = <Frac num="1" den={<Sqrt>1 − β<sup>2</sup></Sqrt>} /></span> across all relativistic frames.
+                        Compute Lorentz dilation factor <KatexMath math="\gamma = \frac{1}{\sqrt{1 - \beta^2}}" /> across all relativistic frames.
                       </>
                     )}
                   </p>
@@ -2999,7 +3326,7 @@ export default function Room3Experience() {
                     <button
                       type="button"
                       className="primary-button"
-                      style={{ flex: 1, padding: '7px 8px', fontSize: '11px', fontWeight: 'bold' }}
+                      style={{ flex: 1, padding: '7px 8px', fontSize: '12px', fontWeight: 'bold' }}
                       onClick={verifyCalculations}
                       disabled={stationProgress.completed[7]}
                     >
@@ -3008,7 +3335,7 @@ export default function Room3Experience() {
                     <button
                       type="button"
                       className="secondary-button"
-                      style={{ padding: '7px 10px', fontSize: '11px', fontWeight: 'bold' }}
+                      style={{ padding: '7px 10px', fontSize: '12px', fontWeight: 'bold' }}
                       onClick={() => {
                         setNotebookOpen(true);
                         setNotebookStep(7);
@@ -3020,12 +3347,12 @@ export default function Room3Experience() {
                   </div>
 
                   {calculationStatus === 'correct' && (
-                    <div style={{ color: '#34d399', fontSize: '11px', marginTop: '8px', fontWeight: 600 }}>
+                    <div style={{ color: '#34d399', fontSize: '12px', marginTop: '8px', fontWeight: 600 }}>
                       ✓ {calculationFeedback || 'All calculations verified and match physical theory within ±2% tolerance.'}
                     </div>
                   )}
                   {calculationStatus === 'incorrect' && (
-                    <div style={{ color: '#f87171', fontSize: '11px', marginTop: '8px' }}>
+                    <div style={{ color: '#f87171', fontSize: '12px', marginTop: '8px' }}>
                       ⚠️ {calculationFeedback}
                     </div>
                   )}
@@ -3037,15 +3364,15 @@ export default function Room3Experience() {
                 <div style={{ marginTop: '10px', background: 'rgba(234,179,8,0.1)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(234,179,8,0.4)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <b style={{ color: '#fef08a', fontSize: '12px' }}>📝 Step 9: Observations &amp; CER Conclusion</b>
-                    <span style={{ fontSize: '11px', color: '#d4af37', fontWeight: 700 }}>+30 pts</span>
+                    <span style={{ fontSize: '12px', color: '#d4af37', fontWeight: 700 }}>+30 pts</span>
                   </div>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#cbd5e1', lineHeight: '1.4' }}>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#cbd5e1', lineHeight: '1.4' }}>
                     Record qualitative observations, interpret governing physical laws, and synthesize your final Claim–Evidence–Reasoning (CER) scientific conclusion in the lab notebook.
                   </p>
                   <button
                     type="button"
                     className="primary-button"
-                    style={{ width: '100%', padding: '8px', fontSize: '11px', fontWeight: 'bold', background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)' }}
+                    style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: 'bold', background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)' }}
                     onClick={() => {
                       setNotebookOpen(true);
                       setNotebookStep(8);
@@ -3062,21 +3389,21 @@ export default function Room3Experience() {
                   <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', borderBottom: '1px solid rgba(212, 175, 55, 0.3)', paddingBottom: '6px' }}>
                     <button
                       type="button"
-                      style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: 'none', background: hintLevel === 1 ? '#d4af37' : 'rgba(255,255,255,0.08)', color: hintLevel === 1 ? '#000' : '#fef08a', fontWeight: 700, cursor: 'pointer' }}
+                      style={{ fontSize: '12px', padding: '3px 8px', borderRadius: '4px', border: 'none', background: hintLevel === 1 ? '#d4af37' : 'rgba(255,255,255,0.08)', color: hintLevel === 1 ? '#000' : '#fef08a', fontWeight: 700, cursor: 'pointer' }}
                       onClick={() => setHintLevel(1)}
                     >
                       Level 1: Guidance
                     </button>
                     <button
                       type="button"
-                      style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: 'none', background: hintLevel === 2 ? '#d4af37' : 'rgba(255,255,255,0.08)', color: hintLevel === 2 ? '#000' : '#fef08a', fontWeight: 700, cursor: 'pointer' }}
+                      style={{ fontSize: '12px', padding: '3px 8px', borderRadius: '4px', border: 'none', background: hintLevel === 2 ? '#d4af37' : 'rgba(255,255,255,0.08)', color: hintLevel === 2 ? '#000' : '#fef08a', fontWeight: 700, cursor: 'pointer' }}
                       onClick={() => setHintLevel(2)}
                     >
                       Level 2: Principle
                     </button>
                     <button
                       type="button"
-                      style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: 'none', background: hintLevel === 3 ? '#d4af37' : 'rgba(255,255,255,0.08)', color: hintLevel === 3 ? '#000' : '#fef08a', fontWeight: 700, cursor: 'pointer' }}
+                      style={{ fontSize: '12px', padding: '3px 8px', borderRadius: '4px', border: 'none', background: hintLevel === 3 ? '#d4af37' : 'rgba(255,255,255,0.08)', color: hintLevel === 3 ? '#000' : '#fef08a', fontWeight: 700, cursor: 'pointer' }}
                       onClick={() => setHintLevel(3)}
                     >
                       Level 3: Procedure
@@ -3087,7 +3414,7 @@ export default function Room3Experience() {
                     {hintLevel === 2 && <span><b>🔬 Level 2 (Physical Principle):</b> <MathText text={currentGuidedStep.hints.concept} /></span>}
                     {hintLevel === 3 && <span><b>🛠️ Level 3 (Procedure):</b> <MathText text={currentGuidedStep.hints.procedure} /></span>}
                   </div>
-                  <div style={{ marginTop: '6px', fontSize: '10px', color: '#94a3b8', fontStyle: 'italic' }}>
+                  <div style={{ marginTop: '6px', fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' }}>
                     Note: Hints provide educational guidance only and never advance steps, record trials, or award points.
                   </div>
                 </div>
@@ -3117,7 +3444,7 @@ export default function Room3Experience() {
                 <div className="guided-validation-badge in-progress">
                   <span>⏳ STATUS: <MathText text={stepPrereq.feedback || stepValidation.feedback} /></span>
                   {stepPrereq.remainingTasks.length > 0 && (
-                    <div style={{ marginTop: '4px', fontSize: '11px', color: '#fca5a5' }}>
+                    <div style={{ marginTop: '4px', fontSize: '12px', color: '#fca5a5' }}>
                       Required: <MathText text={stepPrereq.remainingTasks.join('; ')} />
                     </div>
                   )}
@@ -3129,7 +3456,7 @@ export default function Room3Experience() {
                 <button
                   type="button"
                   className="secondary-button"
-                  style={{ padding: '6px 10px', fontSize: '11px' }}
+                  style={{ padding: '6px 10px', fontSize: '12px' }}
                   disabled={activeStepIdx === 0}
                   onClick={() => {
                     setViewStepIndex(Math.max(0, activeStepIdx - 1));
@@ -3141,7 +3468,7 @@ export default function Room3Experience() {
                 <button
                   type="button"
                   className="secondary-button"
-                  style={{ padding: '6px 10px', fontSize: '11px' }}
+                  style={{ padding: '6px 10px', fontSize: '12px' }}
                   onClick={() => setHintLevel((prev) => (prev >= 3 ? 0 : prev + 1))}
                 >
                   {hintLevel === 0 ? '💡 Hint' : hintLevel === 1 ? '💡 Concept (Lvl 2)' : hintLevel === 2 ? '💡 Procedure (Lvl 3)' : 'Hide Hint'}
@@ -3170,7 +3497,7 @@ export default function Room3Experience() {
               <button
                 type="button"
                 className={`dmm-btn ${activeWorkspaceView === '3d' ? 'active' : ''}`}
-                style={{ flex: 1, padding: '7px 4px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                style={{ flex: 1, padding: '7px 4px', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
                 onClick={() => setActiveWorkspaceView('3d')}
               >
                 <span>🔬 3D Laboratory</span>
@@ -3178,7 +3505,7 @@ export default function Room3Experience() {
               <button
                 type="button"
                 className={`dmm-btn ${activeWorkspaceView === 'circuit_workspace' ? 'active' : ''}`}
-                style={{ flex: 1, padding: '7px 4px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', background: activeWorkspaceView === 'circuit_workspace' ? '#0284c7' : '#0f172a', color: '#38bdf8' }}
+                style={{ flex: 1, padding: '7px 4px', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', background: activeWorkspaceView === 'circuit_workspace' ? '#0284c7' : '#0f172a', color: '#38bdf8' }}
                 onClick={() => setActiveWorkspaceView('circuit_workspace')}
               >
                 <span>⚡ Breadboard (DCACLab)</span>
@@ -3209,13 +3536,13 @@ export default function Room3Experience() {
             <div className="dmm-workbench-card" style={{ marginBottom: '8px' }}>
               <div className="dmm-header-title">
                 <b>DC REGULATED POWER SUPPLY</b>
-                <span style={{ fontSize: '11px', color: circuits.powerOn ? '#34d399' : '#ef4444' }}>
+                <span style={{ fontSize: '12px', color: circuits.powerOn ? '#34d399' : '#ef4444' }}>
                   {circuits.powerOn ? '● OUTPUT ON' : '○ STANDBY'}
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '6px 0 8px' }}>
                 <div>
-                  <span style={{ fontSize: '10px', color: '#94a3b8' }}>SOURCE POTENTIAL:</span>
+                  <span style={{ fontSize: '12px', color: '#94a3b8' }}>SOURCE POTENTIAL:</span>
                   <div style={{ fontSize: '20px', fontWeight: 800, color: '#fef08a' }}>
                     {circuits.vs.toFixed(1)} <span style={{ fontSize: '13px' }}>V DC</span>
                   </div>
@@ -3224,7 +3551,7 @@ export default function Room3Experience() {
                   <button
                     type="button"
                     className="secondary-button"
-                    style={{ padding: '4px 8px', fontSize: '11px', fontWeight: 700 }}
+                    style={{ padding: '4px 8px', fontSize: '12px', fontWeight: 700 }}
                     onClick={() => {
                       const nextVs = Math.max(0, Math.round((circuits.vs - 1.0) * 10) / 10);
                       setCircuits((c) => ({ ...c, vs: nextVs }));
@@ -3237,7 +3564,7 @@ export default function Room3Experience() {
                   <button
                     type="button"
                     className="secondary-button"
-                    style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }}
+                    style={{ padding: '4px 6px', fontSize: '12px', fontWeight: 700 }}
                     onClick={() => {
                       const nextVs = Math.max(0, Math.round((circuits.vs - 0.1) * 10) / 10);
                       setCircuits((c) => ({ ...c, vs: nextVs }));
@@ -3250,7 +3577,7 @@ export default function Room3Experience() {
                   <button
                     type="button"
                     className="secondary-button"
-                    style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }}
+                    style={{ padding: '4px 6px', fontSize: '12px', fontWeight: 700 }}
                     onClick={() => {
                       const nextVs = Math.min(30, Math.round((circuits.vs + 0.1) * 10) / 10);
                       setCircuits((c) => ({ ...c, vs: nextVs }));
@@ -3263,7 +3590,7 @@ export default function Room3Experience() {
                   <button
                     type="button"
                     className="secondary-button"
-                    style={{ padding: '4px 8px', fontSize: '11px', fontWeight: 700 }}
+                    style={{ padding: '4px 8px', fontSize: '12px', fontWeight: 700 }}
                     onClick={() => {
                       const nextVs = Math.min(30, Math.round((circuits.vs + 1.0) * 10) / 10);
                       setCircuits((c) => ({ ...c, vs: nextVs }));
@@ -3278,7 +3605,7 @@ export default function Room3Experience() {
 
               {/* Rotary Voltage Knob Target Steps */}
               <div>
-                <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>
+                <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>
                   <b>ROTARY VOLTAGE DIAL STEPS:</b>
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '3px' }}>
@@ -3287,7 +3614,7 @@ export default function Room3Experience() {
                       key={v}
                       type="button"
                       className={`dmm-btn ${Math.abs(circuits.vs - v) < 0.1 ? 'active' : ''}`}
-                      style={{ padding: '4px 2px', fontSize: '10px' }}
+                      style={{ padding: '4px 2px', fontSize: '12px' }}
                       onClick={() => {
                         setCircuits((c) => ({ ...c, vs: v, powerOn: true }));
                         playTone(480 + (v / 30) * 200, 'sine', 0.05, 0.12);
@@ -3303,7 +3630,7 @@ export default function Room3Experience() {
                 <button
                   type="button"
                   className="cam-focus-btn"
-                  style={{ flex: 1, padding: '5px', fontSize: '10px', background: 'rgba(212, 175, 55, 0.15)', borderColor: '#d4af37', color: '#fef08a' }}
+                  style={{ flex: 1, padding: '5px', fontSize: '12px', background: 'rgba(212, 175, 55, 0.15)', borderColor: '#d4af37', color: '#fef08a' }}
                   onClick={() => {
                     handleSetCloseup('closeup');
                     handleSetCloseupFocus('psu');
@@ -3318,7 +3645,7 @@ export default function Room3Experience() {
             <div className="dmm-workbench-card">
               <div className="dmm-header-title">
                 <b>FLUKE 87V DIGITAL MULTIMETER</b>
-                <span style={{ fontSize: '11px', color: '#94a3b8' }}>TRUE-RMS CAT IV</span>
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>TRUE-RMS CAT IV</span>
               </div>
 
               {/* Dynamic LCD Screen */}
@@ -3329,7 +3656,7 @@ export default function Room3Experience() {
                 </div>
                 <div className="dmm-lcd-digits">{dmmReading.displayString}</div>
                 {dmmReading.isContinuityBeep && (
-                  <div style={{ color: '#34d399', fontSize: '11px', marginTop: '4px' }}>
+                  <div style={{ color: '#34d399', fontSize: '12px', marginTop: '4px' }}>
                     🔊 CONTINUITY DETECTED (&lt; 30 Ω)
                   </div>
                 )}
@@ -3340,7 +3667,7 @@ export default function Room3Experience() {
 
               {/* Rotary Mode Selector Buttons */}
               <div>
-                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
                   <b>ROTARY FUNCTION DIAL:</b>
                 </label>
                 <div className="dmm-button-grid">
@@ -3391,7 +3718,7 @@ export default function Room3Experience() {
 
               {/* Red Lead Input Jack Selector */}
               <div>
-                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
                   <b>RED LEAD INPUT JACK:</b>
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
@@ -3415,11 +3742,11 @@ export default function Room3Experience() {
               {/* Probe Terminals Connection */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                 <div>
-                  <label style={{ fontSize: '10px', color: '#ef4444', display: 'block', marginBottom: '2px', fontWeight: 700 }}>
+                  <label style={{ fontSize: '12px', color: '#ef4444', display: 'block', marginBottom: '2px', fontWeight: 700 }}>
                     🔴 RED PROBE NODE:
                   </label>
                   <select
-                    style={{ width: '100%', padding: '6px', fontSize: '11px', background: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '6px' }}
+                    style={{ width: '100%', padding: '6px', fontSize: '12px', background: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '6px' }}
                     value={redTerminal ?? ''}
                     onChange={(e) => handleSetProbe('red', (e.target.value as TerminalId) || null)}
                   >
@@ -3437,11 +3764,11 @@ export default function Room3Experience() {
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px', fontWeight: 700 }}>
+                  <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '2px', fontWeight: 700 }}>
                     ⚫ BLACK PROBE (COM):
                   </label>
                   <select
-                    style={{ width: '100%', padding: '6px', fontSize: '11px', background: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '6px' }}
+                    style={{ width: '100%', padding: '6px', fontSize: '12px', background: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '6px' }}
                     value={blackTerminal ?? ''}
                     onChange={(e) => handleSetProbe('black', (e.target.value as TerminalId) || null)}
                   >
@@ -3464,7 +3791,7 @@ export default function Room3Experience() {
               <button
                 type="button"
                 className="secondary-button"
-                style={{ width: '100%', padding: '6px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'rgba(212,175,55,0.15)', borderColor: '#d4af37' }}
+                style={{ width: '100%', padding: '6px', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'rgba(212,175,55,0.15)', borderColor: '#d4af37' }}
                 onClick={() => {
                   sceneApi.current?.flipProbePolarity();
                   const curRed = redTerminal;
@@ -3483,7 +3810,7 @@ export default function Room3Experience() {
                 <button
                   type="button"
                   className="dmm-btn"
-                  style={{ width: '100%', padding: '6px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: redTerminal === null && blackTerminal === null ? 'rgba(56,189,248,0.2)' : 'rgba(255,255,255,0.05)' }}
+                  style={{ width: '100%', padding: '6px', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: redTerminal === null && blackTerminal === null ? 'rgba(56,189,248,0.2)' : 'rgba(255,255,255,0.05)' }}
                   onClick={() => handleQuickProbe('park')}
                   title="Remove both multimeter probes and place them in the parked rest position"
                 >
@@ -3493,7 +3820,7 @@ export default function Room3Experience() {
 
               {/* Breadboard Circuit Configuration Selector */}
               <div style={{ marginTop: '8px' }}>
-                <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '4px', fontWeight: 700 }}>
+                <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px', fontWeight: 700 }}>
                   🔌 CIRCUIT TOPOLOGY / LABORATORY EXERCISE:
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
@@ -3502,7 +3829,7 @@ export default function Room3Experience() {
                     className="dmm-btn"
                     style={{
                       padding: '5px 2px',
-                      fontSize: '10px',
+                      fontSize: '12px',
                       fontWeight: 'bold',
                       background: circuits.topology === 'single' ? '#0284c7' : 'rgba(255,255,255,0.06)',
                       borderColor: circuits.topology === 'single' ? '#38bdf8' : 'rgba(255,255,255,0.15)',
@@ -3521,7 +3848,7 @@ export default function Room3Experience() {
                     className="dmm-btn"
                     style={{
                       padding: '5px 2px',
-                      fontSize: '10px',
+                      fontSize: '12px',
                       fontWeight: 'bold',
                       background: circuits.topology === 'series' ? '#0284c7' : 'rgba(255,255,255,0.06)',
                       borderColor: circuits.topology === 'series' ? '#38bdf8' : 'rgba(255,255,255,0.15)',
@@ -3540,7 +3867,7 @@ export default function Room3Experience() {
                     className="dmm-btn"
                     style={{
                       padding: '5px 2px',
-                      fontSize: '10px',
+                      fontSize: '12px',
                       fontWeight: 'bold',
                       background: circuits.topology === 'parallel' ? '#0284c7' : 'rgba(255,255,255,0.06)',
                       borderColor: circuits.topology === 'parallel' ? '#38bdf8' : 'rgba(255,255,255,0.15)',
@@ -3560,15 +3887,15 @@ export default function Room3Experience() {
               {/* Component Ratings & Live DMM Probe Wiring Card (No Pre-Solved Answers) */}
               <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(212, 175, 55, 0.35)', borderRadius: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <b style={{ fontSize: '10px', color: '#d4af37', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <b style={{ fontSize: '12px', color: '#d4af37', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     📊 Breadboard Spec & Probe Wiring
                   </b>
-                  <span style={{ fontSize: '9px', color: circuits.powerOn ? '#34d399' : '#94a3b8' }}>
+                  <span style={{ fontSize: '12px', color: circuits.powerOn ? '#34d399' : '#94a3b8' }}>
                     {circuits.powerOn ? `PSU: ${circuits.vs.toFixed(1)} V ON` : 'PSU STANDBY'}
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px' }}>
                   {circuits.topology !== 'single' && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '3px 6px', borderRadius: '4px' }}>
                       <span style={{ color: '#cbd5e1' }}><b>R1 (Brn-Blk-Brn):</b> {circuits.r1} Ω ±1% · 1W</span>
@@ -3626,7 +3953,7 @@ export default function Room3Experience() {
             <div className="dmm-workbench-card" style={{ marginTop: '8px' }}>
               <div className="dmm-header-title">
                 <b>TEKTRONIX TDS2024 DIGITAL STORAGE OSCILLOSCOPE</b>
-                <span style={{ fontSize: '11px', color: oscilloscope.powerOn ? '#38bdf8' : '#ef4444' }}>
+                <span style={{ fontSize: '12px', color: oscilloscope.powerOn ? '#38bdf8' : '#ef4444' }}>
                   {oscilloscope.powerOn ? (oscilloscope.runState === 'run' ? '● RUNNING' : '⏸ STOPPED') : '○ OFF'}
                 </span>
               </div>
@@ -3661,7 +3988,7 @@ export default function Room3Experience() {
                 <button
                   type="button"
                   className="cam-focus-btn"
-                  style={{ flex: 1.2, padding: '6px', fontSize: '10px', background: 'rgba(56, 189, 248, 0.15)', borderColor: '#38bdf8', color: '#7dd3fc' }}
+                  style={{ flex: 1.2, padding: '6px', fontSize: '12px', background: 'rgba(56, 189, 248, 0.15)', borderColor: '#38bdf8', color: '#7dd3fc' }}
                   onClick={() => {
                     handleSetCloseup('closeup');
                     handleSetCloseupFocus('oscilloscope');
@@ -3673,7 +4000,7 @@ export default function Room3Experience() {
 
               {/* Live Signal Telemetry (RMS / Vpp / Freq / Phase) */}
               <div style={{ padding: '6px 8px', background: 'rgba(2, 6, 23, 0.9)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', marginBottom: '8px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', fontSize: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', fontSize: '12px' }}>
                   <div style={{ color: '#facc15' }}>
                     <b>CH1 (V):</b> {circuits.powerOn ? (
                       circuits.mode === 'ac'
@@ -3689,7 +4016,7 @@ export default function Room3Experience() {
                     ) : '0.00 mA'}
                   </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#94a3b8', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '3px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '3px' }}>
                   <span>Freq: <b>{circuits.mode === 'ac' ? `${circuits.freq.toFixed(0)} Hz` : 'DC (0 Hz)'}</b></span>
                   <span>Phase Δφ: <b>{(circuitResult.phaseAngleRad * 180 / Math.PI).toFixed(1)}°</b></span>
                   <span>cos φ: <b>{circuitResult.powerFactor.toFixed(3)}</b></span>
@@ -3699,10 +4026,10 @@ export default function Room3Experience() {
               {/* Channel 1 Controls (Yellow Trace) */}
               <div style={{ marginBottom: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                  <label style={{ fontSize: '10px', color: '#facc15', fontWeight: 700 }}>
+                  <label style={{ fontSize: '12px', color: '#facc15', fontWeight: 700 }}>
                     CH1 VOLTAGE PROBE & SCALE:
                   </label>
-                  <span style={{ fontSize: '10px', color: '#e2e8f0', fontWeight: 700 }}>
+                  <span style={{ fontSize: '12px', color: '#e2e8f0', fontWeight: 700 }}>
                     {oscilloscope.ch1VoltsPerDiv} V/div
                   </span>
                 </div>
@@ -3712,7 +4039,7 @@ export default function Room3Experience() {
                       key={src}
                       type="button"
                       className={`dmm-btn ${oscilloscope.ch1Source === src ? 'active' : ''}`}
-                      style={{ flex: 1, padding: '3px 0', fontSize: '9px', color: oscilloscope.ch1Source === src ? '#facc15' : '#cbd5e1' }}
+                      style={{ flex: 1, padding: '3px 0', fontSize: '12px', color: oscilloscope.ch1Source === src ? '#facc15' : '#cbd5e1' }}
                       onClick={() => {
                         setOscilloscope((o) => ({ ...o, ch1Source: src }));
                         playTone(550, 'sine', 0.04, 0.1);
@@ -3728,7 +4055,7 @@ export default function Room3Experience() {
                       key={v}
                       type="button"
                       className={`dmm-btn ${oscilloscope.ch1VoltsPerDiv === v ? 'active' : ''}`}
-                      style={{ padding: '3px 0', fontSize: '9px' }}
+                      style={{ padding: '3px 0', fontSize: '12px' }}
                       onClick={() => {
                         setOscilloscope((o) => ({ ...o, ch1VoltsPerDiv: v }));
                         playTone(580, 'triangle', 0.04, 0.1);
@@ -3743,10 +4070,10 @@ export default function Room3Experience() {
               {/* Channel 2 Controls (Cyan Trace) */}
               <div style={{ marginBottom: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                  <label style={{ fontSize: '10px', color: '#38bdf8', fontWeight: 700 }}>
+                  <label style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 700 }}>
                     CH2 CURRENT / NODE & SCALE:
                   </label>
-                  <span style={{ fontSize: '10px', color: '#e2e8f0', fontWeight: 700 }}>
+                  <span style={{ fontSize: '12px', color: '#e2e8f0', fontWeight: 700 }}>
                     {oscilloscope.ch2VoltsPerDiv} mA/div
                   </span>
                 </div>
@@ -3756,7 +4083,7 @@ export default function Room3Experience() {
                       key={src}
                       type="button"
                       className={`dmm-btn ${oscilloscope.ch2Source === src ? 'active' : ''}`}
-                      style={{ flex: 1, padding: '3px 0', fontSize: '9px', color: oscilloscope.ch2Source === src ? '#38bdf8' : '#cbd5e1' }}
+                      style={{ flex: 1, padding: '3px 0', fontSize: '12px', color: oscilloscope.ch2Source === src ? '#38bdf8' : '#cbd5e1' }}
                       onClick={() => {
                         setOscilloscope((o) => ({ ...o, ch2Source: src }));
                         playTone(600, 'sine', 0.04, 0.1);
@@ -3772,7 +4099,7 @@ export default function Room3Experience() {
                       key={v}
                       type="button"
                       className={`dmm-btn ${oscilloscope.ch2VoltsPerDiv === v ? 'active' : ''}`}
-                      style={{ padding: '3px 0', fontSize: '9px' }}
+                      style={{ padding: '3px 0', fontSize: '12px' }}
                       onClick={() => {
                         setOscilloscope((o) => ({ ...o, ch2VoltsPerDiv: v }));
                         playTone(640, 'triangle', 0.04, 0.1);
@@ -3787,10 +4114,10 @@ export default function Room3Experience() {
               {/* Horizontal SEC/DIV Timebase */}
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                  <label style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
+                  <label style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 700 }}>
                     HORIZONTAL TIMEBASE (SEC/DIV):
                   </label>
-                  <span style={{ fontSize: '10px', color: '#e2e8f0', fontWeight: 700 }}>
+                  <span style={{ fontSize: '12px', color: '#e2e8f0', fontWeight: 700 }}>
                     {oscilloscope.timePerDivMs} ms/div
                   </span>
                 </div>
@@ -3800,7 +4127,7 @@ export default function Room3Experience() {
                       key={t}
                       type="button"
                       className={`dmm-btn ${oscilloscope.timePerDivMs === t ? 'active' : ''}`}
-                      style={{ padding: '3px 0', fontSize: '9px' }}
+                      style={{ padding: '3px 0', fontSize: '12px' }}
                       onClick={() => {
                         setOscilloscope((o) => ({ ...o, timePerDivMs: t }));
                         playTone(520, 'triangle', 0.04, 0.1);
@@ -3819,7 +4146,7 @@ export default function Room3Experience() {
                     key={coup}
                     type="button"
                     className={`dmm-btn ${oscilloscope.coupling === coup ? 'active' : ''}`}
-                    style={{ flex: 1, padding: '4px 0', fontSize: '9px', fontWeight: 700 }}
+                    style={{ flex: 1, padding: '4px 0', fontSize: '12px', fontWeight: 700 }}
                     onClick={() => {
                       setOscilloscope((o) => ({ ...o, coupling: coup }));
                       playTone(500, 'sine', 0.03, 0.1);
@@ -3877,7 +4204,7 @@ export default function Room3Experience() {
 
             {optics.subMode === 'refraction' && (
               <>
-                <div style={{ fontSize: '11px', color: '#fef08a', fontFamily: 'monospace', padding: '6px 10px', background: 'rgba(53, 18, 29, 0.85)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '6px', margin: '4px 0 8px' }}>
+                <div style={{ fontSize: '12px', color: '#fef08a', fontFamily: 'monospace', padding: '6px 10px', background: 'rgba(53, 18, 29, 0.85)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '6px', margin: '4px 0 8px' }}>
                   Cauchy Effective n₂(λ): <b>{opticsResult.effectiveN2.toFixed(4)}</b> (Base: {optics.n2.toFixed(2)})
                 </div>
                 <RangeControl
@@ -4062,7 +4389,7 @@ export default function Room3Experience() {
               <button
                 type="button"
                 className={`dmm-btn ${relativity.powerOn !== false ? 'active' : ''}`}
-                style={{ padding: '8px 4px', fontSize: '11px', color: relativity.powerOn !== false ? '#34d399' : '#ef4444' }}
+                style={{ padding: '8px 4px', fontSize: '12px', color: relativity.powerOn !== false ? '#34d399' : '#ef4444' }}
                 onClick={() => {
                   const next = { ...relativity, powerOn: relativity.powerOn === false ? true : false };
                   setRelativity(next);
@@ -4077,7 +4404,7 @@ export default function Room3Experience() {
                 className="dmm-btn"
                 style={{
                   padding: '8px 4px',
-                  fontSize: '11px',
+                  fontSize: '12px',
                   background: relativity.referenceFrame === 'rest' ? 'rgba(56, 189, 248, 0.25)' : 'rgba(212, 175, 55, 0.2)',
                   borderColor: relativity.referenceFrame === 'rest' ? '#38bdf8' : '#d4af37',
                   color: relativity.referenceFrame === 'rest' ? '#38bdf8' : '#fef08a',
@@ -4118,7 +4445,7 @@ export default function Room3Experience() {
               <button
                 type="button"
                 className="secondary-button"
-                style={{ flex: 1, padding: '4px 6px', fontSize: '11px', fontWeight: 'bold' }}
+                style={{ flex: 1, padding: '4px 6px', fontSize: '12px', fontWeight: 'bold' }}
                 onClick={() => {
                   const next = { ...relativity, simPlaying: !relativity.simPlaying };
                   setRelativity(next);
@@ -4134,7 +4461,7 @@ export default function Room3Experience() {
                   className="secondary-button"
                   style={{
                     padding: '4px 5px',
-                    fontSize: '10px',
+                    fontSize: '12px',
                     background: (relativity.simSpeed ?? 1.0) === spd ? '#0284c7' : 'rgba(255,255,255,0.06)',
                     borderColor: (relativity.simSpeed ?? 1.0) === spd ? '#38bdf8' : 'rgba(255,255,255,0.15)',
                     color: '#fff',
@@ -4157,7 +4484,7 @@ export default function Room3Experience() {
                 className="secondary-button"
                 style={{
                   padding: '4px',
-                  fontSize: '10px',
+                  fontSize: '12px',
                   background: relativity.showPhotonPath ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.05)',
                   borderColor: relativity.showPhotonPath ? '#38bdf8' : 'rgba(255,255,255,0.15)',
                   color: relativity.showPhotonPath ? '#38bdf8' : '#cbd5e1',
@@ -4175,7 +4502,7 @@ export default function Room3Experience() {
                 className="secondary-button"
                 style={{
                   padding: '4px',
-                  fontSize: '10px',
+                  fontSize: '12px',
                   background: relativity.showSimultaneityGates ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.05)',
                   borderColor: relativity.showSimultaneityGates ? '#10b981' : 'rgba(255,255,255,0.15)',
                   color: relativity.showSimultaneityGates ? '#34d399' : '#cbd5e1',
@@ -4214,7 +4541,7 @@ export default function Room3Experience() {
                   className="secondary-button"
                   style={{
                     padding: '3px 2px',
-                    fontSize: '10px',
+                    fontSize: '12px',
                     background: Math.abs(relativity.beta - b) < 0.02 ? '#0284c7' : 'rgba(255,255,255,0.05)',
                     borderColor: Math.abs(relativity.beta - b) < 0.02 ? '#38bdf8' : 'rgba(255,255,255,0.15)',
                     color: Math.abs(relativity.beta - b) < 0.02 ? '#fff' : '#cbd5e1',
@@ -4235,7 +4562,7 @@ export default function Room3Experience() {
             {/* 5. Authoritative Telemetry Readout */}
             <div className="formula-readout" style={{ padding: '10px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '6px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '4px' }}>
-                <span style={{ fontSize: '11px', color: '#fef08a' }}>
+                <span style={{ fontSize: '12px', color: '#fef08a' }}>
                   Lorentz Factor: <b className="math-expr">γ = <Frac num="1" den={<Sqrt>1 − β<sup>2</sup></Sqrt>} /></b>
                 </span>
                 <strong style={{ fontSize: '13px', color: '#38bdf8' }}>γ = {relativityResult.gamma.toFixed(4)}</strong>
@@ -4248,7 +4575,7 @@ export default function Room3Experience() {
                 <Metric label="Contracted Length L" value={<span className="math-inline">{relativityResult.contractedLength.toFixed(3)} m (<Frac num={<>L<sub>0</sub></>} den="γ" />)</span>} />
               </dl>
 
-              <details className="telemetry-details" style={{ marginTop: '6px', fontSize: '10px' }}>
+              <details className="telemetry-details" style={{ marginTop: '6px', fontSize: '12px' }}>
                 <summary style={{ cursor: 'pointer', color: '#fef08a' }}>Relativistic Mass-Energy Breakdown (No Relativistic Mass)</summary>
                 <dl style={{ margin: '4px 0 0' }}>
                   <Metric label={<span className="math-inline">Rest Energy E<sub>0</sub> (m<sub>0</sub>c<sup>2</sup>)</span>} value={`${formatValue(relativityResult.restEnergyMeV)} MeV`} />
@@ -4285,13 +4612,13 @@ export default function Room3Experience() {
               <span style={{ fontSize: '12px', fontWeight: 800, color: '#fef08a' }}>
                 🔬 3D DATA TRIALS ({stationProgress.trials.length} / {TOTAL_TRIALS})
               </span>
-              <span style={{ fontSize: '11px', color: stationProgress.trials.length >= TOTAL_TRIALS ? '#34d399' : '#d4af37', fontWeight: 700 }}>
+              <span style={{ fontSize: '12px', color: stationProgress.trials.length >= TOTAL_TRIALS ? '#34d399' : '#d4af37', fontWeight: 700 }}>
                 {stationProgress.trials.length >= TOTAL_TRIALS ? '✓ All 5 Logged' : `Trial #${stationProgress.trials.length + 1}`}
               </span>
             </div>
 
             {stationProgress.trials.length < TOTAL_TRIALS && (
-              <div style={{ fontSize: '11px', color: '#e2e8f0', marginBottom: '8px', background: 'rgba(26, 9, 14, 0.6)', padding: '6px 8px', borderRadius: '4px', border: '1px solid rgba(212, 175, 55, 0.25)' }}>
+              <div style={{ fontSize: '12px', color: '#e2e8f0', marginBottom: '8px', background: 'rgba(26, 9, 14, 0.6)', padding: '6px 8px', borderRadius: '4px', border: '1px solid rgba(212, 175, 55, 0.25)' }}>
                 Target #{stationProgress.trials.length + 1}: <b style={{ color: '#fef08a' }}>
                   {(() => {
                     const tgt = ROOM3_ASSIGNED_TRIALS[stationId][stationProgress.trials.length];
@@ -4302,7 +4629,7 @@ export default function Room3Experience() {
             )}
 
             {stationProgress.trials.length < TOTAL_TRIALS && (
-              <div style={{ marginBottom: '10px', fontSize: '11px', color: '#cbd5e1', background: 'rgba(15, 23, 42, 0.72)', padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(212, 175, 55, 0.25)' }}>
+              <div style={{ marginBottom: '10px', fontSize: '12px', color: '#cbd5e1', background: 'rgba(15, 23, 42, 0.72)', padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(212, 175, 55, 0.25)' }}>
                 {stationId === 'circuits' && 'Configure the 3D power supply & DMM probes on the workbench, obtain a live reading, then record.'}
                 {stationId === 'optics' && 'Set u on the rail, slide Screen Position v until sharp focus (≥85%) appears in 3D, then record.'}
                 {stationId === 'relativity' && 'Tune frame velocity β on the maglev console, observe clock/length changes, then log the run.'}
@@ -4317,7 +4644,7 @@ export default function Room3Experience() {
                 border: '1.5px solid #ef4444',
                 borderRadius: '6px',
                 color: '#fef2f2',
-                fontSize: '11px',
+                fontSize: '12px',
                 fontWeight: 600,
                 lineHeight: 1.4,
               }}>
@@ -4414,6 +4741,14 @@ export default function Room3Experience() {
         >
           ▣ Notebook
         </button>
+        <button
+          type="button"
+          className={allRoom3StationsComplete ? 'master-report-dock-ready' : undefined}
+          onClick={() => openMasterReport(false)}
+          title="Open Automated Full-Manual Report (.pdf / .docx)"
+        >
+          📄 Master Report
+        </button>
       </div>
 
       {/* Mobile Touch Controls */}
@@ -4460,10 +4795,20 @@ export default function Room3Experience() {
                 )}
                 <button
                   type="button"
+                  className="mobile-closeup-btn"
+                  onClick={() => {
+                    setCloseupHudExpanded(false);
+                    setMobilePanel((v) => (v === 'controls' ? 'none' : 'controls'));
+                  }}
+                >
+                  🎛️ Controls
+                </button>
+                <button
+                  type="button"
                   className="mobile-closeup-btn primary"
                   onClick={() => handleSetCloseup('walk')}
                 >
-                  🚶 Exit Close-Up
+                  🚶 Exit
                 </button>
               </div>
             </div>
@@ -4636,7 +4981,7 @@ export default function Room3Experience() {
                     <b style={{ color: '#fef08a' }}>
                       Station Component Physical Inspection Status ({stationProgress.inspected.filter((id) => INSPECTION_TARGETS[stationId].includes(id)).length} / {INSPECTION_TARGETS[stationId].length} Inspected):
                     </b>
-                    <ul style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px', padding: 0 }}>
+                    <ul className="room3-inspection-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px', padding: 0 }}>
                       {INSPECTION_TARGETS[stationId].map((tgt) => {
                         const isInspected = stationProgress.inspected.includes(tgt);
                         const label = INSPECTION_LABELS[tgt] || tgt.replace(`${stationId}-`, '').replace(/-/g, ' ').toUpperCase();
@@ -4671,7 +5016,7 @@ export default function Room3Experience() {
                               <span style={{ fontSize: '14px' }}>{isInspected ? '✅' : '🔍'}</span>
                               <span style={{ fontSize: '12px', fontWeight: 600, color: isInspected ? '#34d399' : '#e9dfc9' }}>{label}</span>
                             </div>
-                            <span style={{ fontSize: '10px', color: isInspected ? '#34d399' : '#d4af37', fontWeight: 700 }}>
+                            <span style={{ fontSize: '12px', color: isInspected ? '#34d399' : '#d4af37', fontWeight: 700 }}>
                               {isInspected ? '✓ Inspected' : 'Locate in 3D →'}
                             </span>
                           </li>
@@ -4810,17 +5155,17 @@ export default function Room3Experience() {
                   {stationId === 'circuits' && (
                     <div className="telemetry-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '16px' }}>
                       <div className="telemetry-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>SOURCE POTENTIAL</span>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>SOURCE POTENTIAL</span>
                         <div style={{ fontSize: '18px', fontWeight: 700, color: '#fef08a' }}>{circuits.vs.toFixed(1)} V DC</div>
                       </div>
                       <div className="telemetry-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>POWER STATUS</span>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>POWER STATUS</span>
                         <div style={{ fontSize: '18px', fontWeight: 700, color: circuits.powerOn ? '#10b981' : '#ef4444' }}>
                           {circuits.powerOn ? '● ENERGIZED' : '○ DE-ENERGIZED'}
                         </div>
                       </div>
                       <div className="telemetry-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>CIRCUIT REGIME</span>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>CIRCUIT REGIME</span>
                         <div style={{ fontSize: '18px', fontWeight: 700, color: '#d4af37' }}>DC Steady-State</div>
                       </div>
                     </div>
@@ -4829,17 +5174,17 @@ export default function Room3Experience() {
                   {stationId === 'optics' && (
                     <div className="telemetry-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '16px' }}>
                       <div className="telemetry-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>LASER WAVELENGTH</span>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>LASER WAVELENGTH</span>
                         <div style={{ fontSize: '18px', fontWeight: 700, color: '#10b981' }}>{optics.wavelength} nm</div>
                       </div>
                       <div className="telemetry-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>BEAMLINE EMISSION</span>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>BEAMLINE EMISSION</span>
                         <div style={{ fontSize: '18px', fontWeight: 700, color: optics.powerOn ? '#10b981' : '#ef4444' }}>
                           {optics.powerOn ? '● EMITTING (532 nm)' : '○ DE-ENERGIZED'}
                         </div>
                       </div>
                       <div className="telemetry-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>OPTICAL REGIME</span>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>OPTICAL REGIME</span>
                         <div style={{ fontSize: '18px', fontWeight: 700, color: '#d4af37' }}>Coherent Paraxial Beam</div>
                       </div>
                     </div>
@@ -4848,17 +5193,17 @@ export default function Room3Experience() {
                   {stationId === 'relativity' && (
                     <div className="telemetry-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '16px' }}>
                       <div className="telemetry-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>REST MASS PRESET</span>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>REST MASS PRESET</span>
                         <div style={{ fontSize: '18px', fontWeight: 700, color: '#fef08a' }}>{relativity.massPreset.toUpperCase()}</div>
                       </div>
                       <div className="telemetry-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>BEAMLINE STATUS</span>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>BEAMLINE STATUS</span>
                         <div style={{ fontSize: '18px', fontWeight: 700, color: relativity.powerOn ? '#10b981' : '#ef4444' }}>
                           {relativity.powerOn ? '● CHARGED VACUUM' : '○ STANDBY'}
                         </div>
                       </div>
                       <div className="telemetry-card" style={{ padding: '12px', background: '#090d16', border: '1px solid #1e293b', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>REST ENERGY E₀</span>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>REST ENERGY E₀</span>
                         <div style={{ fontSize: '18px', fontWeight: 700, color: '#d4af37' }}>3727.38 MeV</div>
                       </div>
                     </div>
@@ -4921,14 +5266,14 @@ export default function Room3Experience() {
                   {stationId === 'circuits' && (
                     <div className="dmm-prep-controls" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '16px' }}>
                       <div style={{ padding: '12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
-                        <span style={{ fontSize: '11px', color: '#e9dfc9' }}>ROTARY SELECTOR DIAL (3D FLUKE 87V)</span>
+                        <span style={{ fontSize: '12px', color: '#e9dfc9' }}>ROTARY SELECTOR DIAL (3D FLUKE 87V)</span>
                         <div style={{ fontSize: '15px', fontWeight: 700, color: dmmMode === 'v_dc' ? '#34d399' : '#f87171', marginTop: '6px' }}>
                           {dmmMode === 'v_dc' ? '✓ V⎓ (DC Voltage Mode)' : `⚠️ Currently: ${dmmMode.toUpperCase()} (Must be V⎓)`}
                         </div>
                         <small style={{ color: '#94a3b8' }}>Turn rotary dial on 3D meter or Live Controls</small>
                       </div>
                       <div style={{ padding: '12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
-                        <span style={{ fontSize: '11px', color: '#e9dfc9' }}>RED LEAD INPUT JACK</span>
+                        <span style={{ fontSize: '12px', color: '#e9dfc9' }}>RED LEAD INPUT JACK</span>
                         <div style={{ fontSize: '15px', fontWeight: 700, color: dmmJack === 'v_ohm' ? '#34d399' : '#f87171', marginTop: '6px' }}>
                           {dmmJack === 'v_ohm' ? '✓ V·Ω Jack (Hi-Z 10 MΩ)' : `⚠️ Currently: ${dmmJack.toUpperCase()} (Must be V·Ω)`}
                         </div>
@@ -4940,12 +5285,12 @@ export default function Room3Experience() {
                   {stationId === 'optics' && (
                     <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
                       <div style={{ padding: '12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
-                        <span style={{ fontSize: '11px', color: '#e9dfc9' }}>NOMINAL LENS SPECIFICATION</span>
+                        <span style={{ fontSize: '12px', color: '#e9dfc9' }}>NOMINAL LENS SPECIFICATION</span>
                         <div style={{ fontSize: '16px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>f = 20.0 cm (Converging)</div>
                         <small style={{ color: '#94a3b8' }}>Crown Glass n = 1.50</small>
                       </div>
                       <div style={{ padding: '12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
-                        <span style={{ fontSize: '11px', color: '#e9dfc9' }}>OPTICAL RAIL STATUS</span>
+                        <span style={{ fontSize: '12px', color: '#e9dfc9' }}>OPTICAL RAIL STATUS</span>
                         <div style={{ fontSize: '16px', fontWeight: 700, color: '#fef08a', marginTop: '4px' }}>Paraxial Axis Aligned</div>
                         <small style={{ color: '#94a3b8' }}>Zero chromatic dispersion at 532 nm</small>
                       </div>
@@ -4955,12 +5300,12 @@ export default function Room3Experience() {
                   {stationId === 'relativity' && (
                     <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
                       <div style={{ padding: '12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
-                        <span style={{ fontSize: '11px', color: '#e9dfc9' }}>PROPER TIME STANDARD</span>
+                        <span style={{ fontSize: '12px', color: '#e9dfc9' }}>PROPER TIME STANDARD</span>
                         <div style={{ fontSize: '16px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>Δt₀ = 10.00 s</div>
                         <small style={{ color: '#94a3b8' }}>Inertial Rest Frame S&apos;</small>
                       </div>
                       <div style={{ padding: '12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
-                        <span style={{ fontSize: '11px', color: '#e9dfc9' }}>REST LENGTH STANDARD</span>
+                        <span style={{ fontSize: '12px', color: '#e9dfc9' }}>REST LENGTH STANDARD</span>
                         <div style={{ fontSize: '16px', fontWeight: 700, color: '#fef08a', marginTop: '4px' }}>L₀ = 20.00 m</div>
                         <small style={{ color: '#94a3b8' }}>Laboratory Reference Frame S</small>
                       </div>
@@ -5027,15 +5372,15 @@ export default function Room3Experience() {
                       <b>Parallel Potential Drop Verification (Fluke 87V):</b>
                       <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>FLUKE 87V LCD READOUT (PARALLEL)</span>
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>FLUKE 87V LCD READOUT (PARALLEL)</span>
                           <div style={{ fontSize: '24px', fontFamily: 'monospace', fontWeight: 700, color: '#fef08a' }}>{dmmReading.displayString}</div>
-                          <div style={{ fontSize: '11px', color: dmmReading.isValidMeasurement && dmmReading.unit === 'V' ? '#34d399' : '#f87171', marginTop: '2px' }}>
+                          <div style={{ fontSize: '12px', color: dmmReading.isValidMeasurement && dmmReading.unit === 'V' ? '#34d399' : '#f87171', marginTop: '2px' }}>
                             {dmmReading.isValidMeasurement && dmmReading.unit === 'V' ? '✓ Valid parallel voltage measurement detected' : '⚠️ Place probes across circuit elements in 3D'}
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Red Lead (+): <b style={{ color: '#fef08a' }}>{redTerminal ?? 'Unconnected'}</b></span><br />
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Black Lead (COM): <b style={{ color: '#fef08a' }}>{blackTerminal ?? 'Unconnected'}</b></span>
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>Red Lead (+): <b style={{ color: '#fef08a' }}>{redTerminal ?? 'Unconnected'}</b></span><br />
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>Black Lead (COM): <b style={{ color: '#fef08a' }}>{blackTerminal ?? 'Unconnected'}</b></span>
                         </div>
                       </div>
                     </div>
@@ -5046,14 +5391,14 @@ export default function Room3Experience() {
                       <b>Optical Track Conjugate Focal Alignment:</b>
                       <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>OPTICAL TRACK TELEMETRY</span>
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>OPTICAL TRACK TELEMETRY</span>
                           <div style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 700, color: '#34d399' }}>
                             u = {optics.objectDistance.toFixed(1)} cm → v = {((optics.objectDistance * 20.0) / Math.max(0.1, optics.objectDistance - 20.0)).toFixed(1)} cm
                           </div>
                         </div>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Focal Length: <b>f = 20.0 cm</b></span><br />
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Magnification: <b>{(-((optics.objectDistance * 20.0) / Math.max(0.1, optics.objectDistance - 20.0)) / optics.objectDistance).toFixed(2)}x</b></span>
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>Focal Length: <b>f = 20.0 cm</b></span><br />
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>Magnification: <b>{(-((optics.objectDistance * 20.0) / Math.max(0.1, optics.objectDistance - 20.0)) / optics.objectDistance).toFixed(2)}x</b></span>
                         </div>
                       </div>
                     </div>
@@ -5064,14 +5409,14 @@ export default function Room3Experience() {
                       <b>Relativistic Velocity & Time Dilation Telemetry:</b>
                       <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>DILATED TIME (FRAME S)</span>
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>DILATED TIME (FRAME S)</span>
                           <div style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 700, color: '#fef08a' }}>
                             Δt = {((1 / Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2))) * 10.0).toFixed(2)} s
                           </div>
                         </div>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Lorentz Factor: <b>γ = {(1 / Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2))).toFixed(4)}</b></span><br />
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Proper Time: <b className="math-inline">Δt<sub>0</sub> = 10.0 s</b></span>
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>Lorentz Factor: <b>γ = {(1 / Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2))).toFixed(4)}</b></span><br />
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>Proper Time: <b className="math-inline">Δt<sub>0</sub> = 10.0 s</b></span>
                         </div>
                       </div>
                     </div>
@@ -5142,19 +5487,19 @@ export default function Room3Experience() {
                       <b>True Series Ammeter Loop Verification (Fluke 87V):</b>
                       <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>FLUKE 87V AMMETER READOUT (SERIES)</span>
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>FLUKE 87V AMMETER READOUT (SERIES)</span>
                           <div style={{ fontSize: '24px', fontFamily: 'monospace', fontWeight: 700, color: dmmReading.tripFuse ? '#ef4444' : '#34d399' }}>
                             {dmmReading.displayString}
                           </div>
-                          <div style={{ fontSize: '11px', color: (!jumperClosed && dmmMode === 'a_dc' && dmmJack === 'ma_10a' && (redTerminal === 'SERIES_JACK_A' || blackTerminal === 'SERIES_JACK_A')) ? '#34d399' : '#f87171', marginTop: '2px' }}>
+                          <div style={{ fontSize: '12px', color: (!jumperClosed && dmmMode === 'a_dc' && dmmJack === 'ma_10a' && (redTerminal === 'SERIES_JACK_A' || blackTerminal === 'SERIES_JACK_A')) ? '#34d399' : '#f87171', marginTop: '2px' }}>
                             {!jumperClosed && dmmMode === 'a_dc' && dmmJack === 'ma_10a' && (redTerminal === 'SERIES_JACK_A' || blackTerminal === 'SERIES_JACK_A')
                               ? '✓ Ammeter inserted in series break — full loop completed'
                               : '⚠️ Remove series jumper, set dial to A⎓, jack to mA/10A, and connect across break'}
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Dial: <b style={{ color: dmmMode === 'a_dc' ? '#34d399' : '#f87171' }}>{dmmMode.toUpperCase()}</b> · Jack: <b style={{ color: dmmJack === 'ma_10a' ? '#34d399' : '#f87171' }}>{dmmJack.toUpperCase()}</b></span><br />
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Series Jumper: <b style={{ color: !jumperClosed ? '#34d399' : '#f87171' }}>{jumperClosed ? 'CLOSED (Bypassing Ammeter)' : 'OPEN (Ammeter Completes Loop)'}</b></span>
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>Dial: <b style={{ color: dmmMode === 'a_dc' ? '#34d399' : '#f87171' }}>{dmmMode.toUpperCase()}</b> · Jack: <b style={{ color: dmmJack === 'ma_10a' ? '#34d399' : '#f87171' }}>{dmmJack.toUpperCase()}</b></span><br />
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>Series Jumper: <b style={{ color: !jumperClosed ? '#34d399' : '#f87171' }}>{jumperClosed ? 'CLOSED (Bypassing Ammeter)' : 'OPEN (Ammeter Completes Loop)'}</b></span>
                         </div>
                       </div>
                     </div>
@@ -5165,13 +5510,13 @@ export default function Room3Experience() {
                       <b>Conjugate Real Image Sharpness & Magnification:</b>
                       <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>THIN LENS GAUSSIAN VERIFICATION</span>
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>THIN LENS GAUSSIAN VERIFICATION</span>
                           <div className="math-expr" style={{ fontSize: '17px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>
                             <Frac num="1" den="f" /> = <Frac num="1" den={optics.objectDistance.toFixed(0)} /> + <Frac num="1" den={((optics.objectDistance * 20.0) / Math.max(0.1, optics.objectDistance - 20.0)).toFixed(1)} /> = 0.050 cm<sup>−1</sup> (f = 20.0 cm)
                           </div>
                         </div>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Image State: <b>Real &amp; Inverted</b></span>
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>Image State: <b>Real &amp; Inverted</b></span>
                         </div>
                       </div>
                     </div>
@@ -5182,13 +5527,13 @@ export default function Room3Experience() {
                       <b>Lorentz Contraction & Relativistic Total Energy:</b>
                       <div className="live-meter-display" style={{ marginTop: '10px', padding: '14px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '8px', border: '1px solid rgba(212, 175, 55, 0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>CONTRACTED LENGTH (FRAME S)</span>
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>CONTRACTED LENGTH (FRAME S)</span>
                           <div className="math-inline" style={{ fontSize: '20px', fontFamily: 'monospace', fontWeight: 700, color: '#fef08a' }}>
                             L = {(20.0 * Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2))).toFixed(2)} m (Rest L<sub>0</sub> = 20.0 m)
                           </div>
                         </div>
                         <div>
-                          <span style={{ fontSize: '11px', color: '#e9dfc9' }}>Kinetic Energy: <b>{((1 / Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2)) - 1) * 3727.38).toFixed(1)} MeV</b></span>
+                          <span style={{ fontSize: '12px', color: '#e9dfc9' }}>Kinetic Energy: <b>{((1 / Math.sqrt(Math.max(0.01, 1 - relativity.beta ** 2)) - 1) * 3727.38).toFixed(1)} MeV</b></span>
                         </div>
                       </div>
                     </div>
@@ -5250,7 +5595,7 @@ export default function Room3Experience() {
                             setRetakeTrialIndex(isRecorded ? idx : null);
                           }}
                         >
-                          <div style={{ fontSize: '11px', color: isActive ? '#1a0b10' : isRecorded ? '#34d399' : '#e9dfc9' }}>
+                          <div style={{ fontSize: '12px', color: isActive ? '#1a0b10' : isRecorded ? '#34d399' : '#e9dfc9' }}>
                             {isRecorded ? '✓ Recorded' : `Trial ${idx + 1}`}
                           </div>
                           <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>
@@ -5291,15 +5636,15 @@ export default function Room3Experience() {
                         {/* Live Telemetry Bar for Trial */}
                         <div className="trial-live-bar" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '12px' }}>
                           <div style={{ padding: '8px 12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '6px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
-                            <span style={{ fontSize: '10px', color: '#e9dfc9' }}>LIVE SOURCE POTENTIAL</span>
+                            <span style={{ fontSize: '12px', color: '#e9dfc9' }}>LIVE SOURCE POTENTIAL</span>
                             <div style={{ fontSize: '16px', fontWeight: 700, color: '#fef08a' }}>{circuits.vs.toFixed(2)} V</div>
                           </div>
                           <div style={{ padding: '8px 12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '6px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
-                            <span style={{ fontSize: '10px', color: '#e9dfc9' }}>LIVE CURRENT (SERIES)</span>
+                            <span style={{ fontSize: '12px', color: '#e9dfc9' }}>LIVE CURRENT (SERIES)</span>
                             <div style={{ fontSize: '16px', fontWeight: 700, color: '#34d399' }}>{(circuitResult.current * 1000).toFixed(2)} mA</div>
                           </div>
                           <div style={{ padding: '8px 12px', background: 'rgba(35, 12, 20, 0.9)', borderRadius: '6px', border: '1px solid rgba(212, 175, 55, 0.4)' }}>
-                            <span style={{ fontSize: '10px', color: '#e9dfc9' }}>THEORETICAL RESISTANCE <span className="math-inline">R<sub>eq</sub></span></span>
+                            <span style={{ fontSize: '12px', color: '#e9dfc9' }}>THEORETICAL RESISTANCE <span className="math-inline">R<sub>eq</sub></span></span>
                             <div style={{ fontSize: '16px', fontWeight: 700, color: '#d4af37' }}>650.0 Ω</div>
                           </div>
                         </div>
@@ -5397,7 +5742,7 @@ export default function Room3Experience() {
                                 <td>
                                   <button
                                     type="button"
-                                    style={{ fontSize: '11px', padding: '2px 6px', background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                    style={{ fontSize: '12px', padding: '2px 6px', background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                                     onClick={(e) => { e.stopPropagation(); setActiveTrialTab(idx); setRetakeTrialIndex(idx); }}
                                   >
                                     Retake
@@ -5417,7 +5762,7 @@ export default function Room3Experience() {
                                 <td>
                                   <button
                                     type="button"
-                                    style={{ fontSize: '11px', padding: '2px 6px', background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                    style={{ fontSize: '12px', padding: '2px 6px', background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                                     onClick={(e) => { e.stopPropagation(); setActiveTrialTab(idx); setRetakeTrialIndex(idx); }}
                                   >
                                     Retake
@@ -5436,7 +5781,7 @@ export default function Room3Experience() {
                                 <td>
                                   <button
                                     type="button"
-                                    style={{ fontSize: '11px', padding: '2px 6px', background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                    style={{ fontSize: '12px', padding: '2px 6px', background: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                                     onClick={(e) => { e.stopPropagation(); setActiveTrialTab(idx); setRetakeTrialIndex(idx); }}
                                   >
                                     Retake
@@ -5593,7 +5938,7 @@ export default function Room3Experience() {
                   ) : (
                     <>
                       {/* 1. Per-Trial Formula Substitution Display */}
-                      <div className="computation-cards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '16px' }}>
+                      <div className="computation-cards-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', marginBottom: '16px' }}>
                         {stationProgress.trials.map((t, i) => {
                           if (stationId === 'circuits') {
                             const v = Number(t.measuredV ?? t.vs ?? 4.0);
@@ -5603,18 +5948,18 @@ export default function Room3Experience() {
                             const currentInput = stationProgress.calculations?.[i] ?? '';
                             const status = calcPerTrialStatus[i];
                             return (
-                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: status === 'correct' ? '1.5px solid #10b981' : status === 'incorrect' ? '1.5px solid #ef4444' : '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
+                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: status === 'correct' ? '1.5px solid #10b981' : status === 'incorrect' ? '1.5px solid #ef4444' : '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '12px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <span style={{ color: '#d4af37', fontWeight: 700 }}>TRIAL #{i + 1}</span>
-                                  {status === 'correct' && <span style={{ color: '#34d399', fontSize: '11px', fontWeight: 800 }}>✓ Verified</span>}
-                                  {status === 'incorrect' && <span style={{ color: '#f87171', fontSize: '10px', fontWeight: 700 }}>❌ Check Math</span>}
-                                  {(!status || status === 'empty') && <span style={{ color: '#94a3b8', fontSize: '10px' }}>⏳ Enter Value</span>}
+                                  {status === 'correct' && <span style={{ color: '#34d399', fontSize: '12px', fontWeight: 800 }}>✓ Verified</span>}
+                                  {status === 'incorrect' && <span style={{ color: '#f87171', fontSize: '12px', fontWeight: 700 }}>❌ Check Math</span>}
+                                  {(!status || status === 'empty') && <span style={{ color: '#94a3b8', fontSize: '12px' }}>⏳ Enter Value</span>}
                                 </div>
-                                <div className="math-expr" style={{ margin: '4px 0' }}>
-                                  R<sub>{i + 1}</sub> = <Frac num={<>V<sub>{i + 1}</sub></>} den={<>I<sub>{i + 1}</sub></>} />
+                                <div className="math-expr" style={{ display: 'block', margin: '4px 0' }}>
+                                  <KatexMath math={`R_{${i + 1}} = \\frac{V_{${i + 1}}}{I_{${i + 1}}}`} />
                                 </div>
-                                <div className="math-expr" style={{ color: '#94a3b8' }}>
-                                  = <Frac num={`${v.toFixed(2)} V`} den={`${i_mA.toFixed(2)} mA`} />
+                                <div className="math-expr" style={{ display: 'block', color: '#94a3b8', margin: '4px 0' }}>
+                                  <KatexMath math={`= \\frac{${v.toFixed(2)}\\;\\text{V}}{${i_mA.toFixed(2)}\\;\\text{mA}}`} />
                                 </div>
                                 <div style={{ fontWeight: 700, color: '#fef08a', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
                                   <span>=</span>
@@ -5623,7 +5968,7 @@ export default function Room3Experience() {
                                     placeholder="R (Ω)"
                                     value={currentInput}
                                     onChange={(e) => handleCalculationChange(i, e.target.value)}
-                                    style={{ width: '64px', padding: '3px 4px', fontSize: '11px', background: '#090d16', color: '#fef08a', border: '1px solid #d4af37', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
+                                    style={{ width: '64px', padding: '3px 4px', fontSize: '12px', background: '#090d16', color: '#fef08a', border: '1px solid #d4af37', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
                                   />
                                   <span>Ω</span>
                                 </div>
@@ -5635,18 +5980,18 @@ export default function Room3Experience() {
                             const currentInput = stationProgress.calculations?.[i] ?? '';
                             const status = calcPerTrialStatus[i];
                             return (
-                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: status === 'correct' ? '1.5px solid #10b981' : status === 'incorrect' ? '1.5px solid #ef4444' : '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
+                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: status === 'correct' ? '1.5px solid #10b981' : status === 'incorrect' ? '1.5px solid #ef4444' : '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '12px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <span style={{ color: '#10b981', fontWeight: 700 }}>TRIAL #{i + 1}</span>
-                                  {status === 'correct' && <span style={{ color: '#34d399', fontSize: '11px', fontWeight: 800 }}>✓ Verified</span>}
-                                  {status === 'incorrect' && <span style={{ color: '#f87171', fontSize: '10px', fontWeight: 700 }}>❌ Check Math</span>}
-                                  {(!status || status === 'empty') && <span style={{ color: '#94a3b8', fontSize: '10px' }}>⏳ Enter Value</span>}
+                                  {status === 'correct' && <span style={{ color: '#34d399', fontSize: '12px', fontWeight: 800 }}>✓ Verified</span>}
+                                  {status === 'incorrect' && <span style={{ color: '#f87171', fontSize: '12px', fontWeight: 700 }}>❌ Check Math</span>}
+                                  {(!status || status === 'empty') && <span style={{ color: '#94a3b8', fontSize: '12px' }}>⏳ Enter Value</span>}
                                 </div>
-                                <div className="math-expr" style={{ margin: '4px 0' }}>
-                                  f<sub>{i + 1}</sub> = <Frac num="u · v" den="u + v" />
+                                <div className="math-expr" style={{ display: 'block', margin: '4px 0' }}>
+                                  <KatexMath math={`f_{${i + 1}} = \\frac{u \\cdot v}{u + v}`} />
                                 </div>
-                                <div className="math-expr" style={{ color: '#94a3b8' }}>
-                                  = <Frac num={`${u} · ${v.toFixed(1)}`} den={`${u} + ${v.toFixed(1)}`} />
+                                <div className="math-expr" style={{ display: 'block', color: '#94a3b8', margin: '4px 0' }}>
+                                  <KatexMath math={`= \\frac{${u} \\cdot ${v.toFixed(1)}}{${u} + ${v.toFixed(1)}}`} />
                                 </div>
                                 <div style={{ fontWeight: 700, color: '#34d399', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
                                   <span>=</span>
@@ -5655,7 +6000,7 @@ export default function Room3Experience() {
                                     placeholder="f (cm)"
                                     value={currentInput}
                                     onChange={(e) => handleCalculationChange(i, e.target.value)}
-                                    style={{ width: '64px', padding: '3px 4px', fontSize: '11px', background: '#090d16', color: '#34d399', border: '1px solid #10b981', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
+                                    style={{ width: '64px', padding: '3px 4px', fontSize: '12px', background: '#090d16', color: '#34d399', border: '1px solid #10b981', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
                                   />
                                   <span>cm</span>
                                 </div>
@@ -5670,15 +6015,15 @@ export default function Room3Experience() {
                             const currentInput = stationProgress.calculations?.[i] ?? '';
                             const status = calcPerTrialStatus[i];
                             return (
-                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: status === 'correct' ? '1.5px solid #10b981' : status === 'incorrect' ? '1.5px solid #ef4444' : '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '11px' }}>
+                              <div key={i} style={{ padding: '10px 8px', background: 'rgba(53, 18, 29, 0.9)', border: status === 'correct' ? '1.5px solid #10b981' : status === 'incorrect' ? '1.5px solid #ef4444' : '1px solid rgba(212, 175, 55, 0.4)', borderRadius: '8px', fontSize: '12px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <span style={{ color: '#fef08a', fontWeight: 700 }}>RUN #{i + 1} (β={beta.toFixed(2)}c)</span>
-                                  {status === 'correct' && <span style={{ color: '#34d399', fontSize: '11px', fontWeight: 800 }}>✓ Verified</span>}
-                                  {status === 'incorrect' && <span style={{ color: '#f87171', fontSize: '10px', fontWeight: 700 }}>❌ Check Math</span>}
-                                  {(!status || status === 'empty') && <span style={{ color: '#94a3b8', fontSize: '10px' }}>⏳ Enter Value</span>}
+                                  {status === 'correct' && <span style={{ color: '#34d399', fontSize: '12px', fontWeight: 800 }}>✓ Verified</span>}
+                                  {status === 'incorrect' && <span style={{ color: '#f87171', fontSize: '12px', fontWeight: 700 }}>❌ Check Math</span>}
+                                  {(!status || status === 'empty') && <span style={{ color: '#94a3b8', fontSize: '12px' }}>⏳ Enter Value</span>}
                                 </div>
-                                <div className="math-expr" style={{ margin: '4px 0', color: '#cbd5e1' }}>
-                                  γ = <Frac num="1" den={<Sqrt>1 − {beta.toFixed(2)}<sup>2</sup></Sqrt>} />
+                                <div className="math-expr" style={{ display: 'block', margin: '4px 0', color: '#cbd5e1' }}>
+                                  <KatexMath math={`\\gamma = \\frac{1}{\\sqrt{1 - ${beta.toFixed(2)}^2}}`} />
                                 </div>
                                 <div style={{ fontWeight: 700, color: '#38bdf8', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}>
                                   <span>γ =</span>
@@ -5687,10 +6032,10 @@ export default function Room3Experience() {
                                     placeholder="γ (1.xxxx)"
                                     value={currentInput}
                                     onChange={(e) => handleCalculationChange(i, e.target.value)}
-                                    style={{ width: '70px', padding: '3px 4px', fontSize: '11px', background: '#090d16', color: '#38bdf8', border: '1px solid #0284c7', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
+                                    style={{ width: '70px', padding: '3px 4px', fontSize: '12px', background: '#090d16', color: '#38bdf8', border: '1px solid #0284c7', borderRadius: '4px', textAlign: 'center', fontWeight: 700 }}
                                   />
                                 </div>
-                                <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
+                                <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
                                   Δt = {dilatedT.toFixed(3)} ns<br />
                                   L = {contractedL.toFixed(3)} m
                                 </div>
@@ -5704,42 +6049,46 @@ export default function Room3Experience() {
                       {stationId === 'circuits' && circuitMetrics.mean !== null && (
                         <div className="stats-breakdown-card" style={{ padding: '14px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px', marginBottom: '16px' }}>
                           <h5 style={{ margin: '0 0 10px', color: '#f8fafc' }}>Statistical Quantification & Error Metrics:</h5>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
                             <div>
-                              <b>1. Average Experimental Resistance (<span className="math-inline">R<sub>mean</sub></span>):</b>
-                              <div className="math-expr" style={{ color: '#fef08a', margin: '4px 0' }}>
-                                R<sub>mean</sub> = <Frac num={<>R<sub>1</sub> + R<sub>2</sub> + R<sub>3</sub> + R<sub>4</sub> + R<sub>5</sub></>} den="5" /> = {circuitMetrics.mean.toFixed(2)} Ω
+                              <b>1. Average Experimental Resistance (<KatexMath math="R_{\text{mean}}" />):</b>
+                              <div className="math-expr" style={{ color: '#fef08a', margin: '4px 0', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                                <KatexMath math={`R_{\\text{mean}} = \\frac{R_1 + R_2 + R_3 + R_4 + R_5}{5}`} />
+                                <KatexMath math={`= \\frac{${circuitMetrics.resistances.map((r) => r.toFixed(1)).join(' + ')}}{5}`} />
+                                <KatexMath math={`= ${circuitMetrics.mean.toFixed(2)}\\;\\Omega`} />
                               </div>
-                              <small className="math-inline" style={{ color: '#94a3b8' }}>
-                                Substituted: <Frac num={circuitMetrics.resistances.map((r) => r.toFixed(1)).join(' + ')} den="5" />
-                              </small>
                             </div>
                             <div>
                               <b>2. Sample Standard Deviation (s):</b>
-                              <div className="math-expr" style={{ color: '#fef08a', margin: '4px 0' }}>
-                                s = <Sqrt><Frac num={<>Σ(R<sub>i</sub> − R<sub>mean</sub>)<sup>2</sup></>} den="5 − 1" /></Sqrt> = {circuitMetrics.stdDev !== null ? circuitMetrics.stdDev.toFixed(3) : '—'} Ω
+                              <div className="math-expr" style={{ color: '#fef08a', margin: '4px 0', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                                <KatexMath math={`s = \\sqrt{\\frac{\\sum(R_i - R_{\\text{mean}})^2}{5 - 1}}`} />
+                                <KatexMath math={`= ${circuitMetrics.stdDev !== null ? circuitMetrics.stdDev.toFixed(3) : '—'}\\;\\Omega`} />
                               </div>
-                              <small className="math-inline" style={{ color: '#94a3b8' }}>
-                                Standard Error of the Mean: SEM = <Frac num="s" den={<Sqrt>5</Sqrt>} /> = {circuitMetrics.sem !== null ? circuitMetrics.sem.toFixed(3) : '—'} Ω
-                              </small>
+                              <div className="math-expr" style={{ color: '#94a3b8', marginTop: '4px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                                <KatexMath math={`\\text{SEM} = \\frac{s}{\\sqrt{5}}`} />
+                                <KatexMath math={`= ${circuitMetrics.sem !== null ? circuitMetrics.sem.toFixed(3) : '—'}\\;\\Omega`} />
+                              </div>
                             </div>
                             <div>
                               <b>3. Percentage Error vs. Nominal Resistor Specification (330.0 Ω):</b>
-                              <div className="math-expr" style={{ color: '#10b981', margin: '4px 0' }}>
-                                Percentage Error = <Frac num={<>|R<sub>mean</sub> − R<sub>nom</sub>|</>} den={<>R<sub>nom</sub></>} /> × 100% = {circuitMetrics.percentError !== null ? circuitMetrics.percentError.toFixed(2) : '—'}%
+                              <div className="math-expr" style={{ color: '#10b981', margin: '4px 0', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                                <KatexMath math={`\\%\\;\\text{Error} = \\frac{|R_{\\text{mean}} - R_{\\text{nom}}|}{R_{\\text{nom}}} \\times 100\\%`} />
+                                <KatexMath math={`= \\frac{|${circuitMetrics.mean.toFixed(2)} - 330.0|}{330.0} \\times 100\\%`} />
+                                <KatexMath math={`= ${circuitMetrics.percentError !== null ? circuitMetrics.percentError.toFixed(2) : '—'}\\%`} />
                               </div>
-                              <small className="math-inline" style={{ color: '#94a3b8' }}>
-                                <Frac num={`|${circuitMetrics.mean.toFixed(2)} − 330.0|`} den="330.0" /> × 100% (Within strict ±2% academic threshold)
+                              <small style={{ display: 'block', color: '#94a3b8' }}>
+                                (Within strict ±2% academic threshold)
                               </small>
                             </div>
                             <div>
-                              <b>4. Resistor Specification & Power Rating:</b>
+                              <b>4. Resistor Specification &amp; Power Rating:</b>
                               <div style={{ fontFamily: 'monospace', color: '#a855f7', margin: '4px 0' }}>
                                 R = 330.0 Ω · 1 Watt Rating (Carbon Film Resistor)
                               </div>
-                              <small className="math-inline" style={{ color: '#94a3b8' }}>
-                                Max permissible continuous current: I<sub>max</sub> = <Sqrt><Frac num="P" den="R" /></Sqrt> = <Sqrt><Frac num="1.0" den="330" /></Sqrt> ≈ 55.0 mA
-                              </small>
+                              <div className="math-expr" style={{ color: '#94a3b8', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                                <KatexMath math={`I_{\\max} = \\sqrt{\\frac{P}{R}}`} />
+                                <KatexMath math={`= \\sqrt{\\frac{1.0}{330}} \\approx 55.0\\;\\text{mA}`} />
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -5748,17 +6097,19 @@ export default function Room3Experience() {
                       {stationId === 'optics' && opticsMetrics.mean !== null && (
                         <div className="stats-breakdown-card" style={{ padding: '14px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px', marginBottom: '16px' }}>
                           <h5 style={{ margin: '0 0 10px', color: '#f8fafc' }}>Optics Statistical Quantification:</h5>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
                             <div>
-                              <b>Average Experimental Focal Length (<span className="math-inline">f<sub>mean</sub></span>):</b>
-                              <div className="math-expr" style={{ color: '#10b981', margin: '4px 0' }}>
-                                f<sub>mean</sub> = <Frac num={<>Σ f<sub>i</sub></>} den="5" /> = {opticsMetrics.mean.toFixed(2)} cm
+                              <b>Average Experimental Focal Length (<KatexMath math="f_{\text{mean}}" />):</b>
+                              <div className="math-expr" style={{ color: '#10b981', margin: '4px 0', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                                <KatexMath math={`f_{\\text{mean}} = \\frac{\\sum f_i}{5}`} />
+                                <KatexMath math={`= ${opticsMetrics.mean.toFixed(2)}\\;\\text{cm}`} />
                               </div>
                             </div>
                             <div>
                               <b>Percentage Error vs. Nominal Focal Length (20.0 cm):</b>
-                              <div className="math-expr" style={{ color: '#10b981', margin: '4px 0' }}>
-                                Percentage Error = <Frac num={<>|f<sub>mean</sub> − 20.0|</>} den="20.0" /> × 100% = {opticsMetrics.percentError !== null ? opticsMetrics.percentError.toFixed(2) : '—'}%
+                              <div className="math-expr" style={{ color: '#10b981', margin: '4px 0', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                                <KatexMath math={`\\%\\;\\text{Error} = \\frac{|f_{\\text{mean}} - 20.0|}{20.0} \\times 100\\%`} />
+                                <KatexMath math={`= ${opticsMetrics.percentError !== null ? opticsMetrics.percentError.toFixed(2) : '—'}\\%`} />
                               </div>
                             </div>
                           </div>
@@ -5771,7 +6122,7 @@ export default function Room3Experience() {
                             🔬 Numerical Implementation &amp; Theoretical Verification:
                           </h5>
                           <div className="table-scroll" style={{ marginBottom: '12px' }}>
-                            <table className="trial-table" style={{ fontSize: '11px' }}>
+                            <table className="trial-table" style={{ fontSize: '12px' }}>
                               <thead>
                                 <tr>
                                   <th>Condition</th>
@@ -5810,7 +6161,7 @@ export default function Room3Experience() {
                               </tbody>
                             </table>
                           </div>
-                          <div style={{ padding: '10px 12px', background: 'rgba(15, 23, 42, 0.7)', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.3)', fontSize: '11px', color: '#94a3b8', lineHeight: 1.5 }}>
+                          <div style={{ padding: '10px 12px', background: 'rgba(15, 23, 42, 0.7)', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.3)', fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>
                             <b style={{ color: '#38bdf8' }}>COMPUTATIONAL PHYSICS SIMULATION INTEGRITY:</b> This station is a computational simulation investigation. Unlike physical bench experiments subject to laboratory thermal or sensor noise, numerical physics simulations verify theoretical kinematics with exact floating-point precision. Verification is confirmed by absolute numerical identity (|Simulated − Theoretical| = 0.0000).
                           </div>
                         </div>
@@ -5834,22 +6185,16 @@ export default function Room3Experience() {
                       {regression && stationId === 'circuits' && (
                         <div className="regression-substitution-card" style={{ padding: '12px', background: 'rgba(53, 18, 29, 0.9)', border: '1.5px solid rgba(212, 175, 55, 0.45)', borderRadius: '8px', marginTop: '12px' }}>
                           <b>Step-by-Step Least-Squares Substitution (V vs. I):</b>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', margin: '8px 0', fontSize: '11px', fontFamily: 'monospace' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: '8px 0', fontSize: '12px', fontFamily: 'monospace' }}>
                             <div>Σ I = {regression.sumX.toFixed(5)} A</div>
                             <div>Σ V = {regression.sumY.toFixed(2)} V</div>
                             <div>Σ (I·V) = {regression.sumXY.toFixed(4)} W</div>
                             <div>Σ (I<sup>2</sup>) = {regression.sumX2.toFixed(6)} A<sup>2</sup></div>
                           </div>
-                          <div className="math-expr" style={{ color: '#fef08a', fontSize: '13px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px', margin: '6px 0' }}>
-                            <div>
-                              Slope m = <Frac num="N · Σ(I·V) − (ΣI)(ΣV)" den={<>N · Σ(I<sup>2</sup>) − (ΣI)<sup>2</sup></>} />
-                            </div>
-                            <div>
-                              m = <Frac
-                                num={`5 · (${regression.sumXY.toFixed(4)}) − (${regression.sumX.toFixed(4)}) · (${regression.sumY.toFixed(2)})`}
-                                den={<>5 · ({regression.sumX2.toFixed(6)}) − ({regression.sumX.toFixed(4)})<sup>2</sup></>}
-                              /> = <b>{regression.slope.toFixed(2)} Ω</b>
-                            </div>
+                          <div className="math-expr" style={{ color: '#fef08a', fontSize: '13px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px', margin: '6px 0' }}>
+                            <KatexMath math={`m = \\frac{N \\cdot \\sum(I \\cdot V) - (\\sum I)(\\sum V)}{N \\cdot \\sum(I^2) - (\\sum I)^2}`} />
+                            <KatexMath math={`= \\frac{5 \\cdot (${regression.sumXY.toFixed(4)}) - (${regression.sumX.toFixed(4)}) \\cdot (${regression.sumY.toFixed(2)})}{5 \\cdot (${regression.sumX2.toFixed(6)}) - (${regression.sumX.toFixed(4)})^2}`} />
+                            <KatexMath math={`= ${regression.slope.toFixed(2)}\\;\\Omega`} />
                           </div>
                           <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#94a3b8' }}>
                             Physical Interpretation: The slope <b className="math-inline">m = {regression.slope.toFixed(2)} Ω</b> directly represents the experimental resistance <span className="math-inline">R<sub>exp</sub></span>. With coefficient of determination <b className="math-inline">R<sup>2</sup> = {regression.rSquared.toFixed(5)}</b>, the empirical dataset conclusively confirms Ohm&apos;s Law (<span className="math-inline">V = I·R</span>) with linear precision.
@@ -6015,7 +6360,7 @@ export default function Room3Experience() {
                         <h5 style={{ margin: '0 0 10px', color: '#f8fafc', fontSize: '13px' }}>
                           🎓 Student Conceptual Interpretation &amp; Laboratory Review:
                         </h5>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '11px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px' }}>
                           <div>
                             <b style={{ color: '#fef08a' }}>Q1. Why does equivalent resistance increase when adding resistors in series, but decrease when adding resistors in parallel?</b>
                             <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.55 }}>
@@ -6059,7 +6404,7 @@ export default function Room3Experience() {
                         <h5 style={{ margin: '0 0 12px', color: '#f8fafc', fontSize: '13px' }}>
                           🎓 Student Conceptual Review (7 Fundamental Relativistic Principles):
                         </h5>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '11px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '12px' }}>
                           <div>
                             <b style={{ color: '#fef08a' }}>Q1. Constancy of the Speed of Light: Why is the speed of light c identical in both Frame S (lab) and Frame S&apos; (moving sled), regardless of source velocity?</b>
                             <p style={{ margin: '3px 0 0', color: '#cbd5e1', lineHeight: 1.4 }}>
@@ -6215,7 +6560,7 @@ export default function Room3Experience() {
                       <h5>Physics 300 Certified Experimental Record</h5>
                     </div>
 
-                    <div className="student-metadata-fields student-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', margin: '14px 0' }}>
+                    <div className="student-metadata-fields student-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '12px', margin: '14px 0' }}>
                       <label>
                         <span>Student Name:</span>
                         <input
@@ -6241,6 +6586,16 @@ export default function Room3Experience() {
                           style={{ padding: '8px 12px', marginTop: '4px' }}
                           value={studentSection}
                           onChange={(e) => setStudentSection(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        <span>Date Performed:</span>
+                        <input
+                          type="date"
+                          aria-label="Date Performed"
+                          style={{ padding: '8px 12px', marginTop: '4px' }}
+                          value={studentDatePerformed}
+                          onChange={(e) => setStudentDatePerformed(e.target.value)}
                         />
                       </label>
                     </div>
@@ -6291,6 +6646,22 @@ export default function Room3Experience() {
                     <button
                       type="button"
                       className="notebook-action"
+                      style={{
+                        background: 'linear-gradient(135deg, #b45309 0%, #92400e 100%)',
+                        borderColor: '#f59e0b',
+                        color: '#fef3c7',
+                        fontWeight: 700,
+                      }}
+                      onClick={() => {
+                        setNotebookOpen(false);
+                        openMasterReport(false);
+                      }}
+                    >
+                      📚 Master Lab Manual (.pdf / .docx)
+                    </button>
+                    <button
+                      type="button"
+                      className="notebook-action"
                       style={{ background: '#059669', borderColor: '#10b981', fontWeight: 700 }}
                       disabled={stationProgress.completed[8]}
                       onClick={submitConclusion}
@@ -6306,7 +6677,7 @@ export default function Room3Experience() {
                     background: 'rgba(35, 12, 20, 0.85)',
                     border: '1px solid rgba(212, 175, 55, 0.35)',
                     borderRadius: '8px',
-                    fontSize: '11px',
+                    fontSize: '12px',
                   }}>
                     <b style={{ color: '#d4af37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       Official Certification Prerequisites ({[allTrialsLogged, isComputationVerified, isConclusionSubmitted, isStudentInfoFilled].filter(Boolean).length} / 4 Met):
@@ -6377,6 +6748,28 @@ export default function Room3Experience() {
         perfStats={perfStats}
         playTone={playTone}
       />
+
+      {/* Automated Master Laboratory Manual & Report Modal */}
+      {masterReportState && (
+        <Room3MasterReportModal
+          isOpen={masterReportOpen}
+          onClose={() => setMasterReportOpen(false)}
+          reportState={masterReportState}
+          metadata={reportMetadata}
+          onChangeMetadata={handleMasterReportMetadataChange}
+          overrides={reportOverrides}
+          onChangeOverrides={setReportOverrides}
+          onRefreshFromStorage={() => setReportRefreshNonce((n) => n + 1)}
+          isDoorExitPrompt={masterReportDoorExit}
+          onProceedExitDoor={() => {
+            setMasterReportOpen(false);
+            sceneApi.current?.openDoor(() => {
+              window.location.href = '/';
+            });
+          }}
+          playTone={playTone}
+        />
+      )}
     </main>
   );
 }
